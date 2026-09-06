@@ -68,9 +68,9 @@ static void update_state(void)
     uint32_t card_col;
     const lv_image_dsc_t *icon;
     switch (s) {
-    case PRINTER_STATE_DISCONNECTED: card_col = THEME_COL_WARN;  icon = &img_link_off;     break;
-    case PRINTER_STATE_ERROR:        card_col = THEME_COL_ERROR; icon = &img_alert_circle; break;
-    default:                         card_col = THEME_COL_OK;    icon = &img_link;         break;
+    case PRINTER_STATE_DISCONNECTED: card_col = THEME_COL_WARN;  icon = ui_icon(&img_link_off, &img_link_off_32);         break;
+    case PRINTER_STATE_ERROR:        card_col = THEME_COL_ERROR; icon = ui_icon(&img_alert_circle, &img_alert_circle_32); break;
+    default:                         card_col = THEME_COL_OK;    icon = ui_icon(&img_link, &img_link_32);                 break;
     }
     lv_obj_set_style_bg_color(card_status, theme_col(card_col), 0);
     lv_image_set_src(img_state, icon);
@@ -110,55 +110,63 @@ static lv_obj_t *create(void)
 
     /* 状态卡片 */
     card_status = theme_card(scr);
-    lv_obj_set_size(card_status, 304, 40);
-    lv_obj_align(card_status, LV_ALIGN_TOP_MID, 0, THEME_TITLEBAR_H + 4);
+    lv_obj_set_size(card_status, ui_content_w(), ui_px(40));
+    lv_obj_align(card_status, LV_ALIGN_TOP_MID, 0, THEME_TITLEBAR_H + ui_px(4));
     lv_obj_add_flag(card_status, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(card_status, on_status_click, LV_EVENT_CLICKED, NULL);
 
     /* 状态图标（链接/断链/感叹号，着色随卡片底色反色） */
-    img_state = theme_img(card_status, &img_link, THEME_COL_BG);
+    img_state = theme_img(card_status, ui_icon(&img_link, &img_link_32), THEME_COL_BG);
     lv_obj_align(img_state, LV_ALIGN_LEFT_MID, 0, 0);
 
     lbl_state = theme_label(card_status, "", THEME_FONT_M, THEME_COL_TEXT);
-    lv_obj_align(lbl_state, LV_ALIGN_LEFT_MID, 18, 0);
+    lv_obj_align(lbl_state, LV_ALIGN_LEFT_MID, ui_px(18), 0);
 
     lbl_file = theme_label(card_status, "", THEME_FONT_S, THEME_COL_TEXT_DIM);
-    lv_obj_align(lbl_file, LV_ALIGN_RIGHT_MID, -4, 0);
+    lv_obj_align(lbl_file, LV_ALIGN_RIGHT_MID, -ui_px(4), 0);
 
-    /* 功能网格 3x2（KlipperScreen material-dark 图标） */
-    static const struct { const lv_image_dsc_t *icon; const char *text, *panel; } items[] = {
-        {&img_heater,   "温度", "temperature"},
-        {&img_move,     "移动", "move"},
-        {&img_extrude,  "挤出", "extrude"},
-        {&img_files,    "文件", "files"},
-        {&img_printer,  "打印", "job_status"},
-        {&img_settings, "设置", "settings"},
+    /* 功能网格 3x2（KlipperScreen material-dark 图标；大屏用 56px 变体） */
+    const struct { const lv_image_dsc_t *icon; const char *text, *panel; } items[] = {
+        {ui_icon(&img_heater,   &img_heater_56),   "温度", "temperature"},
+        {ui_icon(&img_move,     &img_move_56),     "移动", "move"},
+        {ui_icon(&img_extrude,  &img_extrude_56),  "挤出", "extrude"},
+        {ui_icon(&img_files,    &img_files_56),    "文件", "files"},
+        {ui_icon(&img_printer,  &img_printer_56),  "打印", "job_status"},
+        {ui_icon(&img_settings, &img_settings_56), "设置", "settings"},
     };
     lv_obj_t *grid = lv_obj_create(scr);
     lv_obj_remove_style_all(grid);
-    lv_obj_set_size(grid, 304, 124);
-    lv_obj_align(grid, LV_ALIGN_TOP_MID, 0, THEME_TITLEBAR_H + 48);
+    /* 网格撑满状态卡与底部按钮之间的空间，按钮尺寸由可用空间反推（大屏不再留大片空白） */
+    int gap = ui_gap(6);
+    int grid_y = THEME_TITLEBAR_H + ui_px(48);
+    int grid_h = ui_scr_h() - grid_y - ui_px(36) - gap;
+    lv_obj_set_size(grid, ui_content_w(), grid_h);
+    lv_obj_align(grid, LV_ALIGN_TOP_MID, 0, grid_y);
     lv_obj_set_flex_flow(grid, LV_FLEX_FLOW_ROW_WRAP);
-    lv_obj_set_flex_align(grid, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_row(grid, THEME_GAP, 0);
-    lv_obj_set_style_pad_column(grid, THEME_GAP, 0);
+    /* 居中 + 固定次线性格距：SPACE_BETWEEN 在 800 宽屏上会拉开近百 px 的空隙 */
+    lv_obj_set_flex_align(grid, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_row(grid, gap, 0);
+    lv_obj_set_style_pad_column(grid, gap, 0);
 
+    int bw = (ui_content_w() - 2 * gap) / 3;
+    int bh = (grid_h - gap) / 2;
     for (unsigned i = 0; i < sizeof(items) / sizeof(items[0]); i++) {
         lv_obj_t *b = theme_menu_button_img(grid, items[i].icon, items[i].text);
-        lv_obj_set_size(b, 96, 59);
+        lv_obj_set_size(b, bw, bh);
         lv_obj_add_event_cb(b, on_menu, LV_EVENT_CLICKED, (void *)items[i].panel);
     }
 
     /* 底部：急停（高优先级，红色实心）+ 重启下位机 */
+    int bw2 = (ui_content_w() - gap) / 2;
     lv_obj_t *b_estop = theme_button(scr, LV_SYMBOL_WARNING, "急停", 0);
     lv_obj_set_style_bg_color(b_estop, theme_col(THEME_COL_ERROR), 0);
-    lv_obj_set_size(b_estop, 148, 28);
-    lv_obj_align(b_estop, LV_ALIGN_BOTTOM_LEFT, 8, -4);
+    lv_obj_set_size(b_estop, bw2, ui_px(28));
+    lv_obj_align(b_estop, LV_ALIGN_BOTTOM_LEFT, ui_px(8), -ui_px(4));
     lv_obj_add_event_cb(b_estop, on_estop, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t *b_restart = theme_button(scr, LV_SYMBOL_POWER, "重启下位机", 0);
-    lv_obj_set_size(b_restart, 148, 28);
-    lv_obj_align(b_restart, LV_ALIGN_BOTTOM_RIGHT, -8, -4);
+    lv_obj_set_size(b_restart, bw2, ui_px(28));
+    lv_obj_align(b_restart, LV_ALIGN_BOTTOM_RIGHT, -ui_px(8), -ui_px(4));
     lv_obj_add_event_cb(b_restart, on_restart, LV_EVENT_CLICKED, NULL);
 
     return scr;

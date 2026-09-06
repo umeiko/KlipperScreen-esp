@@ -55,38 +55,47 @@ static lv_obj_t *create(void)
     /* 距离档 */
     static const char *dists[] = {"0.1", "1", "10", "50"};
     lv_obj_t *tg = toggle_group_create(scr, dists, 4, dist_idx, on_dist, NULL);
-    lv_obj_set_size(tg, 304, 28);
-    lv_obj_align(tg, LV_ALIGN_TOP_MID, 0, THEME_TITLEBAR_H + 4);
+    lv_obj_set_size(tg, ui_content_w(), ui_px(28));
+    lv_obj_align(tg, LV_ALIGN_TOP_MID, 0, THEME_TITLEBAR_H + ui_px(4));
 
-    /* 三轴步进：每行  [-] [轴 位置] [+] */
+    /* 三轴步进：每行  [-] [轴 位置] [+]，行宽/行距按可用空间撑满（大屏不右侧留白） */
     static const char *minus[3] = {LV_SYMBOL_LEFT,  LV_SYMBOL_DOWN, LV_SYMBOL_DOWN};
     static const char *plus[3]  = {LV_SYMBOL_RIGHT, LV_SYMBOL_UP,   LV_SYMBOL_UP};
+    int gap = ui_gap(6);
+    int y0 = THEME_TITLEBAR_H + ui_px(4) + ui_px(28) + gap;          /* 距离档下方 */
+    int ybot = ui_scr_h() - ui_px(6) - ui_px(30) - gap;              /* 归位行上方 */
+    int pitch = (ybot - y0) / 3;
+    int row_h = pitch - gap;
+    int side_w = ui_px(76);
+    int card_w = ui_content_w() - 2 * side_w - 2 * gap;
     for (int a = 0; a < 3; a++) {
+        int y = y0 + a * pitch;
         lv_obj_t *bm = theme_button(scr, minus[a], NULL, 0);
-        lv_obj_set_size(bm, 76, 38);
-        lv_obj_align(bm, LV_ALIGN_TOP_LEFT, 8, 66 + a * 44);
+        lv_obj_set_size(bm, side_w, row_h);
+        lv_obj_align(bm, LV_ALIGN_TOP_LEFT, ui_px(8), y);
         lv_obj_add_event_cb(bm, on_jog, LV_EVENT_CLICKED, (void *)(intptr_t)(a * 2));
 
         lv_obj_t *card = theme_card(scr);
-        lv_obj_set_size(card, 136, 38);
-        lv_obj_align(card, LV_ALIGN_TOP_LEFT, 92, 66 + a * 44);
+        lv_obj_set_size(card, card_w, row_h);
+        lv_obj_align(card, LV_ALIGN_TOP_LEFT, ui_px(8) + side_w + gap, y);
         lbl_pos[a] = theme_label(card, "?", THEME_FONT_M, THEME_COL_TEXT);
         lv_obj_center(lbl_pos[a]);
 
         lv_obj_t *bp = theme_button(scr, plus[a], NULL, 0);
-        lv_obj_set_size(bp, 76, 38);
-        lv_obj_align(bp, LV_ALIGN_TOP_LEFT, 236, 66 + a * 44);
+        lv_obj_set_size(bp, side_w, row_h);
+        lv_obj_align(bp, LV_ALIGN_TOP_LEFT, ui_px(8) + side_w + gap + card_w + gap, y);
         lv_obj_add_event_cb(bp, on_jog, LV_EVENT_CLICKED, (void *)(intptr_t)(a * 2 + 1));
     }
 
-    /* 归位行（Y 起始 204，与 Z 行底 198 留 6px 间隙，不遮挡） */
+    /* 归位行：三枚按钮三分内容宽 */
     static const struct { const char *icon, *t; int axis; } homes[] = {
         {LV_SYMBOL_HOME, "XY", 0}, {LV_SYMBOL_HOME, "Z", 2}, {LV_SYMBOL_HOME, "全部", -1},
     };
+    int hw = (ui_content_w() - 2 * gap) / 3;
     for (int i = 0; i < 3; i++) {
         lv_obj_t *b = theme_button(scr, homes[i].icon, homes[i].t, i == 2);
-        lv_obj_set_size(b, 96, 30);
-        lv_obj_align(b, LV_ALIGN_BOTTOM_LEFT, 8 + i * 104, -6);
+        lv_obj_set_size(b, hw, ui_px(30));
+        lv_obj_align(b, LV_ALIGN_BOTTOM_LEFT, ui_px(8) + i * (hw + gap), -ui_px(6));
         lv_obj_add_event_cb(b, on_home, LV_EVENT_CLICKED, (void *)(intptr_t)homes[i].axis);
     }
     /* 注：mock 的 Home XY 简化为归 X（演示用） */

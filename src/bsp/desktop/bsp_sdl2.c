@@ -1,6 +1,7 @@
 /*
  * BSP: desktop（SDL2，Windows/Linux 同构）
- * 逻辑分辨率与 CYD 2432S028R 一致（320x240 横屏），窗口 2x 缩放，鼠标模拟触摸。
+ * 默认逻辑分辨率与 CYD 2432S028R 一致（320x240 横屏），窗口 2x 缩放，鼠标模拟触摸。
+ * 环境变量 KLIPPER_RES=WxH 可模拟其它板型分辨率（如 KLIPPER_RES=800x480 模拟 JC8048W550）。
  */
 #include "bsp.h"
 
@@ -8,12 +9,22 @@
 #include <stdlib.h>
 #include <string.h>
 
+static int scr_w = 320, scr_h = 240;
+
 void bsp_init(void)
 {
+    const char *res = getenv("KLIPPER_RES");
+    if (res) {
+        int w = 0, h = 0;
+        if (sscanf(res, "%dx%d", &w, &h) == 2 && w >= 240 && h >= 240) {
+            scr_w = w; scr_h = h;
+        }
+    }
+
     lv_init();
 
-    lv_display_t *disp = lv_sdl_window_create(320, 240);
-    lv_sdl_window_set_zoom(disp, 2);
+    lv_display_t *disp = lv_sdl_window_create(scr_w, scr_h);
+    lv_sdl_window_set_zoom(disp, scr_w <= 320 ? 2 : 1);
     lv_sdl_window_set_title(disp, "Klipper Remote (desktop)");
     lv_sdl_mouse_create();
 }
@@ -21,7 +32,7 @@ void bsp_init(void)
 /* ---------- 开机动画推屏（boot_anim 调用；首次调用时建全屏 canvas） ---------- */
 static lv_obj_t  *boot_scr;
 static lv_obj_t  *boot_canvas;
-static uint16_t  *boot_buf;      /* 320*240 */
+static uint16_t  *boot_buf;      /* scr_w * scr_h */
 
 static void boot_cleanup_cb(lv_timer_t *t)
 {
@@ -36,18 +47,18 @@ static void boot_cleanup_cb(lv_timer_t *t)
 void bsp_lcd_push(int x, int y, int w, int h, const uint16_t *px)
 {
     if (!boot_buf) {
-        boot_buf = malloc(320 * 240 * 2);
+        boot_buf = malloc((size_t)scr_w * scr_h * 2);
         if (!boot_buf) return;
-        memset(boot_buf, 0, 320 * 240 * 2);
+        memset(boot_buf, 0, (size_t)scr_w * scr_h * 2);
         boot_scr = lv_obj_create(NULL);
         lv_obj_set_style_bg_color(boot_scr, lv_color_black(), 0);
         lv_screen_load(boot_scr);
         boot_canvas = lv_canvas_create(boot_scr);
-        lv_canvas_set_buffer(boot_canvas, boot_buf, 320, 240, LV_COLOR_FORMAT_RGB565);
+        lv_canvas_set_buffer(boot_canvas, boot_buf, scr_w, scr_h, LV_COLOR_FORMAT_RGB565);
         lv_timer_create(boot_cleanup_cb, 100, NULL);   /* 动画播完进主循环后自动清理 */
     }
     for (int r = 0; r < h; r++)
-        memcpy(boot_buf + (y + r) * 320 + x, px + (size_t)r * w, (size_t)w * 2);
+        memcpy(boot_buf + (size_t)(y + r) * scr_w + x, px + (size_t)r * w, (size_t)w * 2);
     lv_obj_invalidate(boot_canvas);
     lv_refr_now(NULL);
 }

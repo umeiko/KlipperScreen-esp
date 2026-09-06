@@ -17,8 +17,15 @@
 #define LV_FONT_MONTSERRAT_16 1
 #define LV_FONT_MONTSERRAT_24 1
 #define LV_FONT_MONTSERRAT_28 1
+#define LV_FONT_MONTSERRAT_32 1   /* 大屏（800x480）图标档 */
+#define LV_FONT_MONTSERRAT_48 1   /* 大屏大号数字档 */
 
 /* 截图 */
 #define LV_USE_SNAPSHOT 1
+
+/* 压缩字体（font_cjk 全表 GB2312 6840 字走 RLE，否则 flash 放不下） */
+#define LV_USE_FONT_COMPRESSED 1
+/* 大字体支持（28/32 全表 glyph 索引超 20bit） */
+#define LV_FONT_FMT_TXT_LARGE 1
 
 #endif /* LV_CONF_H */

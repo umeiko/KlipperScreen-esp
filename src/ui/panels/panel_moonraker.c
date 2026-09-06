@@ -82,23 +82,26 @@ static void open_text_dialog(const char *title, char *target, size_t cap,
 
     txt_overlay = lv_obj_create(lv_layer_top());
     lv_obj_remove_style_all(txt_overlay);
-    lv_obj_set_size(txt_overlay, 320, 240);
+    lv_obj_set_size(txt_overlay, ui_scr_w(), ui_scr_h());
     lv_obj_set_style_bg_color(txt_overlay, theme_col(THEME_COL_BG), 0);
     lv_obj_set_style_bg_opa(txt_overlay, LV_OPA_COVER, 0);
 
     lv_obj_t *lbl = theme_label(txt_overlay, title, THEME_FONT_M, THEME_COL_TEXT);
-    lv_obj_align(lbl, LV_ALIGN_TOP_MID, 0, 8);
+    lv_obj_align(lbl, LV_ALIGN_TOP_MID, 0, ui_px(8));
 
     ta = lv_textarea_create(txt_overlay);
     lv_obj_set_style_text_font(ta, THEME_FONT_S, 0);
     lv_textarea_set_one_line(ta, true);
     lv_textarea_set_text(ta, target);
-    lv_obj_set_width(ta, 300);
-    lv_obj_align(ta, LV_ALIGN_TOP_MID, 0, 34);
+    lv_obj_set_width(ta, ui_px(300));
+    lv_obj_align(ta, LV_ALIGN_TOP_MID, 0, ui_px(34));
 
     lv_obj_t *kb = lv_keyboard_create(txt_overlay);
-    lv_obj_set_size(kb, 320, 130);
+    lv_obj_set_size(kb, ui_scr_w(), ui_px(150));
     lv_obj_align(kb, LV_ALIGN_BOTTOM_MID, 0, 0);
+    /* 按键字符随屏幕档位放大：用 montserrat 图标档（16→32），
+       不能用 font_cjk —— 键盘的 确定/退格 等是 LV_SYMBOL 字形，CJK 字体不含会变方框 */
+    lv_obj_set_style_text_font(kb, ui_font_icon(), LV_PART_ITEMS);
     lv_keyboard_set_textarea(kb, ta);
     lv_obj_add_event_cb(kb, on_txt_ready, LV_EVENT_READY, NULL);
     lv_obj_add_event_cb(kb, on_txt_cancel, LV_EVENT_CANCEL, NULL);
@@ -156,24 +159,24 @@ static lv_obj_t *make_row(lv_obj_t *parent, const char *key, lv_obj_t **val_lbl,
                           const void *icon)
 {
     lv_obj_t *row = theme_card(parent);
-    lv_obj_set_size(row, 304, 38);
+    lv_obj_set_size(row, ui_content_w(), ui_px(38));
     lv_obj_align(row, LV_ALIGN_TOP_MID, 0, y);
     lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
 
-    int text_x = 2;
+    int text_x = ui_px(2);
     if (icon) {
         lv_obj_t *ic = theme_img(row, icon, THEME_COL_TEXT_DIM);
-        lv_obj_align(ic, LV_ALIGN_LEFT_MID, 2, 0);
-        text_x = 22;
+        lv_obj_align(ic, LV_ALIGN_LEFT_MID, ui_px(2), 0);
+        text_x = ui_px(22);
     }
     lv_obj_t *k = theme_label(row, key, THEME_FONT_M, THEME_COL_TEXT);
     lv_obj_align(k, LV_ALIGN_LEFT_MID, text_x, 0);
 
     *val_lbl = theme_label(row, "", THEME_FONT_S, THEME_COL_TEXT_DIM);
-    lv_obj_set_width(*val_lbl, 200);
+    lv_obj_set_width(*val_lbl, ui_px(200));
     lv_label_set_long_mode(*val_lbl, LV_LABEL_LONG_SCROLL_CIRCULAR);
     lv_obj_set_style_text_align(*val_lbl, LV_TEXT_ALIGN_RIGHT, 0);
-    lv_obj_align(*val_lbl, LV_ALIGN_RIGHT_MID, -4, 0);
+    lv_obj_align(*val_lbl, LV_ALIGN_RIGHT_MID, -ui_px(4), 0);
     return row;
 }
 
@@ -235,29 +238,29 @@ static lv_obj_t *create(void)
     lv_obj_set_style_bg_color(scr, theme_col(THEME_COL_BG), 0);
     lv_obj_set_scroll_dir(scr, LV_DIR_VER);   /* 6 行超出 240 高，允许上下滚动 */
 
-    int y = THEME_TITLEBAR_H + 6;
+    int y = THEME_TITLEBAR_H + ui_px(6);
     lv_obj_t *r;
-    r = make_row(scr, "切换打印机", &lbl_switch, y, &img_swap_16);
+    r = make_row(scr, "切换打印机", &lbl_switch, y, ui_icon(&img_swap_16, &img_swap_32));
     lv_obj_add_event_cb(r, on_switch_click, LV_EVENT_CLICKED, NULL);
-    r = make_row(scr, "主机", &lbl_host, y + 44, NULL);
+    r = make_row(scr, "主机", &lbl_host, y + ui_px(44), NULL);
     lv_obj_add_event_cb(r, on_host_click, LV_EVENT_CLICKED, NULL);
-    r = make_row(scr, "端口", &lbl_port, y + 88, NULL);
+    r = make_row(scr, "端口", &lbl_port, y + ui_px(88), NULL);
     lv_obj_add_event_cb(r, on_port_click, LV_EVENT_CLICKED, NULL);
-    r = make_row(scr, "API Key", &lbl_key, y + 132, NULL);
+    r = make_row(scr, "API Key", &lbl_key, y + ui_px(132), NULL);
     lv_obj_add_event_cb(r, on_key_click, LV_EVENT_CLICKED, NULL);
 
     /* 连接状态行（不可点） */
     lv_obj_t *srow = theme_card(scr);
-    lv_obj_set_size(srow, 304, 38);
-    lv_obj_align(srow, LV_ALIGN_TOP_MID, 0, y + 176);
+    lv_obj_set_size(srow, ui_content_w(), ui_px(38));
+    lv_obj_align(srow, LV_ALIGN_TOP_MID, 0, y + ui_px(176));
     lv_obj_t *k = theme_label(srow, "状态", THEME_FONT_M, THEME_COL_TEXT);
-    lv_obj_align(k, LV_ALIGN_LEFT_MID, 2, 0);
+    lv_obj_align(k, LV_ALIGN_LEFT_MID, ui_px(2), 0);
     lbl_status = theme_label(srow, "", THEME_FONT_S, THEME_COL_TEXT_DIM);
-    lv_obj_align(lbl_status, LV_ALIGN_RIGHT_MID, -4, 0);
+    lv_obj_align(lbl_status, LV_ALIGN_RIGHT_MID, -ui_px(4), 0);
 
     lv_obj_t *btn = theme_button(scr, LV_SYMBOL_SAVE, "保存并连接", 1);
-    lv_obj_set_size(btn, 304, 36);
-    lv_obj_align(btn, LV_ALIGN_TOP_MID, 0, y + 222);
+    lv_obj_set_size(btn, ui_content_w(), ui_px(36));
+    lv_obj_align(btn, LV_ALIGN_TOP_MID, 0, y + ui_px(222));
     lv_obj_add_event_cb(btn, on_save_click, LV_EVENT_CLICKED, NULL);
 
     on_show();   /* 读当前槽并刷新行 */

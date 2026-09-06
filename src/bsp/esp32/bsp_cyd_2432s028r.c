@@ -2,6 +2,9 @@
  * BSP: CYD ESP32-2432S028R（2.8" 240x320 ILI9341 + XPT2046 电阻触摸）
  * 逻辑分辨率 320x240 横屏。
  */
+#include "sdkconfig.h"
+#if CONFIG_BOARD_CYD_2432S028R
+
 #include "bsp.h"
 
 #include <math.h>
@@ -350,9 +353,11 @@ static void touch_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
     static uint16_t last_rx, last_ry;       /* 最近一次有效按压的原始坐标 */
     static int64_t last_valid_us;           /* 最近一次有效按压的时间戳 */
     static bool pressing;                   /* 是否处于一次按压过程中 */
+    static bool wake_swallow;               /* 息屏唤醒的那次按下：吞掉防误触 */
 
     uint16_t rx, ry;
     if (tp_read_raw(&rx, &ry)) {
+        if (screen_off) wake_swallow = true;    /* 息屏时的按下只为唤醒 */
         screen_activity();          /* 息屏唤醒 + 重置超时计时 */
         last_rx = rx;
         last_ry = ry;
@@ -365,6 +370,11 @@ static void touch_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
         ry = last_ry;
     } else {
         pressing = false;
+        wake_swallow = false;                   /* 抬手，恢复交互 */
+        data->state = LV_INDEV_STATE_RELEASED;
+        return;
+    }
+    if (wake_swallow) {                         /* 唤醒点击不触发任何元素 */
         data->state = LV_INDEV_STATE_RELEASED;
         return;
     }
@@ -528,3 +538,5 @@ void bsp_restart(void)
     vTaskDelay(pdMS_TO_TICKS(800));
     esp_restart();
 }
+
+#endif /* CONFIG_BOARD_CYD_2432S028R */

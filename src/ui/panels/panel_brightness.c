@@ -36,23 +36,24 @@ static lv_obj_t *create(void)
     int pct = settings_load_brightness();
 
     lv_obj_t *card = theme_card(scr);
-    lv_obj_set_size(card, 304, 150);
-    lv_obj_align(card, LV_ALIGN_TOP_MID, 0, THEME_TITLEBAR_H + 8);
+    /* 卡片撑满标题栏到底边的空间（大屏不再上半截卡片、下半截空白） */
+    lv_obj_set_size(card, ui_content_w(), ui_scr_h() - THEME_TITLEBAR_H - ui_px(16));
+    lv_obj_align(card, LV_ALIGN_TOP_MID, 0, THEME_TITLEBAR_H + ui_px(8));
 
     /* 大号百分比（仅数字/ASCII，可用 XL 字体） */
     lbl_pct = theme_label(card, "", THEME_FONT_XL, THEME_COL_TEXT);
-    lv_obj_align(lbl_pct, LV_ALIGN_TOP_MID, 0, 10);
+    lv_obj_align(lbl_pct, LV_ALIGN_TOP_MID, 0, ui_px(10));
     update_label(pct);
 
     lv_obj_t *slider = lv_slider_create(card);
-    lv_obj_set_size(slider, 264, 16);
-    lv_obj_align(slider, LV_ALIGN_BOTTOM_MID, 0, -30);
+    lv_obj_set_size(slider, ui_px(264), ui_px(16));
+    lv_obj_align(slider, LV_ALIGN_BOTTOM_MID, 0, ui_px(-30));
     lv_slider_set_range(slider, 0, 100);
     lv_slider_set_value(slider, pct, LV_ANIM_OFF);
     lv_obj_set_style_bg_color(slider, theme_col(THEME_COL_SURFACE2), LV_PART_MAIN);
     lv_obj_set_style_bg_color(slider, theme_col(THEME_COL_ACCENT), LV_PART_INDICATOR);
     lv_obj_set_style_bg_color(slider, theme_col(THEME_COL_TEXT), LV_PART_KNOB);
-    lv_obj_set_style_pad_all(slider, 4, LV_PART_KNOB);   /* 加粗把手方便点按 */
+    lv_obj_set_style_pad_all(slider, ui_px(4), LV_PART_KNOB);   /* 加粗把手方便点按 */
     lv_obj_add_event_cb(slider, on_slider_change, LV_EVENT_VALUE_CHANGED, NULL);
     lv_obj_add_event_cb(slider, on_slider_change, LV_EVENT_RELEASED, NULL);
 

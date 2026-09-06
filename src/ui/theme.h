@@ -1,9 +1,10 @@
 #pragma once
 /*
  * 主题：全局配色 / 字号 / 间距，及通用控件构造助手。
- * 单一基准尺寸派生布局：320x240 基准，大屏由 THEME.scale 放大（后续接 Kconfig）。
+ * 尺寸以 320x240 为基准，经 ui_layout 按屏幕高度等比放大（见 ui_layout.h）。
  */
 #include "lvgl.h"
+#include "ui_layout.h"
 #include <stddef.h>
 
 #ifdef __cplusplus
@@ -23,22 +24,20 @@ extern "C" {
 #define THEME_COL_TEXT      0xE8EAED
 #define THEME_COL_TEXT_DIM  0x8B93A1
 
-/* 尺寸 */
-#define THEME_TITLEBAR_H    28
-#define THEME_RADIUS_CARD   8
-#define THEME_RADIUS_BTN    6
-#define THEME_PAD           8
-#define THEME_GAP           6
+/* 尺寸（320x240 基准值，经 ui_px 缩放） */
+#define THEME_TITLEBAR_H    ui_px(28)
+#define THEME_RADIUS_CARD   ui_px(8)
+#define THEME_RADIUS_BTN    ui_px(6)
+#define THEME_PAD           ui_px(8)
+#define THEME_GAP           ui_px(6)
 
-/* 字体：CJK 子集（simhei，ASCII+界面用字）；大号数字用 Montserrat；符号图标用 Montserrat（内含 LV_SYMBOL 字形） */
-LV_FONT_DECLARE(font_cjk_14);
-LV_FONT_DECLARE(font_cjk_16);
-
-#define THEME_FONT_S   (&font_cjk_14)
-#define THEME_FONT_M   (&font_cjk_16)
-#define THEME_FONT_L   (&lv_font_montserrat_24)   /* 仅数字/ASCII */
-#define THEME_FONT_XL  (&lv_font_montserrat_28)   /* 仅数字/ASCII */
-#define THEME_FONT_ICON (&lv_font_montserrat_16)  /* LV_SYMBOL_* 图标 */
+/* 字体：CJK 子集（simhei，ASCII+界面用字）；大号数字用 Montserrat；符号图标用 Montserrat（内含 LV_SYMBOL 字形）。
+   字号随屏幕缩放档位切换（见 ui_layout.c） */
+#define THEME_FONT_S    ui_font_s()
+#define THEME_FONT_M    ui_font_m()
+#define THEME_FONT_L    ui_font_l()     /* 仅数字/ASCII */
+#define THEME_FONT_XL   ui_font_xl()    /* 仅数字/ASCII */
+#define THEME_FONT_ICON ui_font_icon()  /* LV_SYMBOL_* 图标 */
 
 lv_color_t theme_col(uint32_t hex);
 

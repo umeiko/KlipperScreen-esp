@@ -22,7 +22,7 @@ static void show_status(const char *text)
 {
     lv_obj_clean(list);
     lv_obj_t *l = theme_label(list, text, THEME_FONT_S, THEME_COL_TEXT_DIM);
-    lv_obj_set_width(l, 284);
+    lv_obj_set_width(l, ui_content_w());
     lv_obj_set_style_text_align(l, LV_TEXT_ALIGN_CENTER, 0);
 }
 
@@ -36,9 +36,10 @@ static void rebuild_rows(void)
         return;
     }
     lv_obj_clean(list);
+    int row_w = ui_content_w();   /* 行撑满列表宽（list 无内边距），大屏不右侧留白 */
     for (int i = 0; i < file_count; i++) {
         lv_obj_t *row = theme_card(list);
-        lv_obj_set_size(row, 284, 40);
+        lv_obj_set_size(row, row_w, ui_px(40));
         lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_add_event_cb(row, on_row, LV_EVENT_CLICKED, (void *)(intptr_t)i);
 
@@ -46,9 +47,9 @@ static void rebuild_rows(void)
         lv_obj_align(ic, LV_ALIGN_LEFT_MID, 0, 0);
 
         lv_obj_t *name = theme_label(row, files[i].name, THEME_FONT_S, THEME_COL_TEXT);
-        lv_obj_set_width(name, 190);
+        lv_obj_set_width(name, row_w - 2 * THEME_PAD - ui_px(24) - ui_px(70));
         lv_label_set_long_mode(name, LV_LABEL_LONG_SCROLL_CIRCULAR);
-        lv_obj_align(name, LV_ALIGN_LEFT_MID, 24, 0);
+        lv_obj_align(name, LV_ALIGN_LEFT_MID, ui_px(24), 0);
 
         char sz[20];
         if (files[i].size >= 1024 * 1024) {
@@ -58,7 +59,7 @@ static void rebuild_rows(void)
             snprintf(sz, sizeof(sz), "%uKB", (unsigned)(files[i].size / 1024 + 1));
         }
         lv_obj_t *size = theme_label(row, sz, THEME_FONT_S, THEME_COL_TEXT_DIM);
-        lv_obj_align(size, LV_ALIGN_RIGHT_MID, -4, 0);
+        lv_obj_align(size, LV_ALIGN_RIGHT_MID, -ui_px(4), 0);
     }
 }
 
@@ -106,8 +107,8 @@ static lv_obj_t *create(void)
 
     list = lv_obj_create(scr);
     lv_obj_remove_style_all(list);
-    lv_obj_set_size(list, 304, 240 - THEME_TITLEBAR_H - 12);
-    lv_obj_align(list, LV_ALIGN_TOP_MID, 0, THEME_TITLEBAR_H + 4);
+    lv_obj_set_size(list, ui_content_w(), ui_scr_h() - THEME_TITLEBAR_H - ui_px(12));
+    lv_obj_align(list, LV_ALIGN_TOP_MID, 0, THEME_TITLEBAR_H + ui_px(4));
     lv_obj_set_flex_flow(list, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(list, THEME_GAP, 0);
     lv_obj_set_scrollbar_mode(list, LV_SCROLLBAR_MODE_AUTO);

@@ -1,27 +1,29 @@
 /*
  * 「Umeko」霓虹描边开机动画 —— 平台无关核心（参考 .reff/boot_animation 的 TFT_eSPI 版）。
- * 渲染到 RAM 行缓冲（320x64 分带），由平台回调推屏，避免逐像素 SPI 开销。
+ * 渲染到 RAM 行缓冲（屏宽 x 64 行分带），由平台回调推屏，避免逐像素 SPI 开销。
+ * 画面尺寸/Logo 缩放从默认 display 分辨率推导（320x240 与 800x480 通用）。
  */
 #include "boot_anim.h"
 #include "assets/boot_logo_path.h"
+#include "lvgl.h"
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
 
-/* 画面 320x240；Logo 数据以 280x240 居中生成，中心右移 20px 适配 */
-#define NEON_CX 160
-#define NEON_CY 120
+/* Logo 数据以 320x240 画面（中心 160,120、Logo 约 280x240）为基准生成，
+ * 运行时按屏幕高度等比放大并居中 */
+static int scr_w = 320, scr_h = 240;
+static int logo_k = 100;         /* Logo 缩放（%）：scr_h/240*100 */
+static int neon_cx = 160, neon_cy = 120;
 
 /* 以画面中心为原点的缩放变换（s 为百分比）。不钳位：大景别时 Logo 超屏，
  * 越界点由 zfb_plot 丢弃，形成镜头太近、后拉逐渐入画的效果 */
-static inline int neon_sx(int x, int s) { return NEON_CX + (x - NEON_CX) * s / 100; }
-static inline int neon_sy(int y, int s) { return NEON_CY + (y - NEON_CY) * s / 100; }
+static inline int neon_sx(int x, int s) { return neon_cx + (x - 160) * s * logo_k / 10000; }
+static inline int neon_sy(int y, int s) { return neon_cy + (y - 120) * s * logo_k / 10000; }
 
-/* 行缓冲：Logo 区 y40~200，按 64 行分带 */
-#define ZFB_W  320
+/* 行缓冲：Logo 区为屏幕纵向中段 2/3，按 64 行分带 */
 #define ZFB_H  64
-#define ZFB_Y0 40
-#define ZFB_Y1 200
+static int zfb_y0 = 40, zfb_y1 = 200;
 
 static uint16_t *zfb;            /* 播放时 malloc，结束释放 */
 static int       zfb_y_base;     /* 当前带在屏幕上的 y 起点 */
@@ -33,10 +35,10 @@ static inline uint16_t rgb565(int r, int g, int b)
 
 static inline void zfb_plot(int x, int y, uint16_t c)
 {
-    if (x < 0 || x >= ZFB_W) return;
+    if (x < 0 || x >= scr_w) return;
     int ry = y - zfb_y_base;
     if (ry < 0 || ry >= ZFB_H) return;
-    zfb[ry * ZFB_W + x] = c;
+    zfb[ry * scr_w + x] = c;
 }
 
 /* 亮芯 + 四邻域光晕（霓虹灯管 bloom）；dim: 4 最亮 → 0 熄灭 */
@@ -70,26 +72,39 @@ static void neon_fill(int s, int level)
         int x0 = neon_sx(logo_fill_x0[i], s), x1 = neon_sx(logo_fill_x1[i], s);
         int y  = neon_sy(logo_fill_y[i], s);
         if (x0 < 0) x0 = 0;
-        if (x1 >= ZFB_W) x1 = ZFB_W - 1;
+        if (x1 >= scr_w) x1 = scr_w - 1;
         uint16_t c = rgb565(r, gg, b);
         for (int x = x0; x <= x1; x++) zfb_plot(x, y, c);
     }
 }
 
-/* 清屏：整幅黑（4 带覆盖 240 行） */
+/* 清屏：整幅黑（分带覆盖全高） */
 static void push_black(boot_anim_push_t push)
 {
-    memset(zfb, 0, ZFB_W * ZFB_H * sizeof(uint16_t));
-    for (int y = 0; y < 240; y += ZFB_H) {
-        int hh = 240 - y; if (hh > ZFB_H) hh = ZFB_H;
-        push(0, y, ZFB_W, hh, zfb);
+    memset(zfb, 0, (size_t)scr_w * ZFB_H * sizeof(uint16_t));
+    for (int y = 0; y < scr_h; y += ZFB_H) {
+        int hh = scr_h - y; if (hh > ZFB_H) hh = ZFB_H;
+        push(0, y, scr_w, hh, zfb);
     }
 }
 
 void boot_anim_play(boot_anim_push_t push, boot_anim_delay_t dly)
 {
     if (!push) return;
-    zfb = malloc(ZFB_W * ZFB_H * sizeof(uint16_t));
+
+    /* 画面几何从默认 display 分辨率推导（此时 LVGL display 已建好） */
+    lv_display_t *d = lv_display_get_default();
+    if (d) {
+        scr_w = lv_display_get_horizontal_resolution(d);
+        scr_h = lv_display_get_vertical_resolution(d);
+    }
+    neon_cx = scr_w / 2;
+    neon_cy = scr_h / 2;
+    logo_k  = scr_h * 100 / 240;
+    zfb_y0  = scr_h / 6;
+    zfb_y1  = scr_h * 5 / 6;
+
+    zfb = malloc((size_t)scr_w * ZFB_H * sizeof(uint16_t));
     if (!zfb) return;
     push_black(push);
 
@@ -105,10 +120,10 @@ void boot_anim_play(boot_anim_push_t push, boot_anim_delay_t dly)
         int sc = S_START - (int)((S_START - S_END) * ez);
         float et = t < 0.5f ? 4.0f * t * t * t
                             : 1.0f - powf(-2.0f * t + 2.0f, 3.0f) / 2.0f;  /* 描边缓入缓出 */
-        for (zfb_y_base = ZFB_Y0; zfb_y_base < ZFB_Y1; zfb_y_base += ZFB_H) {
-            int hh = ZFB_Y1 - zfb_y_base;
+        for (zfb_y_base = zfb_y0; zfb_y_base < zfb_y1; zfb_y_base += ZFB_H) {
+            int hh = zfb_y1 - zfb_y_base;
             if (hh > ZFB_H) hh = ZFB_H;
-            memset(zfb, 0, ZFB_W * hh * sizeof(uint16_t));
+            memset(zfb, 0, (size_t)scr_w * hh * sizeof(uint16_t));
             for (int s = 0; s < LOGO_SEG_CNT; s++) {
                 int off = logo_seg_off[s];
                 int n = logo_seg_off[s + 1] - off;
@@ -126,7 +141,7 @@ void boot_anim_play(boot_anim_push_t push, boot_anim_delay_t dly)
                 zfb_plot(neon_sx(logo_path_x[off + head], sc),
                          neon_sy(logo_path_y[off + head], sc), 0xFFFF);   /* 亮头纯白 */
             }
-            push(0, zfb_y_base, ZFB_W, hh, zfb);
+            push(0, zfb_y_base, scr_w, hh, zfb);
         }
         if (dly) dly(25);
     }
@@ -134,13 +149,13 @@ void boot_anim_play(boot_anim_push_t push, boot_anim_delay_t dly)
 
     /* 第二阶段：洗入渐变（88% 景别），每档后重描轮廓勾边 */
     for (int lvl = 1; lvl <= 5; lvl++) {
-        for (zfb_y_base = ZFB_Y0; zfb_y_base < ZFB_Y1; zfb_y_base += ZFB_H) {
-            int hh = ZFB_Y1 - zfb_y_base;
+        for (zfb_y_base = zfb_y0; zfb_y_base < zfb_y1; zfb_y_base += ZFB_H) {
+            int hh = zfb_y1 - zfb_y_base;
             if (hh > ZFB_H) hh = ZFB_H;
-            memset(zfb, 0, ZFB_W * hh * sizeof(uint16_t));
+            memset(zfb, 0, (size_t)scr_w * hh * sizeof(uint16_t));
             neon_fill(S_END, lvl);
             neon_outline(S_END, 4);
-            push(0, zfb_y_base, ZFB_W, hh, zfb);
+            push(0, zfb_y_base, scr_w, hh, zfb);
         }
         if (dly) dly(30);
     }
@@ -148,13 +163,13 @@ void boot_anim_play(boot_anim_push_t push, boot_anim_delay_t dly)
 
     /* 整体渐暗 */
     for (int d = 4; d >= 0; d--) {
-        for (zfb_y_base = ZFB_Y0; zfb_y_base < ZFB_Y1; zfb_y_base += ZFB_H) {
-            int hh = ZFB_Y1 - zfb_y_base;
+        for (zfb_y_base = zfb_y0; zfb_y_base < zfb_y1; zfb_y_base += ZFB_H) {
+            int hh = zfb_y1 - zfb_y_base;
             if (hh > ZFB_H) hh = ZFB_H;
-            memset(zfb, 0, ZFB_W * hh * sizeof(uint16_t));
+            memset(zfb, 0, (size_t)scr_w * hh * sizeof(uint16_t));
             neon_fill(S_END, d);
             neon_outline(S_END, d);
-            push(0, zfb_y_base, ZFB_W, hh, zfb);
+            push(0, zfb_y_base, scr_w, hh, zfb);
         }
         if (dly) dly(25);
     }

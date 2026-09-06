@@ -1,6 +1,8 @@
-# CYD 4MB Flash 分区表：WiFi 协议栈让固件超 1MB，factory 给到 2MB
+# CYD 4MB Flash 分区表：GB2312 全表字库（RLE 压缩后 14+16 两档 ~1.2MB）让固件到 ~2.9MB，
+# factory 给到 3.125MB（留 ~9% 余量），littlefs 压到 832KB（只存几个小 conf，足够）。
+# 注意：storage 偏移较旧版前移，升级后原设置丢失，需重配 WiFi/Moonraker。
 # Name,    Type, SubType, Offset,   Size,      Flags
 nvs,       data, nvs,     0x9000,   0x6000,
 phy_init,  data, phy,     0xf000,   0x1000,
-factory,   app,  factory, 0x10000,  0x200000,
-storage,   data, littlefs,,         0x1F0000,
+factory,   app,  factory, 0x10000,  0x320000,
+storage,   data, littlefs,,         0xD0000,

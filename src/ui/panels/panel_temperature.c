@@ -46,25 +46,25 @@ static void on_preset(lv_event_t *e)
 }
 
 static lv_obj_t *make_row(lv_obj_t *parent, const char *name, uint32_t col,
-                          const lv_image_dsc_t *icon,
+                          const lv_image_dsc_t *icon, int h,
                           lv_obj_t **cur_out, lv_obj_t **tgt_out, lv_event_cb_t cb)
 {
     lv_obj_t *row = theme_card(parent);
-    lv_obj_set_size(row, 304, 56);
+    lv_obj_set_size(row, ui_content_w(), h);
     lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(row, cb, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t *ic = theme_img(row, icon, col);
-    lv_obj_align(ic, LV_ALIGN_LEFT_MID, 4, 0);
+    lv_obj_align(ic, LV_ALIGN_LEFT_MID, ui_px(4), 0);
 
     lv_obj_t *name_lbl = theme_label(row, name, THEME_FONT_M, THEME_COL_TEXT);
-    lv_obj_align(name_lbl, LV_ALIGN_LEFT_MID, 44, 0);
+    lv_obj_align(name_lbl, LV_ALIGN_LEFT_MID, ui_px(44), 0);
 
     lv_obj_t *cur = theme_label(row, "--", THEME_FONT_L, col);
-    lv_obj_align(cur, LV_ALIGN_RIGHT_MID, -58, 0);
+    lv_obj_align(cur, LV_ALIGN_RIGHT_MID, -ui_px(58), 0);
 
     lv_obj_t *tgt = theme_label(row, "/0°", THEME_FONT_S, THEME_COL_TEXT_DIM);
-    lv_obj_align(tgt, LV_ALIGN_RIGHT_MID, -4, 6);
+    lv_obj_align(tgt, LV_ALIGN_RIGHT_MID, -ui_px(4), ui_px(6));
 
     *cur_out = cur;
     *tgt_out = tgt;
@@ -94,26 +94,34 @@ static lv_obj_t *create(void)
     lv_obj_t *scr = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(scr, theme_col(THEME_COL_BG), 0);
 
-    lv_obj_t *row_ext = make_row(scr, "Extruder", THEME_COL_EXTRUDER, &img_nozzle_32,
-                                 &lbl_ext_cur, &lbl_ext_tgt, on_row_ext);
-    lv_obj_align(row_ext, LV_ALIGN_TOP_MID, 0, THEME_TITLEBAR_H + 6);
+    /* 两张设备卡撑满标题栏与预设行之间的空间（大屏不留空带） */
+    int gap = ui_gap(6);
+    int y0 = THEME_TITLEBAR_H + gap;
+    int reserve_bottom = ui_px(36) + ui_px(12) + gap;   /* 预设行高 + 底边距 + 间隔 */
+    int card_h = (ui_scr_h() - y0 - reserve_bottom - gap) / 2;
 
-    lv_obj_t *row_bed = make_row(scr, "Heatbed", THEME_COL_BED, &img_bed_32,
+    lv_obj_t *row_ext = make_row(scr, "Extruder", THEME_COL_EXTRUDER, &img_nozzle_32, card_h,
+                                 &lbl_ext_cur, &lbl_ext_tgt, on_row_ext);
+    lv_obj_align(row_ext, LV_ALIGN_TOP_MID, 0, y0);
+
+    lv_obj_t *row_bed = make_row(scr, "Heatbed", THEME_COL_BED, &img_bed_32, card_h,
                                  &lbl_bed_cur, &lbl_bed_tgt, on_row_bed);
-    lv_obj_align(row_bed, LV_ALIGN_TOP_MID, 0, THEME_TITLEBAR_H + 68);
+    lv_obj_align(row_bed, LV_ALIGN_TOP_MID, 0, y0 + card_h + gap);
 
     /* 预设行 */
     static const char *names[] = {"PLA", "PETG", "ABS", "冷却"};
     lv_obj_t *row = lv_obj_create(scr);
     lv_obj_remove_style_all(row);
-    lv_obj_set_size(row, 304, 36);
-    lv_obj_align(row, LV_ALIGN_BOTTOM_MID, 0, -12);
+    lv_obj_set_size(row, ui_content_w(), ui_px(36));
+    lv_obj_align(row, LV_ALIGN_BOTTOM_MID, 0, -ui_px(12));
     lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(row, gap, 0);
 
+    int pw = (ui_content_w() - 3 * gap) / 4;
     for (int i = 0; i < 4; i++) {
         lv_obj_t *b = theme_button(row, NULL, names[i], 0);
-        lv_obj_set_size(b, 70, 34);
+        lv_obj_set_size(b, pw, ui_px(34));
         lv_obj_add_event_cb(b, on_preset, LV_EVENT_CLICKED, (void *)(intptr_t)i);
     }
 

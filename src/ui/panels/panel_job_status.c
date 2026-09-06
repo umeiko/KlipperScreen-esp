@@ -153,42 +153,51 @@ static lv_obj_t *create(void)
     lv_obj_t *scr = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(scr, theme_col(THEME_COL_BG), 0);
 
-    /* 进度环 */
+    /* 进度环：尺寸取可用空间，垂直居中于标题栏与底部按钮之间（大屏不留空带） */
+    int gap = ui_gap(8);
+    int content_top = THEME_TITLEBAR_H + ui_gap(8);
+    int content_bot = ui_scr_h() - ui_px(52);                 /* 按钮行高 36 + 底边距 8 + 间隔 */
+    int arc_sz = content_bot - content_top - ui_gap(8);
+    int arc_cap = ui_px(140);                                  /* 小屏 140，大屏 280 */
+    if (arc_sz > arc_cap) arc_sz = arc_cap;
+    int arc_y = content_top + (content_bot - content_top - arc_sz) / 2;
+
     arc = lv_arc_create(scr);
-    lv_obj_set_size(arc, 120, 120);
+    lv_obj_set_size(arc, arc_sz, arc_sz);
     lv_arc_set_rotation(arc, 270);
     lv_arc_set_bg_angles(arc, 0, 360);
     lv_arc_set_range(arc, 0, 100);
     lv_arc_set_value(arc, 0);   /* 清掉构造器默认的 135°~270° 指示弧 */
     lv_obj_remove_flag(arc, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_style_arc_color(arc, theme_col(THEME_COL_ACCENT), LV_PART_INDICATOR);
-    lv_obj_set_style_arc_width(arc, 9, LV_PART_MAIN);
-    lv_obj_set_style_arc_width(arc, 9, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_width(arc, ui_px(9), LV_PART_MAIN);
+    lv_obj_set_style_arc_width(arc, ui_px(9), LV_PART_INDICATOR);
     lv_obj_remove_style(arc, NULL, LV_PART_KNOB);
-    lv_obj_align(arc, LV_ALIGN_TOP_LEFT, 14, THEME_TITLEBAR_H + 12);
+    lv_obj_align(arc, LV_ALIGN_TOP_LEFT, ui_px(14), arc_y);
 
     lbl_pct = theme_label(arc, "0%", THEME_FONT_L, THEME_COL_TEXT);
     lv_obj_center(lbl_pct);
 
     /* 右侧信息（限制在进度环右边的竖栏内，避免与圆环重叠） */
     lbl_file = theme_label(scr, "", THEME_FONT_M, THEME_COL_TEXT);
-    lv_obj_set_width(lbl_file, 160);
+    lv_obj_set_width(lbl_file, ui_scr_w() - ui_px(14) * 2 - arc_sz - ui_px(20));
     lv_label_set_long_mode(lbl_file, LV_LABEL_LONG_SCROLL_CIRCULAR);
-    lv_obj_align(lbl_file, LV_ALIGN_TOP_RIGHT, -10, THEME_TITLEBAR_H + 26);
+    lv_obj_align(lbl_file, LV_ALIGN_TOP_RIGHT, -ui_px(10), arc_y + arc_sz / 2 - ui_px(22));
 
     lbl_time = theme_label(scr, "", THEME_FONT_S, THEME_COL_TEXT_DIM);
-    lv_obj_set_width(lbl_time, 160);
+    lv_obj_set_width(lbl_time, ui_scr_w() - ui_px(14) * 2 - arc_sz - ui_px(20));
     lv_obj_set_style_text_align(lbl_time, LV_TEXT_ALIGN_RIGHT, 0);
-    lv_obj_align(lbl_time, LV_ALIGN_TOP_RIGHT, -10, THEME_TITLEBAR_H + 54);
+    lv_obj_align(lbl_time, LV_ALIGN_TOP_RIGHT, -ui_px(10), arc_y + arc_sz / 2 + ui_px(6));
 
-    /* 底部按钮：暂停 / 取消 / 急停 */
+    /* 底部按钮：暂停 / 取消 / 急停（宽度三分内容区） */
+    int bw3 = (ui_content_w() - 2 * gap) / 3;
     btn_pause = theme_button(scr, NULL, NULL, 1);
-    lv_obj_set_size(btn_pause, 94, 36);
-    lv_obj_align(btn_pause, LV_ALIGN_BOTTOM_LEFT, 10, -8);
+    lv_obj_set_size(btn_pause, bw3, ui_px(36));
+    lv_obj_align(btn_pause, LV_ALIGN_BOTTOM_LEFT, ui_px(10), -ui_px(8));
     lv_obj_add_event_cb(btn_pause, on_pause, LV_EVENT_CLICKED, NULL);
     lv_obj_set_flex_flow(btn_pause, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(btn_pause, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_column(btn_pause, 4, 0);
+    lv_obj_set_style_pad_column(btn_pause, ui_px(4), 0);
     lbl_pause_icon = theme_label(btn_pause, LV_SYMBOL_PAUSE, THEME_FONT_ICON, THEME_COL_TEXT);
     lbl_pause_text = theme_label(btn_pause, "暂停", THEME_FONT_S, THEME_COL_TEXT);
 
@@ -196,15 +205,15 @@ static lv_obj_t *create(void)
     btn_cancel = theme_button(scr, LV_SYMBOL_STOP, "取消", 0);
     for (int i = 0, n = lv_obj_get_child_count(btn_cancel); i < n; i++)
         lv_obj_set_style_text_color(lv_obj_get_child(btn_cancel, i), theme_col(THEME_COL_ERROR), 0);
-    lv_obj_set_size(btn_cancel, 94, 36);
-    lv_obj_align(btn_cancel, LV_ALIGN_BOTTOM_MID, 0, -8);
+    lv_obj_set_size(btn_cancel, bw3, ui_px(36));
+    lv_obj_align(btn_cancel, LV_ALIGN_BOTTOM_MID, 0, -ui_px(8));
     lv_obj_add_event_cb(btn_cancel, on_cancel, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t *btn_estop_ = theme_button(scr, LV_SYMBOL_WARNING, "急停", 0);
     btn_estop = btn_estop_;
     lv_obj_set_style_bg_color(btn_estop, theme_col(THEME_COL_ERROR), 0);
-    lv_obj_set_size(btn_estop, 94, 36);
-    lv_obj_align(btn_estop, LV_ALIGN_BOTTOM_RIGHT, -10, -8);
+    lv_obj_set_size(btn_estop, bw3, ui_px(36));
+    lv_obj_align(btn_estop, LV_ALIGN_BOTTOM_RIGHT, -ui_px(10), -ui_px(8));
     lv_obj_add_event_cb(btn_estop, on_estop, LV_EVENT_CLICKED, NULL);
 
     /* 完成态状态文案：居中于进度环，取代百分比 */
@@ -213,15 +222,16 @@ static lv_obj_t *create(void)
     lv_obj_add_flag(lbl_state, LV_OBJ_FLAG_HIDDEN);
 
     /* 完成态按钮：重启（重打同一文件）/ 主菜单；初始隐藏 */
+    int bw2 = (ui_content_w() - gap) / 2;
     btn_restart = theme_button(scr, LV_SYMBOL_REFRESH, "重启", 1);
-    lv_obj_set_size(btn_restart, 146, 36);
-    lv_obj_align(btn_restart, LV_ALIGN_BOTTOM_LEFT, 10, -8);
+    lv_obj_set_size(btn_restart, bw2, ui_px(36));
+    lv_obj_align(btn_restart, LV_ALIGN_BOTTOM_LEFT, ui_px(10), -ui_px(8));
     lv_obj_add_event_cb(btn_restart, on_restart, LV_EVENT_CLICKED, NULL);
     lv_obj_add_flag(btn_restart, LV_OBJ_FLAG_HIDDEN);
 
     btn_home = theme_button(scr, LV_SYMBOL_HOME, "主菜单", 0);
-    lv_obj_set_size(btn_home, 146, 36);
-    lv_obj_align(btn_home, LV_ALIGN_BOTTOM_RIGHT, -10, -8);
+    lv_obj_set_size(btn_home, bw2, ui_px(36));
+    lv_obj_align(btn_home, LV_ALIGN_BOTTOM_RIGHT, -ui_px(10), -ui_px(8));
     lv_obj_add_event_cb(btn_home, on_home, LV_EVENT_CLICKED, NULL);
     lv_obj_add_flag(btn_home, LV_OBJ_FLAG_HIDDEN);
 

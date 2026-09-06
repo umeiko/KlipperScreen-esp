@@ -45,6 +45,7 @@ The same UI code also compiles as a **desktop simulator** (SDL2, Windows/Linux),
 ## Hardware
 
 - **ESP32-2432S028R** ("Cheap Yellow Display"): 320×240 ILI9341 TFT + XPT2046 resistive touch, WiFi
+- **JC8048W550** (Guition 5"): 800×480 ST7262 RGB TFT + GT911 capacitive touch, ESP32-S3 — **WIP** (flash package marked `-WIP`, expect rough edges; see [docs/jc8048w550-rgb-display-guide.md](docs/jc8048w550-rgb-display-guide.md))
 - Same LAN as the Klipper host (Moonraker reachable at `host:7125`)
 
 ## Flash (release zip)

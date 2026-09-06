@@ -84,13 +84,15 @@ static lv_obj_t *create(void)
     lv_obj_t *scr = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(scr, theme_col(THEME_COL_BG), 0);
 
-    /* 文件信息卡 */
+    /* 文件信息卡：撑满标题栏与底部按钮之间的空间 */
+    int gap = ui_gap(8);
+    int card_h = ui_scr_h() - (THEME_TITLEBAR_H + ui_px(4)) - (ui_px(44) + ui_px(12) + gap);
     lv_obj_t *card = theme_card(scr);
-    lv_obj_set_size(card, 304, 96);
-    lv_obj_align(card, LV_ALIGN_TOP_MID, 0, THEME_TITLEBAR_H + 4);
+    lv_obj_set_size(card, ui_content_w(), card_h);
+    lv_obj_align(card, LV_ALIGN_TOP_MID, 0, THEME_TITLEBAR_H + ui_px(4));
 
     lbl_name = theme_label(card, "", THEME_FONT_M, THEME_COL_TEXT);
-    lv_obj_set_width(lbl_name, 280);
+    lv_obj_set_width(lbl_name, ui_content_w() - 2 * THEME_PAD);
     lv_label_set_long_mode(lbl_name, LV_LABEL_LONG_WRAP);
     lv_obj_align(lbl_name, LV_ALIGN_TOP_LEFT, 0, 0);
 
@@ -98,19 +100,20 @@ static lv_obj_t *create(void)
     lv_obj_align(lbl_info, LV_ALIGN_BOTTOM_LEFT, 0, 0);
 
     /* 打印（主操作，accent） */
+    int bw = (ui_content_w() - gap) / 2;
     lv_obj_t *btn_print = theme_button(scr, LV_SYMBOL_PLAY, "打印", 1);
-    lv_obj_set_size(btn_print, 146, 44);
-    lv_obj_align(btn_print, LV_ALIGN_BOTTOM_LEFT, 8, -12);
+    lv_obj_set_size(btn_print, bw, ui_px(44));
+    lv_obj_align(btn_print, LV_ALIGN_BOTTOM_LEFT, ui_px(8), -ui_px(12));
     lv_obj_add_event_cb(btn_print, on_print, LV_EVENT_CLICKED, NULL);
 
     /* 删除（危险操作，红字；确认态文字由 update_ui/on_delete 维护） */
     lv_obj_t *btn_del = theme_button(scr, NULL, NULL, 0);
-    lv_obj_set_size(btn_del, 146, 44);
-    lv_obj_align(btn_del, LV_ALIGN_BOTTOM_RIGHT, -8, -12);
+    lv_obj_set_size(btn_del, bw, ui_px(44));
+    lv_obj_align(btn_del, LV_ALIGN_BOTTOM_RIGHT, -ui_px(8), -ui_px(12));
     lv_obj_add_event_cb(btn_del, on_delete, LV_EVENT_CLICKED, NULL);
     lv_obj_set_flex_flow(btn_del, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(btn_del, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_column(btn_del, 4, 0);
+    lv_obj_set_style_pad_column(btn_del, ui_px(4), 0);
     lv_obj_t *ic = theme_label(btn_del, LV_SYMBOL_TRASH, THEME_FONT_ICON, THEME_COL_ERROR);
     lbl_del_text = theme_label(btn_del, "删除", THEME_FONT_S, THEME_COL_ERROR);
 

@@ -1,0 +1,8 @@
+# JC8048W550 16MB Flash 分区表：大字库只链 28/32 两档、不压缩（压缩字形现场解压
+# 会让 RGB 屏滑动时轻微抖动），固件 ~8MB，factory 给到 8.5MB，其余 ~7.4MB 给 littlefs。
+# 注意：storage 偏移较旧版后移，升级后原设置丢失，需重配 WiFi/Moonraker。
+# Name,    Type, SubType, Offset,   Size,      Flags
+nvs,       data, nvs,     0x9000,   0x6000,
+phy_init,  data, phy,     0xf000,   0x1000,
+factory,   app,  factory, 0x10000,  0x880000,
+storage,   data, littlefs,,         0x770000,

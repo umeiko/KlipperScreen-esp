@@ -65,19 +65,19 @@ static void start_connect(const char *ssid, const char *pwd)
 
     conn_overlay = lv_obj_create(lv_layer_top());
     lv_obj_remove_style_all(conn_overlay);
-    lv_obj_set_size(conn_overlay, 320, 240);
+    lv_obj_set_size(conn_overlay, ui_scr_w(), ui_scr_h());
     lv_obj_set_style_bg_color(conn_overlay, lv_color_hex(0x000000), 0);
     lv_obj_set_style_bg_opa(conn_overlay, LV_OPA_60, 0);
 
     lv_obj_t *card = theme_card(conn_overlay);
-    lv_obj_set_size(card, 180, 110);
+    lv_obj_set_size(card, ui_px(180), ui_px(110));
     lv_obj_center(card);
     lv_obj_set_flex_flow(card, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(card, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_row(card, 10, 0);
+    lv_obj_set_style_pad_row(card, ui_px(10), 0);
 
     lv_obj_t *sp = lv_spinner_create(card);
-    lv_obj_set_size(sp, 44, 44);
+    lv_obj_set_size(sp, ui_px(44), ui_px(44));
     lv_obj_set_style_arc_color(sp, theme_col(THEME_COL_ACCENT), LV_PART_INDICATOR);
 
     char msg[64];
@@ -119,26 +119,29 @@ static void open_password_dialog(const char *ssid)
 
     pwd_overlay = lv_obj_create(lv_layer_top());
     lv_obj_remove_style_all(pwd_overlay);
-    lv_obj_set_size(pwd_overlay, 320, 240);
+    lv_obj_set_size(pwd_overlay, ui_scr_w(), ui_scr_h());
     lv_obj_set_style_bg_color(pwd_overlay, theme_col(THEME_COL_BG), 0);
     lv_obj_set_style_bg_opa(pwd_overlay, LV_OPA_COVER, 0);
 
     char title[64];
     snprintf(title, sizeof(title), TR("连接到 %s"), ssid);
     lv_obj_t *lbl = theme_label(pwd_overlay, title, THEME_FONT_M, THEME_COL_TEXT);
-    lv_obj_align(lbl, LV_ALIGN_TOP_MID, 0, 8);
+    lv_obj_align(lbl, LV_ALIGN_TOP_MID, 0, ui_px(8));
 
     ta_pwd = lv_textarea_create(pwd_overlay);
     lv_obj_set_style_text_font(ta_pwd, THEME_FONT_S, 0);   /* 占位符是中文，默认 montserrat 会变方框 */
     lv_textarea_set_one_line(ta_pwd, true);
     /* 不回显掩码：电阻屏点按本来就难，明文便于确认输没输对 */
     lv_textarea_set_placeholder_text(ta_pwd, TR("密码"));
-    lv_obj_set_width(ta_pwd, 300);
-    lv_obj_align(ta_pwd, LV_ALIGN_TOP_MID, 0, 34);
+    lv_obj_set_width(ta_pwd, ui_px(300));
+    lv_obj_align(ta_pwd, LV_ALIGN_TOP_MID, 0, ui_px(34));
 
     lv_obj_t *kb = lv_keyboard_create(pwd_overlay);
-    lv_obj_set_size(kb, 320, 130);
+    lv_obj_set_size(kb, ui_scr_w(), ui_px(150));
     lv_obj_align(kb, LV_ALIGN_BOTTOM_MID, 0, 0);
+    /* 按键字符随屏幕档位放大：用 montserrat 图标档（16→32），
+       不能用 font_cjk —— 键盘的 确定/退格 等是 LV_SYMBOL 字形，CJK 字体不含会变方框 */
+    lv_obj_set_style_text_font(kb, ui_font_icon(), LV_PART_ITEMS);
     lv_keyboard_set_textarea(kb, ta_pwd);
     lv_obj_add_event_cb(kb, on_kb_ready, LV_EVENT_READY, NULL);
     lv_obj_add_event_cb(kb, on_kb_cancel, LV_EVENT_CANCEL, NULL);
@@ -159,24 +162,24 @@ static void add_ap_row(int idx)
 
     lv_obj_t *row = theme_card(list);
     lv_obj_set_width(row, LV_PCT(100));
-    lv_obj_set_height(row, 44);
+    lv_obj_set_height(row, ui_px(44));
     lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(row, on_ap_clicked, LV_EVENT_CLICKED, (void *)ap);
 
     lv_obj_t *ssid = theme_label(row, ap->ssid, THEME_FONT_M, THEME_COL_TEXT);
-    lv_obj_align(ssid, LV_ALIGN_LEFT_MID, 2, 0);
-    lv_obj_set_width(ssid, 190);
+    lv_obj_align(ssid, LV_ALIGN_LEFT_MID, ui_px(2), 0);
+    lv_obj_set_width(ssid, ui_px(190));
     lv_label_set_long_mode(ssid, LV_LABEL_LONG_SCROLL_CIRCULAR);
 
     /* 右侧：加密/开放 + 信号强度四档图标 */
     lv_obj_t *sec = theme_label(row, ap->secure ? "加密" : "开放", THEME_FONT_S, THEME_COL_TEXT_DIM);
-    lv_obj_align(sec, LV_ALIGN_RIGHT_MID, -34, 0);
+    lv_obj_align(sec, LV_ALIGN_RIGHT_MID, -ui_px(34), 0);
 
     const lv_image_dsc_t *ic = ap->rssi > -55 ? &img_wifi_4 :
                                ap->rssi > -62 ? &img_wifi_3 :
                                ap->rssi > -72 ? &img_wifi_2 : &img_wifi_1;
     lv_obj_t *sig = theme_img(row, ic, THEME_COL_TEXT);
-    lv_obj_align(sig, LV_ALIGN_RIGHT_MID, -6, 0);
+    lv_obj_align(sig, LV_ALIGN_RIGHT_MID, -ui_px(6), 0);
 }
 
 static void build_list_from(int n)
@@ -185,7 +188,7 @@ static void build_list_from(int n)
 
     lv_obj_t *btn = theme_button(list, LV_SYMBOL_REFRESH, "重新扫描", 0);
     lv_obj_set_width(btn, LV_PCT(100));
-    lv_obj_set_height(btn, 40);
+    lv_obj_set_height(btn, ui_px(40));
     lv_obj_add_event_cb(btn, refresh_row_clicked, LV_EVENT_CLICKED, NULL);
 
     if (n <= 0) {
@@ -245,16 +248,16 @@ static lv_obj_t *create(void)
 
     list = lv_obj_create(scr);
     lv_obj_remove_style_all(list);
-    lv_obj_set_size(list, 304, 240 - THEME_TITLEBAR_H - 10);
-    lv_obj_align(list, LV_ALIGN_TOP_MID, 0, THEME_TITLEBAR_H + 4);
+    lv_obj_set_size(list, ui_content_w(), ui_scr_h() - THEME_TITLEBAR_H - ui_px(10));
+    lv_obj_align(list, LV_ALIGN_TOP_MID, 0, THEME_TITLEBAR_H + ui_px(4));
     lv_obj_set_flex_flow(list, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_row(list, 6, 0);
+    lv_obj_set_style_pad_row(list, ui_px(6), 0);
     lv_obj_set_scroll_dir(list, LV_DIR_VER);
 
     lbl_hint = theme_label(scr, "扫描中…", THEME_FONT_M, THEME_COL_TEXT_DIM);
-    lv_obj_set_width(lbl_hint, 304);
+    lv_obj_set_width(lbl_hint, ui_content_w());
     lv_obj_set_style_text_align(lbl_hint, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(lbl_hint, LV_ALIGN_TOP_MID, 0, THEME_TITLEBAR_H + 90);
+    lv_obj_align(lbl_hint, LV_ALIGN_TOP_MID, 0, THEME_TITLEBAR_H + ui_px(90));
 
     return scr;
 }

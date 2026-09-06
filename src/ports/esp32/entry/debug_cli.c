@@ -16,6 +16,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
+#include "esp_wifi.h"
 #include "bsp_wifi.h"
 #include "app_settings.h"
 #include "moonraker_client.h"
@@ -142,6 +143,22 @@ static void cmd_wifi(char *args)
     bsp_wifi_connect(args, pass[0] ? pass : NULL);
 }
 
+/* 排查「WiFi 与 RGB DMA 共存导致画面撕裂」用：临时关停/恢复 WiFi 驱动 */
+static void cmd_wifioff(void)
+{
+    esp_wifi_stop();
+    printf("wifi stopped (esp_wifi_stop)\n");
+}
+
+static void cmd_wifion(void)
+{
+    esp_wifi_start();
+    wifi_conf_t wc = {0};
+    if (settings_load_wifi(&wc) && wc.valid)
+        bsp_wifi_connect(wc.ssid, wc.pass[0] ? wc.pass : NULL);
+    printf("wifi restarted\n");
+}
+
 static void cmd_ps(void)
 {
     const char *st[] = {"standby", "printing", "paused", "complete",
@@ -203,12 +220,16 @@ static void cli_handle(char *line)
     if (sp) { *sp = 0; args = sp + 1; }
 
     if (!strcmp(line, "help")) {
-        printf("commands: help | scan | wifi <ssid> <pass> | mr <host> [port] | mrstart | status | ps\n"
-               "          printer <1-6> | gc <gcode> | ls [path] | cd <path> | pwd | cat <file> | rm <file>\n");
+        printf("commands: help | scan | wifi <ssid> <pass> | wifioff | wifion | mr <host> [port] | mrstart | status | ps\n"
+               "          printer <1-6> | gc <gcode> | ls [path] | cd <path> | pwd | cat <file> | rm <file> | lcdstat\n");
     } else if (!strcmp(line, "scan")) {
         cmd_scan();
     } else if (!strcmp(line, "wifi")) {
         cmd_wifi(args);
+    } else if (!strcmp(line, "wifioff")) {
+        cmd_wifioff();
+    } else if (!strcmp(line, "wifion")) {
+        cmd_wifion();
     } else if (!strcmp(line, "ps")) {
         cmd_ps();
     } else if (!strcmp(line, "gc")) {
@@ -230,6 +251,13 @@ static void cli_handle(char *line)
     } else if (!strcmp(line, "mrstart")) {
         moonraker_start();
         printf("moonraker_start() called\n");
+    } else if (!strcmp(line, "lcdstat")) {
+#if CONFIG_BOARD_JC8048W550
+        extern void bsp_lcd_stats_print(void);
+        bsp_lcd_stats_print();
+#else
+        printf("lcdstat: 仅 JC8048W550（rgb44）支持\n");
+#endif
     } else if (!strcmp(line, "status")) {
         printf("wifi=%s moonraker=%d rtt=%dms\n", wifi_state_str(bsp_wifi_status()),
                (int)moonraker_state(), printer_rtt_ms());

@@ -13,14 +13,14 @@
 static lv_obj_t *make_row(lv_obj_t *parent, const char *key, const char *val, int y)
 {
     lv_obj_t *row = theme_card(parent);
-    lv_obj_set_size(row, 304, 38);
+    lv_obj_set_size(row, ui_content_w(), ui_px(38));
     lv_obj_align(row, LV_ALIGN_TOP_MID, 0, y);
 
     lv_obj_t *k = theme_label(row, key, THEME_FONT_M, THEME_COL_TEXT);
-    lv_obj_align(k, LV_ALIGN_LEFT_MID, 2, 0);
+    lv_obj_align(k, LV_ALIGN_LEFT_MID, ui_px(2), 0);
 
     lv_obj_t *v = theme_label(row, val, THEME_FONT_S, THEME_COL_TEXT_DIM);
-    lv_obj_align(v, LV_ALIGN_RIGHT_MID, -4, 0);
+    lv_obj_align(v, LV_ALIGN_RIGHT_MID, -ui_px(4), 0);
     return row;
 }
 
@@ -76,15 +76,15 @@ static lv_obj_t *make_dropdown_row(lv_obj_t *scr, const char *key, const char *o
                                    int y, int sel, lv_event_cb_t cb, const void *icon)
 {
     lv_obj_t *row = theme_card(scr);
-    lv_obj_set_size(row, 304, 38);
+    lv_obj_set_size(row, ui_content_w(), ui_px(38));
     lv_obj_align(row, LV_ALIGN_TOP_MID, 0, y);
     lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);   /* 行内下拉拖动不卷动整页 */
 
-    int text_x = 2;
+    int text_x = ui_px(2);
     if (icon) {
         lv_obj_t *ic = theme_img(row, icon, THEME_COL_TEXT_DIM);
-        lv_obj_align(ic, LV_ALIGN_LEFT_MID, 2, 0);
-        text_x = 22;
+        lv_obj_align(ic, LV_ALIGN_LEFT_MID, ui_px(2), 0);
+        text_x = ui_px(22);
     }
     lv_obj_t *k = theme_label(row, key, THEME_FONT_M, THEME_COL_TEXT);
     lv_obj_align(k, LV_ALIGN_LEFT_MID, text_x, 0);
@@ -92,8 +92,8 @@ static lv_obj_t *make_dropdown_row(lv_obj_t *scr, const char *key, const char *o
     lv_obj_t *dd = lv_dropdown_create(row);
     lv_dropdown_set_options(dd, options);
     lv_dropdown_set_symbol(dd, NULL);   /* CJK 字库无 LV_SYMBOL_DOWN 字形，省得显示方框 */
-    lv_obj_set_size(dd, 100, 30);
-    lv_obj_align(dd, LV_ALIGN_RIGHT_MID, -2, 0);
+    lv_obj_set_size(dd, ui_px(100), ui_px(30));
+    lv_obj_align(dd, LV_ALIGN_RIGHT_MID, -ui_px(2), 0);
     lv_obj_set_style_text_font(dd, THEME_FONT_S, 0);
     lv_obj_set_style_text_color(dd, theme_col(THEME_COL_TEXT), 0);
     lv_obj_set_style_bg_color(dd, theme_col(THEME_COL_SURFACE2), 0);
@@ -101,8 +101,8 @@ static lv_obj_t *make_dropdown_row(lv_obj_t *scr, const char *key, const char *o
     /* 下拉列表：深色底，选中项更深一档；限高 120（列表从下拉框向上展开，
        再高顶端会顶出屏幕上沿，顶部选项够不着） */
     lv_obj_t *list = lv_dropdown_get_list(dd);
-    lv_obj_set_height(list, 120);
-    lv_obj_set_style_max_height(list, 120, 0);
+    lv_obj_set_height(list, ui_px(120));
+    lv_obj_set_style_max_height(list, ui_px(120), 0);
     lv_obj_set_style_text_font(list, THEME_FONT_S, 0);
     lv_obj_set_style_text_color(list, theme_col(THEME_COL_TEXT), 0);
     lv_obj_set_style_bg_color(list, theme_col(THEME_COL_SURFACE), 0);
@@ -116,20 +116,20 @@ static lv_obj_t *make_dropdown_row(lv_obj_t *scr, const char *key, const char *o
 static lv_obj_t *make_link_row(lv_obj_t *scr, const char *key, const char *val, int y, lv_event_cb_t cb)
 {
     lv_obj_t *row = theme_card(scr);
-    lv_obj_set_size(row, 304, 38);
+    lv_obj_set_size(row, ui_content_w(), ui_px(38));
     lv_obj_align(row, LV_ALIGN_TOP_MID, 0, y);
     lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(row, cb, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t *k = theme_label(row, key, THEME_FONT_M, THEME_COL_TEXT);
-    lv_obj_align(k, LV_ALIGN_LEFT_MID, 2, 0);
+    lv_obj_align(k, LV_ALIGN_LEFT_MID, ui_px(2), 0);
 
     lv_obj_t *arrow = theme_label(row, LV_SYMBOL_RIGHT, THEME_FONT_ICON, THEME_COL_ACCENT);
-    lv_obj_align(arrow, LV_ALIGN_RIGHT_MID, -4, 0);
+    lv_obj_align(arrow, LV_ALIGN_RIGHT_MID, -ui_px(4), 0);
 
     /* 值标签在箭头左侧 */
     lv_obj_t *v = theme_label(row, val, THEME_FONT_S, THEME_COL_TEXT_DIM);
-    lv_obj_align_to(v, arrow, LV_ALIGN_OUT_LEFT_MID, -4, 0);
+    lv_obj_align_to(v, arrow, LV_ALIGN_OUT_LEFT_MID, -ui_px(4), 0);
     return row;
 }
 
@@ -139,8 +139,8 @@ static lv_obj_t *create(void)
     lv_obj_set_style_bg_color(scr, theme_col(THEME_COL_BG), 0);
     lv_obj_set_scroll_dir(scr, LV_DIR_VER);   /* 7 行超出 240 高，允许上下滚动 */
 
-    make_link_row(scr, "无线网络", "", THEME_TITLEBAR_H + 4, open_wifi);
-    make_link_row(scr, "Moonraker 连接", "", THEME_TITLEBAR_H + 43, open_moonraker);
+    make_link_row(scr, "无线网络", "", THEME_TITLEBAR_H + ui_px(4), open_wifi);
+    make_link_row(scr, "Moonraker 连接", "", THEME_TITLEBAR_H + ui_px(43), open_moonraker);
 
     /* 语言：下拉选项按注册表动态生成（各语言母语名），切换后渐暗重启生效 */
     static char lang_opts[128];
@@ -148,13 +148,13 @@ static lv_obj_t *create(void)
     for (unsigned i = 0; i < ui_lang_count(); i++)
         lo_len += snprintf(lang_opts + lo_len, sizeof(lang_opts) - lo_len, "%s%s",
                            i ? "\n" : "", ui_lang_name((ui_lang_t)i));
-    make_dropdown_row(scr, "语言", lang_opts, THEME_TITLEBAR_H + 82,
-                      (int)ui_lang_get(), on_lang_select, &img_globe_16);
+    make_dropdown_row(scr, "语言", lang_opts, THEME_TITLEBAR_H + ui_px(82),
+                      (int)ui_lang_get(), on_lang_select, ui_icon(&img_globe_16, &img_globe_32));
 
     /* 背光：行内显示当前亮度，点击进滑杆调节 */
     char br[8];
     snprintf(br, sizeof(br), "%d%%", settings_load_brightness());
-    make_link_row(scr, "背光", br, THEME_TITLEBAR_H + 121, open_brightness);
+    make_link_row(scr, "背光", br, THEME_TITLEBAR_H + ui_px(121), open_brightness);
 
     /* 自动息屏：下拉选择超时（立即生效） */
     static char so_opts[96];   /* 按当前语言拼接选项 */
@@ -165,11 +165,11 @@ static lv_obj_t *create(void)
                            i ? "\n" : "", TR(so_labels[i]));
         if ((uint32_t)cur == so_values[i]) so_sel = (int)i;
     }
-    make_dropdown_row(scr, "自动息屏", so_opts, THEME_TITLEBAR_H + 160, so_sel,
+    make_dropdown_row(scr, "自动息屏", so_opts, THEME_TITLEBAR_H + ui_px(160), so_sel,
                       on_screen_off_select, NULL);
 
-    make_row(scr, "主题", "Dark", THEME_TITLEBAR_H + 199);
-    make_row(scr, "版本", "0.1.0-dev", THEME_TITLEBAR_H + 238);
+    make_row(scr, "主题", "Dark", THEME_TITLEBAR_H + ui_px(199));
+    make_row(scr, "版本", "0.1.0-dev", THEME_TITLEBAR_H + ui_px(238));
 
     return scr;
 }

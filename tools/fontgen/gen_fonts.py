@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-从 src/ui 的 C 源码字符串字面量中自动提取非 ASCII 字符，
-调用 lv_font_conv 重新生成 CJK 子集字体（font_cjk_14.c / font_cjk_16.c）。
+字体字符集 = GB2312 一级/二级汉字全表（6763 字，覆盖常见简体）+ src/ui 源码字面量扫描
+（补齐 ° ≥ … 等符号、繁体/法语/意语界面用词）。
+调用 lv_font_conv 生成 font_cjk_14/16/28/32.c。
 
 以后 UI 里新增中文/特殊字符后，只要重跑一次本脚本即可，不会再出现方框：
     python tools/fontgen/gen_fonts.py
@@ -30,7 +31,7 @@ DEFAULT_FONT = r"C:\Windows\Fonts\simhei.ttf"
 # 西文兜底字体：simhei 只覆盖拼音用拉丁字母（é/è/à/ê/ù…），缺 ç/ô/É 等，
 # Latin-1 补充区（0xA0-0xFF）整体由该字体补齐，避免法语/意语出现方框。
 DEFAULT_LATIN_FONT = r"C:\Windows\Fonts\arial.ttf"
-SIZES = (14, 16)
+SIZES = (14, 16, 28, 32)   # 14/16: 320x240 基准；28/32: 800x480 双倍档
 
 
 def iter_literals(path: Path):
@@ -101,6 +102,16 @@ def decode_literal(raw: str) -> bytes:
     return bytes(out)
 
 
+def gb2312_hanzi() -> str:
+    """GB2312 汉字区（0xB0A1-0xF7FE）全表 6763 字：文件名/SSID 等动态内容不再出方框。"""
+    chars = []
+    for row in range(0xB0, 0xF8):
+        # errors="ignore"：0xD7FA-0xD7FE 等个别码位未分配，直接跳过
+        chars.append(bytes(b for c in range(0xA1, 0xFF) for b in (row, c))
+                     .decode("gb2312", errors="ignore"))
+    return "".join(chars)
+
+
 def collect_chars() -> str:
     chars = set()
     for path in sorted(UI_DIR.rglob("*.[ch]")):
@@ -112,7 +123,7 @@ def collect_chars() -> str:
     return "".join(sorted(chars))
 
 
-def gen_font(font: str, latin_font: str, size: int, symbols: str) -> Path:
+def gen_font(font: str, latin_font: str, size: int, symbols: str, compress: bool) -> Path:
     out = ROOT / "src" / "ui" / "assets" / f"font_cjk_{size}.c"
     cmd = [
         "node", str(CONV_JS),
@@ -125,10 +136,13 @@ def gen_font(font: str, latin_font: str, size: int, symbols: str) -> Path:
         "--symbols", symbols,
         "--font", latin_font,
         "--range", "0xA0-0xFF",
-        "--no-compress",
         "-o", str(out),
     ]
-    print(f"[gen] size={size} -> {out.relative_to(ROOT)}")
+    # 14/16（CYD，4MB flash）压缩；28/32（JC8048，16MB flash 充裕）不压：
+    # 压缩字形要逐字形现场解压，渲染 CPU 开销大，实测在 RGB 大屏上滑动会轻微抖动
+    if not compress:
+        cmd.append("--no-compress")
+    print(f"[gen] size={size} compress={compress} -> {out.relative_to(ROOT)}")
     subprocess.run(cmd, check=True, cwd=ROOT)
     return out
 
@@ -152,12 +166,15 @@ def main() -> int:
         return 1
 
     symbols = collect_chars()
+    gb = gb2312_hanzi()
+    symbols = "".join(sorted(set(symbols) | set(gb)))
     CHARSET_OUT.parent.mkdir(exist_ok=True)
     CHARSET_OUT.write_text(symbols, encoding="utf-8")
-    print(f"[scan] {len(symbols)} 个非 ASCII 字符 -> {CHARSET_OUT.relative_to(ROOT)}")
+    print(f"[scan] GB2312 全表 {len(gb)} + 源码扫描，合计 {len(symbols)} 个非 ASCII 字符"
+          f" -> {CHARSET_OUT.relative_to(ROOT)}")
 
     for size in SIZES:
-        gen_font(args.font, args.font_latin, size, symbols)
+        gen_font(args.font, args.font_latin, size, symbols, compress=size <= 16)
     print("[done] 字体生成完成，重新编译固件/桌面端即可生效")
     return 0
 

@@ -41,11 +41,11 @@ lv_obj_t *toggle_group_create(lv_obj_t *parent, const char **items, int count,
     lv_obj_t *row = lv_obj_create(parent);
     lv_obj_remove_style_all(row);
     lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
-    lv_obj_set_style_pad_column(row, 4, 0);
+    lv_obj_set_style_pad_column(row, ui_px(4), 0);
 
     for (int i = 0; i < count; i++) {
         lv_obj_t *b = theme_button(row, NULL, items[i], 0);
-        lv_obj_set_height(b, 28);
+        lv_obj_set_height(b, ui_px(28));
         lv_obj_set_flex_grow(b, 1);
         lv_obj_set_user_data(b, (void *)(intptr_t)i);
         lv_obj_add_event_cb(b, on_click, LV_EVENT_CLICKED, ctx);

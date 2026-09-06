@@ -2,5 +2,6 @@ dependencies:
   lvgl/lvgl: "~9.3.0"
   espressif/esp_lcd_ili9341: "^1.2.0"
   atanisoft/esp_lcd_touch_xpt2046: "^1.0.6"
+  espressif/esp_lcd_touch_gt911: "^1.1.0"
   joltwallet/littlefs: "^1.20.0"
   espressif/esp_websocket_client: "^1.5.0"

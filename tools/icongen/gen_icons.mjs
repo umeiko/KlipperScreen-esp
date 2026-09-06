@@ -18,24 +18,35 @@ const PY = join(ROOT, 'tools/icongen/.venv/Scripts/python.exe');
 // [svg 名, 输出尺寸(px), C 变量名后缀]
 const ICONS = [
   ['heater',         28, 'heater'],        // 主菜单"温度"、温度面板
+  ['heater',         56, 'heater_56'],     // 大屏(800x480)主菜单 2x 变体
   ['extruder',       16, 'nozzle_16'],     // 标题栏喷嘴图标
   ['extruder',       32, 'nozzle_32'],     // 温度面板喷嘴大卡
   ['bed',            16, 'bed_16'],        // 标题栏热床图标
   ['bed',            32, 'bed_32'],        // 温度面板热床大卡
   ['move',           28, 'move'],
+  ['move',           56, 'move_56'],
   ['extrude',        28, 'extrude'],
+  ['extrude',        56, 'extrude_56'],
   ['files',          28, 'files'],
+  ['files',          56, 'files_56'],
   ['printer',        28, 'printer'],
+  ['printer',        56, 'printer_56'],
   ['settings',       28, 'settings'],
+  ['settings',       56, 'settings_56'],
   ['wifi_excellent', 18, 'wifi_4'],
   ['wifi_good',      18, 'wifi_3'],
   ['wifi_fair',      18, 'wifi_2'],
   ['wifi_weak',      18, 'wifi_1'],
   ['link_off',       16, 'link_off'],      // 主菜单状态卡：Moonraker 断连
+  ['link_off',       32, 'link_off_32'],   // 大屏 2x 变体
   ['link',           16, 'link'],          // 主菜单状态卡：已连接
+  ['link',           32, 'link_32'],
   ['alert_circle',   16, 'alert_circle'],  // 主菜单状态卡：Klipper 异常
+  ['alert_circle',   32, 'alert_circle_32'],
   ['web',            16, 'globe_16'],     // 设置-语言行小地球
+  ['web',            32, 'globe_32'],     // 大屏 2x 变体
   ['toolchanger',    16, 'swap_16'],      // Moonraker-切换打印机行：双向箭头
+  ['toolchanger',    32, 'swap_32'],      // 大屏 2x 变体
 ];
 
 mkdirSync(OUT_PNG, { recursive: true });

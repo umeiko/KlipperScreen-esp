@@ -1,0 +1,17 @@
+menu "Board selection"
+
+    choice BOARD
+        prompt "Target board"
+        default BOARD_CYD_2432S028R
+        help
+            选择要构建的固件产物（板型）。不同板型芯片不同（ESP32 / ESP32-S3），
+            还需配合对应的 sdkconfig（构建脚本 tools/build-esp32.sh 会自动处理）。
+
+        config BOARD_CYD_2432S028R
+            bool "CYD 2432S028R (ESP32, 320x240 ILI9341 + XPT2046)"
+
+        config BOARD_JC8048W550
+            bool "JC8048W550 (ESP32-S3, 800x480 ST7262 RGB + GT911)"
+    endchoice
+
+endmenu

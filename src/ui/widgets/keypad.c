@@ -52,17 +52,17 @@ void keypad_open(const char *title, float initial, keypad_cb_t callback, void *u
 
     overlay = lv_obj_create(lv_layer_top());
     lv_obj_remove_style_all(overlay);
-    lv_obj_set_size(overlay, 320, 240);
+    lv_obj_set_size(overlay, ui_scr_w(), ui_scr_h());
     lv_obj_set_style_bg_color(overlay, lv_color_hex(0x000000), 0);
     lv_obj_set_style_bg_opa(overlay, LV_OPA_60, 0);
     lv_obj_add_flag(overlay, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(overlay, on_overlay_click, LV_EVENT_CLICKED, NULL);
 
     card = theme_card(overlay);
-    lv_obj_set_size(card, 236, 210);
+    lv_obj_set_size(card, ui_px(236), ui_px(210));
     lv_obj_center(card);
     lv_obj_set_flex_flow(card, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_row(card, 6, 0);
+    lv_obj_set_style_pad_row(card, ui_px(6), 0);
 
     lv_obj_t *lbl_title = theme_label(card, title, THEME_FONT_S, THEME_COL_TEXT_DIM);
     lv_obj_align(lbl_title, LV_ALIGN_TOP_LEFT, 0, 0);
@@ -76,30 +76,30 @@ void keypad_open(const char *title, float initial, keypad_cb_t callback, void *u
     };
     lv_obj_t *grid = lv_obj_create(card);
     lv_obj_remove_style_all(grid);
-    lv_obj_set_size(grid, 216, 120);
+    lv_obj_set_size(grid, ui_px(216), ui_px(120));
     lv_obj_set_flex_flow(grid, LV_FLEX_FLOW_ROW_WRAP);
-    lv_obj_set_style_pad_gap(grid, 6, 0);
+    lv_obj_set_style_pad_gap(grid, ui_px(6), 0);
 
     for (int r = 0; r < 4; r++)
         for (int c = 0; c < 3; c++) {
             lv_obj_t *b = theme_button(grid, NULL, keys[r][c], 0);
-            lv_obj_set_size(b, 66, 26);
+            lv_obj_set_size(b, ui_px(66), ui_px(26));
             lv_obj_add_event_cb(b, on_key, LV_EVENT_CLICKED, (void *)keys[r][c]);
         }
 
     /* 底部：取消 / 确认 */
     lv_obj_t *row = lv_obj_create(card);
     lv_obj_remove_style_all(row);
-    lv_obj_set_size(row, 216, 30);
+    lv_obj_set_size(row, ui_px(216), ui_px(30));
     lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
     lv_obj_t *b_cancel = theme_button(row, LV_SYMBOL_CLOSE, "取消", 0);
-    lv_obj_set_size(b_cancel, 100, 28);
+    lv_obj_set_size(b_cancel, ui_px(100), ui_px(28));
     lv_obj_add_event_cb(b_cancel, on_key, LV_EVENT_CLICKED, "C");
 
     lv_obj_t *b_ok = theme_button(row, LV_SYMBOL_OK, "确定", 1);
-    lv_obj_set_size(b_ok, 100, 28);
+    lv_obj_set_size(b_ok, ui_px(100), ui_px(28));
     lv_obj_add_event_cb(b_ok, on_key, LV_EVENT_CLICKED, "OK");
 
     /* 不做入场动画：卡片 opa/scale 动画会强制 LVGL 建中间层缓冲（~100KB），

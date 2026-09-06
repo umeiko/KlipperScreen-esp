@@ -53,23 +53,23 @@ void ui_toast(const char *text, uint32_t accent_hex)
     lv_obj_t *top = lv_layer_top();
     lv_obj_t *toast = theme_card(top);
     /* 宽度给足，高度随内容：长错误文本自动换行，不溢出 */
-    lv_obj_set_size(toast, 300, LV_SIZE_CONTENT);
-    lv_obj_set_style_min_height(toast, 36, 0);
+    lv_obj_set_size(toast, ui_px(300), LV_SIZE_CONTENT);
+    lv_obj_set_style_min_height(toast, ui_px(36), 0);
     lv_obj_set_style_bg_color(toast, theme_col(accent_hex), 0);
-    lv_obj_set_style_radius(toast, 18, 0);
+    lv_obj_set_style_radius(toast, ui_px(18), 0);
 
     lv_obj_t *lbl = lv_label_create(toast);
     lv_label_set_text(lbl, ui_tr(text));
     lv_label_set_long_mode(lbl, LV_LABEL_LONG_WRAP);
-    lv_obj_set_width(lbl, 300 - 2 * THEME_PAD);
+    lv_obj_set_width(lbl, ui_px(300) - 2 * THEME_PAD);
     lv_obj_set_style_text_font(lbl, THEME_FONT_S, 0);   /* 不设会落到 montserrat_14，中文变方框 */
     lv_obj_set_style_text_color(lbl, theme_col(0xFFFFFF), 0);
     lv_obj_set_style_text_align(lbl, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_center(lbl);
 
-    lv_obj_align(toast, LV_ALIGN_TOP_MID, 0, -80);
+    lv_obj_align(toast, LV_ALIGN_TOP_MID, 0, -ui_px(80));
     /* 停在常驻标题栏下方，避免遮挡标题 */
-    ui_anim_to(toast, (lv_anim_exec_xcb_t)lv_obj_set_y, -80, THEME_TITLEBAR_H + 6, 350, lv_anim_path_ease_out);
+    ui_anim_to(toast, (lv_anim_exec_xcb_t)lv_obj_set_y, -ui_px(80), THEME_TITLEBAR_H + ui_px(6), 350, lv_anim_path_ease_out);
     ui_anim_after(2600, toast_slide_out, toast);
 }
 
