@@ -14,23 +14,7 @@ The same UI code also compiles as a **desktop simulator** (SDL2, Windows/Linux),
 
 ## Screenshots
 
-![Main — idle, temps in title bar](docs/screenshots/main_idle.png)
-
-![Main — Moonraker disconnected](docs/screenshots/main_offline.png)
-
-![Main — Klipper error](docs/screenshots/main_error.png)
-
-![G-code file history](docs/screenshots/files.png)
-
-![Printing — progress ring](docs/screenshots/printing.png)
-
-![Axis jog & homing](docs/screenshots/move.png)
-
-![Temperature presets](docs/screenshots/temperature.png)
-
-![Multi-printer switcher — 6 slots](docs/screenshots/printers.png)
-
-![Settings](docs/screenshots/settings.png)
+See the full interface gallery in the docs: **[界面展示 / Screenshots](https://umeiko.github.io/KlipperScreen-esp/screenshots/)**
 
 ## Features
 
@@ -45,8 +29,8 @@ The same UI code also compiles as a **desktop simulator** (SDL2, Windows/Linux),
 ## Hardware
 
 - **ESP32-2432S028R** ("Cheap Yellow Display"): 320×240 ILI9341 TFT + XPT2046 resistive touch, WiFi
-- **ESP32-32E E32R35T** (3.5"): 480×320 ST7796 TFT + XPT2046 resistive touch (shared SPI bus) — **WIP** (flash package marked `-WIP`, first boot runs on-screen touch calibration)
-- **JC8048W550** (Guition 5"): 800×480 ST7262 RGB TFT + GT911 capacitive touch, ESP32-S3 — **WIP** (flash package marked `-WIP`, expect rough edges; see [docs/jc8048w550-rgb-display-guide.md](docs/jc8048w550-rgb-display-guide.md))
+- **ESP32-32E E32R35T** (3.5"): 480×320 ST7796 TFT + XPT2046 resistive touch (shared SPI bus) — stable since v0.2.0
+- **JC8048W550** (Guition 5"): 800×480 ST7262 RGB TFT + GT911 capacitive touch, ESP32-S3 — stable since v0.2.0 (the tearing hunt is documented in [docs/jc8048w550-rgb-display-guide.md](docs/jc8048w550-rgb-display-guide.md))
 - Same LAN as the Klipper host (Moonraker reachable at `host:7125`)
 
 ## Flash (release zip)

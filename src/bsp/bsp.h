@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdbool.h>
 #include "lvgl.h"
 
 #ifdef __cplusplus
@@ -31,6 +32,17 @@ void bsp_fade_out(uint32_t ms);
 
 /* 自动息屏超时（秒，0=永不）。超时后关背光，任意触摸唤醒并恢复亮度 */
 void bsp_set_screen_timeout(uint32_t sec);
+
+/* 反色 / 180° 旋转：运行时立即生效（设置项落盘 klipperscreen.conf，
+   开机由 app 层读回并调用 setter 应用）。
+   can_* 返回本板是否支持，UI 据此隐藏不支持的开关：
+   - SPI 屏（CYD ILI9341 / E32R35T ST7796）：两者都支持（panel 命令 + 触摸坐标翻转）；
+   - JC8048W550（RGB 并口屏）：面板无命令接口，都不支持；
+   - desktop：都不支持（调试前端无此需求）。 */
+bool bsp_disp_can_invert(void);
+void bsp_disp_set_invert(bool en);
+bool bsp_disp_can_rotate180(void);
+void bsp_disp_set_rotate180(bool en);
 
 /* 内网时间兜底：从 Moonraker 主机的 HTTP Date 头同步系统时间。
    SNTP 已同步则跳过；异步执行不阻塞调用方（desktop 空操作）。 */

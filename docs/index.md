@@ -20,8 +20,8 @@ The same UI code also compiles as a **desktop simulator** (SDL2, Windows/Linux),
 | Board | Display | Touch | MCU | Status |
 |---|---|---|---|---|
 | CYD 2432S028R | 2.8" 320×240 ILI9341 SPI | XPT2046 resistive | ESP32 | ✅ Stable |
-| E32R35T (ESP32-32E 3.5") | 3.5" 480×320 ST7796 SPI | XPT2046 resistive (shared bus) | ESP32-32E | 🚧 WIP |
-| JC8048W550 | 5" 800×480 ST7262 RGB parallel | GT911 capacitive | ESP32-S3 | 🚧 WIP |
+| E32R35T (ESP32-32E 3.5") | 3.5" 480×320 ST7796 SPI | XPT2046 resistive (shared bus) | ESP32-32E | ✅ Stable |
+| JC8048W550 | 5" 800×480 ST7262 RGB parallel | GT911 capacitive | ESP32-S3 | ✅ Stable |
 
 Full pinouts and hardware details: [Supported boards](boards.md).
 

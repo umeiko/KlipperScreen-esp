@@ -260,6 +260,25 @@ void bsp_delay_ms(uint32_t ms)
     vTaskDelay(pdMS_TO_TICKS(ms));
 }
 
+/* ---------- 反色 / 180° 旋转（运行时生效，设置项由 app 层落盘/回读） ---------- */
+static bool disp_rot180;
+
+bool bsp_disp_can_invert(void)   { return true; }
+bool bsp_disp_can_rotate180(void) { return true; }
+
+void bsp_disp_set_invert(bool en)
+{
+    if (panel_handle) esp_lcd_panel_invert_color(panel_handle, en);
+}
+
+void bsp_disp_set_rotate180(bool en)
+{
+    disp_rot180 = en;
+    /* 默认 mirror(true,true)；180° = 两轴都翻 → mirror(false,false)。
+       swap_xy 下 mirror 参数仍指面板轴，两轴同翻与 swap 无关 */
+    if (panel_handle) esp_lcd_panel_mirror(panel_handle, !en, !en);
+}
+
 /* 背光亮度 0-100（0 也会留 5% 兜底，避免黑屏后摸不到设置） */
 static uint8_t bl_duty = 255;
 static int     bl_pct = 100;
@@ -380,6 +399,10 @@ static void touch_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
     }
     int32_t sx = (int32_t)lroundf(rx * tcal.xm + tcal.xc);
     int32_t sy = (int32_t)lroundf(ry * tcal.ym + tcal.yc);
+    if (disp_rot180) {                      /* 显示翻 180° 时触摸坐标同步翻转 */
+        sx = LCD_H_RES - 1 - sx;
+        sy = LCD_V_RES - 1 - sy;
+    }
     data->state = LV_INDEV_STATE_PRESSED;
     data->point.x = LV_CLAMP(0, sx, LCD_H_RES - 1);
     data->point.y = LV_CLAMP(0, sy, LCD_V_RES - 1);

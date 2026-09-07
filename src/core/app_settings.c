@@ -238,3 +238,40 @@ bool settings_save_screen_off(int sec)
     snprintf(val, sizeof(val), "%d", sec);
     return conf_update_key("klipperscreen.conf", "screen_off", val);
 }
+
+/* klipperscreen.conf 里的 int 偏好通用读取（缺省 def） */
+static int ksc_load_int(const char *key, int def)
+{
+    char val[12];
+    char *buf = conf_load("klipperscreen.conf");
+    if (!buf) return def;
+    bool got = kv_get(buf, key, val, sizeof(val));
+    free(buf);
+    return got ? atoi(val) : def;
+}
+
+static bool ksc_save_int(const char *key, int v)
+{
+    char val[12];
+    snprintf(val, sizeof(val), "%d", v);
+    return conf_update_key("klipperscreen.conf", key, val);
+}
+
+int  settings_load_display_invert(void)      { return ksc_load_int("display_invert", 0) != 0; }
+bool settings_save_display_invert(int en)    { return ksc_save_int("display_invert", en ? 1 : 0); }
+int  settings_load_display_rotate(void)      { return ksc_load_int("display_rotate", 0) != 0; }
+bool settings_save_display_rotate(int en)    { return ksc_save_int("display_rotate", en ? 1 : 0); }
+
+void settings_load_theme(char *out, size_t len)
+{
+    if (len) { out[0] = 0; strncat(out, "dark", len - 1); }   /* 缺省深色 */
+    char *buf = conf_load("klipperscreen.conf");
+    if (!buf) return;
+    kv_get(buf, "theme", out, len);
+    free(buf);
+}
+
+bool settings_save_theme(const char *theme)
+{
+    return conf_update_key("klipperscreen.conf", "theme", theme);
+}

@@ -14,6 +14,7 @@ extern panel_def_t panel_extrude_def;
 extern panel_def_t panel_files_def;
 extern panel_def_t panel_file_detail_def;
 extern panel_def_t panel_settings_def;
+extern panel_def_t panel_display_def;
 extern panel_def_t panel_wifi_def;
 extern panel_def_t panel_moonraker_def;
 extern panel_def_t panel_printers_def;
@@ -28,6 +29,7 @@ static panel_def_t *registry[] = {
     &panel_files_def,
     &panel_file_detail_def,
     &panel_settings_def,
+    &panel_display_def,
     &panel_wifi_def,
     &panel_moonraker_def,
     &panel_printers_def,

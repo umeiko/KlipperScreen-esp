@@ -81,11 +81,11 @@ jobs:
       matrix:
         include:
           - board: cyd_2432s028r
-            suffix: ""           # 稳定板型
+            suffix: ""
           - board: e32r35t
-            suffix: "-WIP"       # 适配中（未经真机验证），刷机包标注 WIP
+            suffix: ""
           - board: jc8048w550
-            suffix: "-WIP"       # 适配中，刷机包标注 WIP
+            suffix: ""
     steps:
       - uses: actions/checkout@v4
 
@@ -120,21 +120,11 @@ jobs:
           cp tools/release/flash.bat tools/release/flash.sh dist/
           chmod +x dist/flash.sh
 
-      - name: Add WIP note (非稳定板型)
-        if: matrix.suffix != ''
-        run: |
-          cat > dist/WIP.txt <<EOF
-          This package is for the ${{ matrix.board }} board.
-          Support for this board is WORK IN PROGRESS — expect display/touch issues.
-          The stable, recommended board is CYD2432S028R (2.8" resistive).
-          Feedback/issues: https://github.com/umeiko/KlipperScreen-esp/issues
-          EOF
-
       # 直接把 dist 内容作为 artifact：GitHub 下载时会打一层 zip，
       # 解压后即是平铺的刷机文件，不再出现"zip 套 zip"
       - uses: actions/upload-artifact@v4
         with:
-          name: klipper-remote-esp32-${{ matrix.board }}${{ matrix.suffix }}-${{ github.ref_name }}
+          name: klipper-remote-esp32-${{ matrix.board }}-${{ github.ref_name }}
           path: dist/
 
   desktop-win:
@@ -188,17 +178,22 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           path: dl
 
       - name: Zip artifacts for release
+        # 资产名不带版本号：releases/latest/download/<名字> 直链永远指向最新正式版，
+        # 文档站板型页的下载链接依赖这一点
         run: |
           for d in dl/klipper-remote-esp32-*; do
             b=$(basename "$d")
+            b="${b%-${GITHUB_REF_NAME}}"
             (cd "$d" && zip -r "$GITHUB_WORKSPACE/$b.zip" .)
           done
-          (cd dl/klipper-remote-desktop-win-x86_64-* && zip -r "$GITHUB_WORKSPACE/klipper-remote-desktop-win-x86_64-${GITHUB_REF_NAME}.zip" .)
+          (cd dl/klipper-remote-desktop-win-x86_64-* && zip -r "$GITHUB_WORKSPACE/klipper-remote-desktop-win-x86_64.zip" .)
           ls -la "$GITHUB_WORKSPACE"/*.zip
 
       - uses: softprops/action-gh-release@v2
@@ -209,3 +204,12 @@ jobs:
           generate_release_notes: true
           # 标签含 wip（如 v0.2.0-wip.1）时标为预发布，不抢占 latest
           prerelease: ${{ contains(github.ref_name, 'wip') }}
+
+      # 维护 latest 移动标签：始终指向最新正式版提交（wip 预发布不移动）
+      - name: Move latest tag
+        if: ${{ !contains(github.ref_name, 'wip') }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -f latest "$GITHUB_SHA"
+          git push -f origin latest

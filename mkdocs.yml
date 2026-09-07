@@ -40,6 +40,7 @@ plugins:
           name: 简体中文
           nav_translations:
             Home: 首页
+            Screenshots: 界面展示
             Supported boards: 支持的板子
             Porting to your own board: 移植到自己的开发板
             Contributing a new board: 贡献新板型（PR 指南）
@@ -51,6 +52,7 @@ plugins:
 
 nav:
   - Home: index.md
+  - Screenshots: screenshots.md
   - Supported boards: boards.md
   - Porting to your own board: porting.md
   - Contributing a new board: contributing-board.md

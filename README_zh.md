@@ -10,25 +10,7 @@
 
 ## 界面实拍
 
-![主界面：空闲，标题栏实时温度](docs/screenshots/main_idle.png)
-
-![主界面：Moonraker 断连](docs/screenshots/main_offline.png)
-
-![主界面：Klipper 异常](docs/screenshots/main_error.png)
-
-![G-code 历史文件](docs/screenshots/files.png)
-
-![打印中：进度环](docs/screenshots/printing.png)
-
-![轴移动 / 归零](docs/screenshots/move.png)
-
-![温度预设](docs/screenshots/temperature.png)
-
-![多打印机切换：6 槽位](docs/screenshots/printers.png)
-
-![设置](docs/screenshots/settings.png)
-
-> 截图均为 desktop 模拟器实拍（英文界面）。
+完整界面截图见文档站：**[界面展示 / Screenshots](https://umeiko.github.io/KlipperScreen-esp/zh/screenshots/)**
 
 - 架构设计：[docs/architecture.md](docs/architecture.md)
 - Klipper/Moonraker API 参考：[docs/klipper-moonraker-api.md](docs/klipper-moonraker-api.md)
@@ -55,7 +37,7 @@ ESP-IDF v5.5.5 · LVGL v9.3 · 多后端（ESP32 各 CYD 板型 / desktop SDL2�
 - **Windows**：`flash.bat COM6`（zip 内含 esptool.exe，无需装 Python）
 - **macOS / Linux**：`./flash.sh /dev/ttyUSB0`（需 `pip install esptool`）
 
-支持板型：**CYD 2432S028R**（2.8" 电阻屏，稳定）；**E32R35T**（ESP32-32E 3.5" 480×320 ST7796 电阻屏）——**WIP 适配中**，刷机包带 `-WIP` 标注；**JC8048W550**（Guition 5" 800×480 RGB 电容屏，ESP32-S3）——**WIP 适配中**，刷机包带 `-WIP` 标注，排坑记录见 [docs/jc8048w550-rgb-display-guide.md](docs/jc8048w550-rgb-display-guide.md)。
+支持板型：**CYD 2432S028R**（2.8" 电阻屏）；**E32R35T**（ESP32-32E 3.5" 480×320 ST7796 电阻屏）；**JC8048W550**（Guition 5" 800×480 RGB 电容屏，ESP32-S3）。三款自 v0.2.0 起均为正式支持，排坑记录见 [docs/jc8048w550-rgb-display-guide.md](docs/jc8048w550-rgb-display-guide.md)。
 
 首次启动自动格式化 LittleFS 分区并写入出厂触摸校准参数。
 

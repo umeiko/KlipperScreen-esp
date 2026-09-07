@@ -21,8 +21,11 @@ static int neon_cx = 160, neon_cy = 120;
 static inline int neon_sx(int x, int s) { return neon_cx + (x - 160) * s * logo_k / 10000; }
 static inline int neon_sy(int y, int s) { return neon_cy + (y - 120) * s * logo_k / 10000; }
 
-/* 行缓冲：Logo 区为屏幕纵向中段 2/3，按 64 行分带 */
-#define ZFB_H  64
+/* 行缓冲：Logo 区为屏幕纵向中段 2/3，按 40 行分带。
+ * 40 行 = 两块 SPI 屏 max_transfer_sz 恰好容纳（480*40*2=38400 ≤ 38408，
+ * 320*40*2=25600 ≤ 25608）；64 行时在 E32R35T 上超限，draw_bitmap 静默失败，
+ * 开机动画只剩一条黑带 + 白屏 */
+#define ZFB_H  40
 static int zfb_y0 = 40, zfb_y1 = 200;
 
 static uint16_t *zfb;            /* 播放时 malloc，结束释放 */

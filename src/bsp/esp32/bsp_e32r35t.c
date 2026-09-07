@@ -7,9 +7,9 @@
  *   - 触摸与液晶屏**共用** SPI2 总线（厂商设计如此，MISO 也共用）
  *   - LCD 无独立 RST 引脚（与 ESP32 EN 共用复位）→ 驱动走软件复位
  *   - 背光 GPIO27（高电平点亮）
- * 未经真机验证的项：mirror 方向（画面若左右/上下颠倒，改 bsp_init 里
- * esp_lcd_panel_mirror 的参数）、反色开关（颜色若呈底片效果，把
- * esp_lcd_panel_invert_color 改为 false）。触摸首次启动进两点校准，无需默认值精确。
+ * 真机已验证：反色默认关（本板 ST7796 不需 INVON，开了呈底片）；
+ * mirror(true,true)+swap_xy 方向正确；触摸出厂默认值已提取自真机校准，
+ * 开机免校准，偏差大的个体用串口 CLI caltouch 重校。
  */
 #include "sdkconfig.h"
 #if CONFIG_BOARD_E32R35T
@@ -78,10 +78,11 @@ typedef struct {
     float ym, yc;   /* screen_y = raw_y * ym + yc */
 } touch_cal_t;
 
-/* 出厂默认值仅为占位（无真机校准数据）：首次启动校准文件缺失时会进入
-   阻塞式两点校准流程，真实参数由校准产生并落盘覆盖 */
+/* 出厂默认值：从首台真机两点校准结果提取（touch.json：
+   {"xCalM":0.13023783,"yCalM":0.08733624,"xCalC":-30.89468,"yCalC":-17.94760}）。
+   文件缺失时直接可用；偏差大的个体仍可串口 CLI caltouch 重新校准 */
 #define TOUCH_CAL_DEFAULT \
-    { 0.1263f, -24.0f, 0.0842f, -16.0f }
+    { 0.13023783266544342f, -30.894680023193359f, 0.0873362421989441f, -17.947597503662109f }
 
 #define TOUCH_CAL_PATH  "/littlefs/touch.json"
 
@@ -147,14 +148,15 @@ static bool touch_cal_load(void)
             }
             cJSON_Delete(root);
         }
-        ESP_LOGW(TAG, "touch cal file invalid, entering calibration");
+        ESP_LOGW(TAG, "touch cal file invalid, rewriting factory default");
     } else {
-        /* 本板无真机出厂校准值：首次启动进入两点校准流程
-           （与 CYD 不同——CYD 的默认值提取自真机，可直接用） */
-        ESP_LOGW(TAG, "touch cal not found, entering calibration");
-        return false;
+        /* 首次启动：写入出厂默认值（真机提取），不进校准流程；
+           个体偏差大时可串口 CLI caltouch 重新校准 */
+        ESP_LOGW(TAG, "touch cal not found, writing factory default");
     }
-    return false;
+    /* 缺失或损坏：tcal 已是出厂默认值，落盘即可 */
+    touch_cal_save();
+    return true;
 }
 
 /* 校准时 LVGL 任务尚未启动，手动泵 lv_timer_handler */
@@ -249,20 +251,44 @@ static bool on_color_trans_done(esp_lcd_panel_io_handle_t io,
 
 void bsp_lcd_push(int x, int y, int w, int h, const uint16_t *px)
 {
-    /* ST7796 走 SPI 要求先发像素高字节：拷一份交换字节再推（动画核心缓冲要复用，不能就地改） */
+    /* ST7796 走 SPI 要求先发像素高字节。就地交换→推→等 DMA 完成→交换还原，
+       不拷临时副本：经典核无 PSRAM，LVGL 双缓冲后堆里没有 38KB 连续块，
+       此前每次 malloc 失败导致开机动画整段静默丢弃（白屏+残带） */
+    uint16_t *p = (uint16_t *)px;   /* 还原后内容不变，语义上仍是 const */
     size_t n = (size_t)w * h;
-    uint16_t *tmp = malloc(n * 2);
-    if (!tmp) return;
-    for (size_t i = 0; i < n; i++) tmp[i] = (uint16_t)((px[i] >> 8) | (px[i] << 8));
+    for (size_t i = 0; i < n; i++) p[i] = (uint16_t)((p[i] >> 8) | (p[i] << 8));
     xSemaphoreTake(lcd_trans_done, 0);   /* 排掉 LVGL flush 可能留下的存量信号 */
-    esp_lcd_panel_draw_bitmap(panel_handle, x, y, x + w, y + h, tmp);
-    xSemaphoreTake(lcd_trans_done, pdMS_TO_TICKS(500));
-    free(tmp);
+    esp_err_t err = esp_lcd_panel_draw_bitmap(panel_handle, x, y, x + w, y + h, p);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "lcd_push draw err %s: %d,%d %dx%d", esp_err_to_name(err), x, y, w, h);
+    } else if (xSemaphoreTake(lcd_trans_done, pdMS_TO_TICKS(500)) != pdTRUE) {
+        ESP_LOGW(TAG, "lcd_push wait timeout: %d,%d %dx%d", x, y, w, h);
+    }
+    for (size_t i = 0; i < n; i++) p[i] = (uint16_t)((p[i] >> 8) | (p[i] << 8));   /* 还原 */
 }
 
 void bsp_delay_ms(uint32_t ms)
 {
     vTaskDelay(pdMS_TO_TICKS(ms));
+}
+
+/* ---------- 反色 / 180° 旋转（运行时生效，设置项由 app 层落盘/回读） ---------- */
+static bool disp_rot180;
+
+bool bsp_disp_can_invert(void)   { return true; }
+bool bsp_disp_can_rotate180(void) { return true; }
+
+void bsp_disp_set_invert(bool en)
+{
+    if (panel_handle) esp_lcd_panel_invert_color(panel_handle, en);
+}
+
+void bsp_disp_set_rotate180(bool en)
+{
+    disp_rot180 = en;
+    /* 默认 mirror(true,true)；180° = 两轴都翻 → mirror(false,false)。
+       swap_xy 下 mirror 参数仍指面板轴，两轴同翻与 swap 无关 */
+    if (panel_handle) esp_lcd_panel_mirror(panel_handle, !en, !en);
 }
 
 /* 背光亮度 0-100（0 也会留 5% 兜底，避免黑屏后摸不到设置） */
@@ -385,6 +411,10 @@ static void touch_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
     }
     int32_t sx = (int32_t)lroundf(rx * tcal.xm + tcal.xc);
     int32_t sy = (int32_t)lroundf(ry * tcal.ym + tcal.yc);
+    if (disp_rot180) {                      /* 显示翻 180° 时触摸坐标同步翻转 */
+        sx = LCD_H_RES - 1 - sx;
+        sy = LCD_V_RES - 1 - sy;
+    }
     data->state = LV_INDEV_STATE_PRESSED;
     data->point.x = LV_CLAMP(0, sx, LCD_H_RES - 1);
     data->point.y = LV_CLAMP(0, sy, LCD_V_RES - 1);
@@ -480,8 +510,9 @@ void bsp_init(void)
     ESP_ERROR_CHECK(esp_lcd_new_panel_st7796(io_handle, &panel_cfg, &panel_handle));
     ESP_ERROR_CHECK(esp_lcd_panel_reset(panel_handle));
     ESP_ERROR_CHECK(esp_lcd_panel_init(panel_handle));
-    /* ST7796 SPI 模组普遍需要开反色，否则颜色呈底片效果（对照 TFT_eSPI 的 TFT_INVERSION_ON） */
-    ESP_ERROR_CHECK(esp_lcd_panel_invert_color(panel_handle, true));
+    /* 真机实测：本板 ST7796 不需要开反色，开了颜色呈底片效果；
+       反色做成运行时开关（bsp_disp_set_invert），这里保持默认关闭 */
+    ESP_ERROR_CHECK(esp_lcd_panel_invert_color(panel_handle, false));
     /* 横屏 480x320；mirror 组合未经真机验证，画面若颠倒改这里 */
     ESP_ERROR_CHECK(esp_lcd_panel_swap_xy(panel_handle, true));
     ESP_ERROR_CHECK(esp_lcd_panel_mirror(panel_handle, true, true));
@@ -518,8 +549,8 @@ void bsp_init(void)
     lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
     lv_indev_set_read_cb(indev, touch_read_cb);
 
-    /* 无校准数据 → 阻塞式两点校准（LVGL 任务启动前手动泵帧）。
-       本板无真机出厂默认值，首次启动必然进入校准 */
+    /* 校准文件缺失/损坏时 touch_cal_load 自动落盘出厂默认值（真机提取）；
+       仅当默认值也不合用时，串口 CLI caltouch 进两点校准（LVGL 任务启动前手动泵帧） */
     if (!touch_cal_load()) {
         touch_cal_run();
     }

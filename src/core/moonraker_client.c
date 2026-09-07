@@ -8,6 +8,7 @@
 #include "moonraker_client.h"
 #include "printer_model_internal.h"
 #include "app_settings.h"
+#include "version.h"
 #include "bsp_wifi.h"
 #include "bsp.h"
 
@@ -289,9 +290,10 @@ static void heartbeat_cb(void *arg)
 
 static void handshake_begin(void)
 {
-    /* client_name 等字段对齐 server.connection.identify 约定（type=display） */
+    /* client_name 等字段对齐 server.connection.identify 约定（type=display）；
+       版本号来自 version.h（KR_VERSION），与设置页显示一致 */
     send_rpc_cb("server.connection.identify",
-                "{\"client_name\":\"klipper-remote-esp32\",\"version\":\"0.1.0\","
+                "{\"client_name\":\"klipper-remote-esp32\",\"version\":\"" KR_VERSION "\","
                 "\"type\":\"display\",\"url\":\"https://github.com/klipper-remote\"}",
                 NULL);
     query_server_info();

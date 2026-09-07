@@ -90,6 +90,12 @@ void bsp_set_brightness(int pct)
     printf("bsp_set_brightness: %d%%\n", pct);
 }
 
+/* 桌面端调试前端：反色/旋转不提供（UI 会按 can_* 隐藏开关） */
+bool bsp_disp_can_invert(void)    { return false; }
+bool bsp_disp_can_rotate180(void) { return false; }
+void bsp_disp_set_invert(bool en)    { LV_UNUSED(en); }
+void bsp_disp_set_rotate180(bool en) { LV_UNUSED(en); }
+
 void bsp_fade_out(uint32_t ms)
 {
     /* 桌面端无背光，模拟耗时即可 */

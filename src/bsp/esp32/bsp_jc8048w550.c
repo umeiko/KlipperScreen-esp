@@ -87,6 +87,13 @@ void bsp_delay_ms(uint32_t ms)
     vTaskDelay(pdMS_TO_TICKS(ms));
 }
 
+/* 反色 / 180° 旋转：RGB 并口屏（ST7262）无命令接口，硬件不支持；
+   DIRECT 双缓冲下软件翻转/反色的 CPU 拷贝会重新挤爆 MSPI 总线（抽动教训），不做 */
+bool bsp_disp_can_invert(void)    { return false; }
+bool bsp_disp_can_rotate180(void) { return false; }
+void bsp_disp_set_invert(bool en)    { LV_UNUSED(en); }
+void bsp_disp_set_rotate180(bool en) { LV_UNUSED(en); }
+
 /* 背光亮度：滑杆 0-100，经 bsp_set_brightness 分段映射到占空比 */
 static uint8_t bl_duty = 255;
 static int     bl_pct = 100;

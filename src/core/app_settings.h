@@ -55,6 +55,15 @@ bool settings_save_brightness(int pct);
 int  settings_load_screen_off(void);      /* 自动息屏秒数，0=永不 */
 bool settings_save_screen_off(int sec);
 
+/* 显示偏好（同存 klipperscreen.conf）：
+ * display_invert=0/1（反色）；display_rotate=0/1（180° 旋转）；theme=dark|light（缺省 dark） */
+int  settings_load_display_invert(void);
+bool settings_save_display_invert(int en);
+int  settings_load_display_rotate(void);
+bool settings_save_display_rotate(int en);
+void settings_load_theme(char *out, size_t len);
+bool settings_save_theme(const char *theme);
+
 #ifdef __cplusplus
 }
 #endif

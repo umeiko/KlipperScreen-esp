@@ -599,6 +599,7 @@ CONFIG_PARTITION_TABLE_MD5=y
 # Board selection
 #
 # CONFIG_BOARD_CYD_2432S028R is not set
+# CONFIG_BOARD_E32R35T is not set
 CONFIG_BOARD_JC8048W550=y
 # end of Board selection
 
