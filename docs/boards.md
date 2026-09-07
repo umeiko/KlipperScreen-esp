@@ -12,7 +12,11 @@ Flash packages are named `klipper-remote-esp32-<board>[-WIP]-<version>.zip`. WIP
 
 ## CYD 2432S028R
 
-The "Cheap Yellow Display" (yellow-PCB 2.8" dev board), the reference board of this project. Logical resolution **320×240 landscape**.
+![CYD 2432S028R](screenshots/boards/cyd_2432s028r.jpg)
+
+*The "Cheap Yellow Display" (yellow-PCB 2.8" dev board), the reference board of this project.* Photo: [Random Nerd Tutorials](https://randomnerdtutorials.com/cheap-yellow-display-esp32-2432s028r/)
+
+Logical resolution **320×240 landscape**.
 
 - MCU: ESP32 (dual-core 240MHz, 520KB SRAM), 4MB QIO flash
 - Display: ILI9341, SPI2 @ 40MHz, DMA double buffering (2 × 40 lines)
@@ -29,7 +33,11 @@ The "Cheap Yellow Display" (yellow-PCB 2.8" dev board), the reference board of t
 
 ## E32R35T
 
-ESP32-32E 3.5" display module ([lcdwiki product page](https://www.lcdwiki.com/3.5inch_ESP32-32E_Display), touch version SKU: E32R35T). Logical resolution **480×320 landscape**.
+![E32R35T](screenshots/boards/e32r35t.png)
+
+*ESP32-32E 3.5" display module ([lcdwiki product page](https://www.lcdwiki.com/3.5inch_ESP32-32E_Display), touch version SKU: E32R35T).* Photo: lcdwiki
+
+Logical resolution **480×320 landscape**.
 
 - MCU: ESP32-WROOM-32E (dual-core 240MHz), 4MB QIO flash
 - Display: ST7796U, SPI2 @ 40MHz; **shares the SPI bus with the touch panel** (vendor design); no dedicated RST (tied to ESP32 EN, the driver performs a software reset)
@@ -51,7 +59,11 @@ ESP32-32E 3.5" display module ([lcdwiki product page](https://www.lcdwiki.com/3.
 
 ## JC8048W550
 
-Guition 5" capacitive display module (ESP32-S3). Logical resolution **800×480**. **WIP** — the full RGB-parallel tearing/underflow investigation is documented in the [developer notes](jc8048w550-rgb-display-guide.md) (Chinese).
+![JC8048W550](screenshots/boards/jc8048w550.png)
+
+*Guition 5" capacitive display module (ESP32-S3).* Photo: [openHASP hardware page](https://www.openhasp.com/0.7.0/hardware/guition/jc8048w550/)
+
+Logical resolution **800×480**. **WIP** — the full RGB-parallel tearing/underflow investigation is documented in the [developer notes](jc8048w550-rgb-display-guide.md) (Chinese).
 
 - MCU: ESP32-S3, 16MB flash + PSRAM (dual framebuffers, 2×768KB in PSRAM)
 - Display: ST7262 RGB parallel (RGB565), PCLK **must be 16MHz**; custom rgb44 driver (IDF-4.4-style transfer model + vsync page flip)
