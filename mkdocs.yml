@@ -1,0 +1,67 @@
+site_name: KlipperScreen-esp 文档 / Docs
+site_description: Klipper 远程显示屏（ESP32 + Moonraker）项目文档 — board porting & contribution guides
+site_url: https://umeiko.github.io/KlipperScreen-esp/
+repo_url: https://github.com/umeiko/KlipperScreen-esp
+edit_uri: edit/main/docs/
+copyright: Copyright &copy; umeiko, GPLv3
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - content.action.edit
+
+plugins:
+  - search:
+      separator: '[\s\-\.,:!=\[\]()"/]+'
+  - i18n:
+      docs_structure: suffix
+      fallback_to_default: true
+      reconfigure_material: true
+      reconfigure_search: true
+      languages:
+        - locale: en
+          default: true
+          name: English
+        - locale: zh
+          name: 简体中文
+          nav_translations:
+            Home: 首页
+            Supported boards: 支持的板子
+            Porting to your own board: 移植到自己的开发板
+            Contributing a new board: 贡献新板型（PR 指南）
+            Developer notes: 开发笔记
+            Architecture: 架构说明
+            JC8048W550 RGB display guide: JC8048W550 RGB 屏排障指南
+            Klipper / Moonraker API notes: Klipper / Moonraker API 笔记
+            LVGL v9 API notes: LVGL v9 API 笔记
+
+nav:
+  - Home: index.md
+  - Supported boards: boards.md
+  - Porting to your own board: porting.md
+  - Contributing a new board: contributing-board.md
+  - Developer notes:
+      - Architecture: architecture.md
+      - JC8048W550 RGB display guide: jc8048w550-rgb-display-guide.md
+      - Klipper / Moonraker API notes: klipper-moonraker-api.md
+      - LVGL v9 API notes: lvgl-v9-api-notes.md
+
+markdown_extensions:
+  - admonition
+  - tables
+  - toc:
+      permalink: true
