@@ -23,6 +23,14 @@ jobs:
             chip: esp32
             flash_size: 4MB
             bl_offset: 0x1000
+          - board: e32r35t              # ESP32-32E 3.5" E32R35T
+            target: esp32
+            bdir: build-e32r35t
+            sdkcfg: sdkconfig.e32r35t
+            defs: sdkconfig.defaults;sdkconfig.defaults.e32r35t
+            chip: esp32
+            flash_size: 4MB
+            bl_offset: 0x1000
           - board: jc8048w550         # JC8048W550 5" ESP32-S3
             target: esp32s3
             bdir: build-jc8048w550
@@ -74,6 +82,8 @@ jobs:
         include:
           - board: cyd_2432s028r
             suffix: ""           # 稳定板型
+          - board: e32r35t
+            suffix: "-WIP"       # 适配中（未经真机验证），刷机包标注 WIP
           - board: jc8048w550
             suffix: "-WIP"       # 适配中，刷机包标注 WIP
     steps:
@@ -113,8 +123,8 @@ jobs:
       - name: Add WIP note (非稳定板型)
         if: matrix.suffix != ''
         run: |
-          cat > dist/WIP.txt <<'EOF'
-          This package is for the JC8048W550 (Guition 5" 800x480 RGB, ESP32-S3).
+          cat > dist/WIP.txt <<EOF
+          This package is for the ${{ matrix.board }} board.
           Support for this board is WORK IN PROGRESS — expect display/touch issues.
           The stable, recommended board is CYD2432S028R (2.8" resistive).
           Feedback/issues: https://github.com/umeiko/KlipperScreen-esp/issues

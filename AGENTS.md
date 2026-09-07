@@ -6,7 +6,7 @@ Klipper 远程显示屏：ESP32 固件（ESP-IDF 5.5.5）+ Windows 桌面端（M
 
 ## 构建/烧录
 
-- ESP32：`bash tools/build-esp32.sh <board> [flash COMx]`，board ∈ `cyd2432s028r` / `jc8048w550`。烧录前必须先断开串口占用（`mcp__serial-mcp__close_port`），烧后重连（115200）。
+- ESP32：`bash tools/build-esp32.sh <board> [flash COMx]`，board ∈ `cyd2432s028r` / `e32r35t` / `jc8048w550`。烧录前必须先断开串口占用（`mcp__serial-mcp__close_port`），烧后重连（115200）。
 - 桌面端：`bash tools/build-desktop.sh`。
 - **sdkconfig 大坑**：改 `sdkconfig.defaults.<board>` 对已生成的 `sdkconfig.<board>` 不生效——要改必须两个文件都改（sdkconfig 里翻 canonical 行，注意 `# CONFIG_XXX is not set` 会覆盖 defaults）。
 - IDF 源码在 `C:/esp/v5.5.5/esp-idf`。GitHub 走代理 `curl --proxy http://127.0.0.1:8635`。
