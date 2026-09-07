@@ -62,6 +62,8 @@ static int big(void) { return scale_f >= 2.0f; }
    desktop 走运行时 big()（KLIPPER_RES 可切分辨率，两档都要）。 */
 #if defined(CONFIG_BOARD_CYD_2432S028R)
 #define UI_FONT_BIG 0
+#elif defined(CONFIG_BOARD_E32R35T)
+#define UI_FONT_BIG 0
 #elif defined(CONFIG_BOARD_JC8048W550)
 #define UI_FONT_BIG 1
 #define UI_FONT_MIN 1   /* 最小子集（排障：缩小 flash 字形表的 XIP 流量），置 0 回全表 */
