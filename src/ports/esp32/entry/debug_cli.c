@@ -221,7 +221,7 @@ static void cli_handle(char *line)
 
     if (!strcmp(line, "help")) {
         printf("commands: help | scan | wifi <ssid> <pass> | wifioff | wifion | mr <host> [port] | mrstart | status | ps\n"
-               "          printer <1-6> | gc <gcode> | ls [path] | cd <path> | pwd | cat <file> | rm <file> | lcdstat\n");
+               "          printer <1-6> | gc <gcode> | ls [path] | cd <path> | pwd | cat <file> | rm <file> | lcdstat [秒]\n");
     } else if (!strcmp(line, "scan")) {
         cmd_scan();
     } else if (!strcmp(line, "wifi")) {
@@ -254,6 +254,13 @@ static void cli_handle(char *line)
     } else if (!strcmp(line, "lcdstat")) {
 #if CONFIG_BOARD_JC8048W550
         extern void bsp_lcd_stats_print(void);
+        int secs = args ? atoi(args) : 0;
+        if (secs > 0) {
+            /* 定时窗口测量：先清零，等 N 秒（用户在此期间滑动），再打印——
+               避免待机时 1Hz 时钟渲染污染滑动手感数据 */
+            bsp_lcd_stats_print();
+            vTaskDelay(pdMS_TO_TICKS(secs * 1000));
+        }
         bsp_lcd_stats_print();
 #else
         printf("lcdstat: 仅 JC8048W550（rgb44）支持\n");

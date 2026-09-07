@@ -197,33 +197,80 @@ LVGL (core1)                rgb44 驱动                     硬件
 | LVGL 刷新核心（sync/swap 语义） | `managed_components/lvgl__lvgl/src/core/lv_refr.c` |
 | 厂商 GFX 对照工程 | `tmp/pio_music/src/lvgl_music_gt911_5.0.ino` |
 
-## 12. 后记：全表字库更新后的"滑动轻微抖动"（与显示链路无关）
+## 12. 后记：滑动抽动的第二轮排查——帧中 EDMA 饥饿（流量墙）
 
-字库从 300 字子集换成 GB2312 全表 6840 字（5.4MB，14/16 RLE 压缩、28/32 不压缩）后，
-用户报告滑动时 X 方向轻微抖动。用 `lcdstat` CLI（`bsp_lcd_stats_print`，新增渲染/换页
-分离计时）实测一个含 10 秒连续滑动的 55 秒窗口：
+字库换成 GB2312 全表后用户报告滑动抽动。这一轮排查推翻了好几个直觉结论，按时间顺序：
 
-```
-lcd: vsync=2136 period=25631..25640 us, dma_late=2
-  handler: n=7034 avg=2813 max=130170 us | work: avg=2463 max=121685 us | swap: n=193 avg=12117 max=25646 us
-```
+### 12.1 测量先行：面板侧完全健康
 
-判读：
+`lcdstat` CLI（`bsp_lcd_stats_print`，渲染/换页分离计时）实测滑动窗口：
 
-- vsync 周期抖动 ≤9µs、dma_late≈0 —— 面板扫描/总线侧完全健康；
-- **swap max = 25646µs = 恰好一个帧周期** —— 换页从未错过 vsync，零掉帧零错位；
-- 真正渲染耗时（work = handler 总耗时 − flush_cb 里等 vsync 的时间）avg 2.5ms，
-  只有偶发长帧（页面切换类 max 122ms，开机整屏首帧 34ms）。
+- vsync 周期 25630~25641µs（抖动 <10µs）、`dma_late≈0` —— 面板扫描零欠载；
+- swap max = 恰好一个帧周期 —— 换页从不 miss vsync，无卷轴错位；
+- **work（纯渲染+msync）avg=87.7ms/帧**（-O2 后），swap 9.6fps —— 滑动时每帧都是全屏脏区。
 
-结论：抖动感**不是**显示链路问题，而是 **LVGL 刷新周期与面板 vsync 错拍**：
-`CONFIG_LV_DEF_REFR_PERIOD` 默认 33ms（内容更新上限 30Hz）vs 面板 39fps，
-滑动时帧间隔在 25.6/51.2ms 间不规则跳动 → 肉眼"轻微抖动"。
-修复：`sdkconfig(.defaults).jc8048w550` 里 `CONFIG_LV_DEF_REFR_PERIOD=15`——
-DIRECT 模式下 flush_cb 本就阻塞等 vsync，15ms 渲染周期让实际帧节奏锁死到 39fps。
+### 12.2 被推翻的三个假设
 
-顺带发现（未动，留档）：整个工程编译优化档是 `-Og`（`CONFIG_COMPILER_OPTIMIZATION_DEBUG`，
-两板都是），data cache line 32B。当前数据下不构成瓶颈，若以后渲染变贵再考虑
-`-O2` / `CONFIG_ESP32S3_DATA_CACHE_LINE_64B`。
+1. **"refr=33 与 39fps 错拍是根因"** —— 改成 `CONFIG_LV_DEF_REFR_PERIOD=15` 后无改善。
+   该改动保留（消除无意义错拍），但它不是抽动的根因。
+2. **"-O2 能救"** —— `CONFIG_COMPILER_OPTIMIZATION_PERF=y` 后 work 从 ~110ms 降到 87.7ms，
+   抽动依旧。**渲染瓶颈不是 CPU 算力，是 MSPI 总线流量。**
+3. **"大字号文字 RLE 压缩解压太贵"** —— 本板 UI_FONT_BIG=1，正文全走 28/32 号不压缩字体，
+   14/16 的 RLE 根本不在热路径上。为此生成的双变体（`font_cjk_14_cmp.c` / `font_cjk_16_cmp.c`，
+   CYD 分支用压缩版省 flash）对本板行为零影响。
 
-**教训**：DIRECT 双缓冲 + 阻塞 flush 的架构下，"内容更新率"与"面板帧率"是两回事，
-帧节奏问题先看 LVGL 刷新周期，别先怀疑驱动。
+### 12.3 当前主导假设：帧中 EDMA 饥饿
+
+DIRECT 模式一次全屏渲染的 MSPI 流量：渲染写 fb 768KB + `refr_sync_areas()` 同步拷贝
+1.5MB + flush 前 `esp_cache_msync` 整帧回写 768KB + EDMA 扫描读 768KB ≈ **4.3MB/帧**。
+PSRAM 可用带宽实测等效只有 ~49MB/s，而 EDMA 扫描本身就需要 30MB/s（800×480×2B×39fps）
+**持续不断**的份额。CPU 侧的渲染/回写是突发式大块流量，瞬间挤占总线 → EDMA 在**帧中间**
+FIFO 见底 → 当前帧某行扫错 → 下一帧自愈。这就是"抽动"：所有计数器（vsync 抖动、
+dma_late、swap miss）都看不见帧内单行错误，只有肉眼可见。
+
+佐证：FULL 模式实验（砍 1.5MB 同步拷贝）work 降到 69ms，滑动抽动减轻，但静止时
+1Hz 时钟每秒触发整帧渲染+回写爆发 → **每秒自抽一次**，更糟，已回退 DIRECT。
+
+已排除的其他方向：GDMA 配置与 IDF 驱动逐项对比一致（burst 64B、
+`eof_till_data_popped=false`，我们还多设了 priority 3）；`CONFIG_ESP32S3_DATA_CACHE_LINE_64B`
+实测静止自抽 + 滑动花屏加剧，已回退 32B（64B 让 cache 驱逐粒度翻倍，回写突发更大）。
+
+### 12.4 最终定位与修复：全表字库的 flash 流量（用户实测确认）
+
+**最小字库实验一锤定音**：给 JC8048 生成 `_min` 最小子集字体（仅 UI 源码字面量，
+几百字；28 号 671KB / 32 号 850KB，对比全表 15MB/19MB），`ui_layout.c` 里加
+`UI_FONT_MIN` 编译开关让该板链 `_min` 版——**滑动抽动完全消失，静止也干净**。
+
+机制：6840 字的 GB2312 全表字形数据放在 flash（.rodata），LVGL 渲染文本时经
+XIP cache 读取。表越大，字形地址越分散，cache 局部性越差 → 滑动列表每帧重绘
+数百个字形时，cache miss 引发的 **flash 突发读取** 在 MSPI 总线上与 PSRAM 的
+EDMA 扫描/渲染流量三方争抢 → 帧中 EDMA 饥饿 → 抽动。字库缩到 1/20 后，
+字形几乎全命中 cache，flash 流量消失，总线只剩 PSRAM 一家的事，EDMA 不再挨饿。
+
+这也解释了为什么"第一次成功的散点固件"不抽：当时字库就是小子集；换成全表后
+才开始抽。字库大小从一开始就是变量，只是被混进了显示链路排障里。
+
+当前配置（JC8048 出货状态）：
+
+- `UI_FONT_MIN=1`：最小子集字体。代价：文件名/SSID 里表外汉字显示方框。
+  要回全表置 0 即可（`tools/fontgen/gen_fonts.py` 两种都会生成）；
+- DIRECT 双缓冲 + 阻塞 flush（第 6/7 节三条铁律不变）；
+- `CONFIG_COMPILER_OPTIMIZATION_PERF=y`（-O2）、`CONFIG_LV_DEF_REFR_PERIOD=15`、
+  data cache line 32B 保留。
+
+### 12.5 若以后要养活全表字库，候选杠杆（按优先级）
+
+1. PSRAM 120MHz 实验性提速（`CONFIG_SPIRAM_SPEED_120M` + `CONFIG_IDF_EXPERIMENTAL_FEATURES`，
+   +50% 带宽；S3R8 官方只标 80MHz，有稳定性风险）；
+2. 中间档字库：GB2312 一级字 3755 字（约为全表一半），或常用 1000~2500 字表，
+   在覆盖面和 cache 局部性之间折中——`_min` 已证明方向正确，逐级加大表可找到
+   不抽的最大容量；
+3. msync 按脏行范围回写（BSP 记 cur∪prev 脏行位图，小更新不用整帧 768KB）；
+4. vsync 量化（渲染超帧就锁每 2/3 个 vsync 换页，只治节奏不治 glitch）；
+5. 终极：bounce buffer（EDMA 从内部 SRAM 行缓冲读，免疫 PSRAM/flash 争抢）——
+   rgb44 暂无此路径，工作量大。
+
+**教训**：这套链路上"面板侧计数器全绿"不代表"没问题"——帧内 EDMA 饥饿不留下任何
+计数器痕迹。而且**渲染内容的存储位置**（flash vs PSRAM vs 内部 RAM）本身就是
+总线流量变量，排显示问题别忘了把字库/图片资源也算进流量账。排查顺序：先测节拍，
+再测掉帧，最后算流量墙——流量账要算全（PSRAM 渲染 + 回写 + EDMA + flash XIP）。

@@ -347,7 +347,9 @@ void bsp_init(void)
     lv_tick_set_cb(tick_cb);
 
     lv_display_t *disp = lv_display_create(LCD_H_RES, LCD_V_RES);
-    /* DIRECT 双缓冲：LVGL 直渲两块 PSRAM 全帧 fb，flush 只换页不拷贝 */
+    /* DIRECT 双缓冲：LVGL 直渲两块 PSRAM 全帧 fb，flush 只换页不拷贝。
+       （试过 FULL 模式：省了 refr_sync_areas 同步拷贝 88→69ms/帧，
+       但静止时 1Hz 时钟也触发整帧渲染+回写爆发，每秒可见自抽，回退） */
     lv_display_set_buffers(disp, fb0, fb1, LCD_H_RES * LCD_V_RES * 2,
                            LV_DISPLAY_RENDER_MODE_DIRECT);
     lv_display_set_flush_cb(disp, flush_cb);

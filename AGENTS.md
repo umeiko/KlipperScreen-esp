@@ -69,6 +69,14 @@ Klipper 远程显示屏：ESP32 固件（ESP-IDF 5.5.5）+ Windows 桌面端（M
 - IDF RGB 驱动：`C:/esp/v5.5.5/esp-idf/components/esp_lcd/rgb/esp_lcd_panel_rgb.c`
 - 厂商 demo：`tmp/pio_music/src/lvgl_music_gt911_5.0.ino`（LVGL 缓冲 2×800×480/8 像素内部 RAM）
 
+### 第二轮排障备忘（全表字库引入的滑动抽动，已解决）
+
+换 GB2312 全表字库后滑动抽动复发：根因是 5.4MB 字形表在 flash 走 XIP cache 读，
+表大 cache 局部性差，文本渲染的 flash 突发在 MSPI 上与 EDMA 扫描争抢 → 帧中
+EDMA 饥饿（所有计数器都看不见）。修复：JC8048 链 `_min` 最小子集字体
+（`ui_layout.c` 的 `UI_FONT_MIN` 开关），抽动消失。全程细节见 docs 指南第 12 节。
+JC8048 当前配置：DIRECT 双缓冲 + -O2 + refr15 + cache line 32B + UI_FONT_MIN=1。
+
 ### 排障原则（用户明确要求）
 
 - 不要拉 Arduino core 作依赖；GFX 已经证明就是 esp_lcd，魔改库无意义。

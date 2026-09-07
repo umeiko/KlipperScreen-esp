@@ -213,10 +213,10 @@ static void tick(void)
             char msg[64];
             snprintf(msg, sizeof(msg), TR("已连接 %s"), sel_ssid);
             ui_toast(msg, THEME_COL_OK);
-            /* 凭据落盘 network.conf，下次开机自动回连 */
+            /* 凭据落盘 network.conf，下次开机自动回连（wc 已清零，截断也安全） */
             wifi_conf_t wc = {0};
-            strncpy(wc.ssid, sel_ssid, sizeof(wc.ssid) - 1);
-            strncpy(wc.pass, pwd_buf, sizeof(wc.pass) - 1);
+            snprintf(wc.ssid, sizeof(wc.ssid), "%s", sel_ssid);
+            snprintf(wc.pass, sizeof(wc.pass), "%s", pwd_buf);
             wc.valid = true;
             settings_save_wifi(&wc);
             conn_overlay_close();

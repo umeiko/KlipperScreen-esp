@@ -26,3 +26,9 @@ CONFIG_PARTITION_TABLE_FILENAME="partitions_jc8048w550.csv"
 # LVGL 渲染周期 15ms：rgb44 flush_cb 阻塞等 vsync 换页，实际帧节奏锁到面板 39fps。
 # 默认 33ms 会让内容更新率卡在 30Hz，与 39Hz vsync 错拍 → 滑动帧间隔忽长忽短（轻微抖动）
 CONFIG_LV_DEF_REFR_PERIOD=15
+
+# -O2：-Og 下滑动整页渲染 ~50ms/帧（远超 25.6ms 帧预算），实测掉到 ~17fps 且帧间隔不均。
+# 仅本板开启（CYD 4MB flash 分区余量仅 9%，-O2 体积风险大）
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
+
+# D-cache line 64B 已实测证伪（2026-09-08）：静止自抽+滑动花屏加剧，保持 32B 默认

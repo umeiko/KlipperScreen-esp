@@ -123,8 +123,8 @@ def collect_chars() -> str:
     return "".join(sorted(chars))
 
 
-def gen_font(font: str, latin_font: str, size: int, symbols: str, compress: bool) -> Path:
-    out = ROOT / "src" / "ui" / "assets" / f"font_cjk_{size}.c"
+def gen_font(font: str, latin_font: str, size: int, symbols: str, compress: bool, suffix: str = "") -> Path:
+    out = ROOT / "src" / "ui" / "assets" / f"font_cjk_{size}{suffix}.c"
     cmd = [
         "node", str(CONV_JS),
         "--font", font,
@@ -138,8 +138,10 @@ def gen_font(font: str, latin_font: str, size: int, symbols: str, compress: bool
         "--range", "0xA0-0xFF",
         "-o", str(out),
     ]
-    # 14/16（CYD，4MB flash）压缩；28/32（JC8048，16MB flash 充裕）不压：
-    # 压缩字形要逐字形现场解压，渲染 CPU 开销大，实测在 RGB 大屏上滑动会轻微抖动
+    # 全部尺寸主版本不压缩：JC8048W550 滑动列表每帧重绘数百个字形，
+    # LVGL builtin 字体路径无字形缓存，RLE 每字每帧现场解码开销巨大（实测滑动仅 9.6fps）。
+    # 14/16 额外产出 _cmp 压缩变体给 CYD（4MB flash 分区放不下不压缩版；
+    # CYD 屏小字少，解压开销不构成瓶颈）。未引用的变体被链接器 --gc-sections 裁掉。
     if not compress:
         cmd.append("--no-compress")
     print(f"[gen] size={size} compress={compress} -> {out.relative_to(ROOT)}")
@@ -165,16 +167,26 @@ def main() -> int:
               file=sys.stderr)
         return 1
 
-    symbols = collect_chars()
+    lit = collect_chars()
     gb = gb2312_hanzi()
-    symbols = "".join(sorted(set(symbols) | set(gb)))
+    symbols = "".join(sorted(set(lit) | set(gb)))
     CHARSET_OUT.parent.mkdir(exist_ok=True)
     CHARSET_OUT.write_text(symbols, encoding="utf-8")
     print(f"[scan] GB2312 全表 {len(gb)} + 源码扫描，合计 {len(symbols)} 个非 ASCII 字符"
           f" -> {CHARSET_OUT.relative_to(ROOT)}")
 
     for size in SIZES:
-        gen_font(args.font, args.font_latin, size, symbols, compress=size <= 16)
+        # 主版本全尺寸不压缩（见 gen_font 注释）；14/16 另出 _cmp 压缩变体给 CYD
+        gen_font(args.font, args.font_latin, size, symbols, compress=False)
+        if size <= 16:
+            gen_font(args.font, args.font_latin, size, symbols, compress=True, suffix="_cmp")
+
+    # _min 最小子集变体（仅 UI 源码字面量，几百字）：JC8048W550 排障/降级用。
+    # 全表 5.4MB 字形在 flash，渲染时走 XIP cache 读；表越大 cache 局部性越差，
+    # 文本渲染的 flash 突发读取在 MSPI 上与 EDMA 扫描争抢（滑动抽动嫌疑之一）。
+    # 代价：文件名/SSID 里表外汉字会显示方框。
+    for size in (28, 32):
+        gen_font(args.font, args.font_latin, size, lit, compress=False, suffix="_min")
     print("[done] 字体生成完成，重新编译固件/桌面端即可生效")
     return 0
 

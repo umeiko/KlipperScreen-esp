@@ -4,11 +4,20 @@
 #include "sdkconfig.h"   /* CONFIG_BOARD_* 板型宏（裁剪全表字体尺寸档用） */
 #endif
 
-/* CJK 子集字体（tools/fontgen/gen_fonts.py 生成） */
+/* CJK 子集字体（tools/fontgen/gen_fonts.py 生成）；14/16 另有 _cmp 压缩变体：
+   CYD（4MB flash，屏小字少）用压缩版省 flash，desktop 用不压缩版省渲染 CPU。
+   28/32 另有 _min 最小子集变体（仅 UI 字面量，几百字）：JC8048 用——全表 5.4MB
+   字形走 XIP cache 读，表大 cache 局部性差，渲染文本的 flash 突发在 MSPI 上
+   与 EDMA 扫描争抢（滑动抽动的嫌疑变量，排障期用最小集恢复原状验证）；
+   代价是文件名/SSID 里表外汉字显示方框。改回全表：把 UI_FONT_MIN 置 0 */
 LV_FONT_DECLARE(font_cjk_14);
 LV_FONT_DECLARE(font_cjk_16);
+LV_FONT_DECLARE(font_cjk_14_cmp);
+LV_FONT_DECLARE(font_cjk_16_cmp);
 LV_FONT_DECLARE(font_cjk_28);
 LV_FONT_DECLARE(font_cjk_32);
+LV_FONT_DECLARE(font_cjk_28_min);
+LV_FONT_DECLARE(font_cjk_32_min);
 
 static int   scr_w = 320;
 static int   scr_h = 240;
@@ -55,12 +64,22 @@ static int big(void) { return scale_f >= 2.0f; }
 #define UI_FONT_BIG 0
 #elif defined(CONFIG_BOARD_JC8048W550)
 #define UI_FONT_BIG 1
+#define UI_FONT_MIN 1   /* 最小子集（排障：缩小 flash 字形表的 XIP 流量），置 0 回全表 */
+#endif
+
+/* JC8048：最小子集优先，未定义 UI_FONT_MIN 时默认全表 */
+#if defined(UI_FONT_MIN) && UI_FONT_MIN
+#define UI_FONT_28 font_cjk_28_min
+#define UI_FONT_32 font_cjk_32_min
+#else
+#define UI_FONT_28 font_cjk_28
+#define UI_FONT_32 font_cjk_32
 #endif
 
 const lv_font_t *ui_font_s(void)
 {
 #if defined(UI_FONT_BIG)
-    return UI_FONT_BIG ? &font_cjk_28 : &font_cjk_14;
+    return UI_FONT_BIG ? &UI_FONT_28 : &font_cjk_14_cmp;
 #else
     return big() ? &font_cjk_28 : &font_cjk_14;
 #endif
@@ -69,7 +88,7 @@ const lv_font_t *ui_font_s(void)
 const lv_font_t *ui_font_m(void)
 {
 #if defined(UI_FONT_BIG)
-    return UI_FONT_BIG ? &font_cjk_32 : &font_cjk_16;
+    return UI_FONT_BIG ? &UI_FONT_32 : &font_cjk_16_cmp;
 #else
     return big() ? &font_cjk_32 : &font_cjk_16;
 #endif
