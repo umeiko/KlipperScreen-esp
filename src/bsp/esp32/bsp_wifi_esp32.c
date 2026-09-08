@@ -174,8 +174,13 @@ void bsp_wifi_scan_start(void)
     if (W.scan_running) return;
     W.scan_running = true;
     W.scan_done = false;
-    /* 非阻塞扫描，结果由 WIFI_EVENT_SCAN_DONE 带回 */
-    esp_wifi_scan_start(NULL, false);
+    /* 非阻塞扫描，结果由 WIFI_EVENT_SCAN_DONE 带回；失败必须清状态，否则永远'扫描中' */
+    esp_err_t err = esp_wifi_scan_start(NULL, false);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "scan_start failed: %s", esp_err_to_name(err));
+        W.scan_running = false;
+        W.scan_done = false;
+    }
 }
 
 int bsp_wifi_scan_poll(bsp_wifi_ap_t *out, int max)

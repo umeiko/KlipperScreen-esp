@@ -51,7 +51,7 @@ static lv_obj_t *make_row(lv_obj_t *parent, const char *name, uint32_t col,
 {
     lv_obj_t *row = theme_card(parent);
     lv_obj_set_size(row, ui_content_w(), h);
-    lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_USER_1);
     lv_obj_add_event_cb(row, cb, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t *ic = theme_img(row, icon, col);

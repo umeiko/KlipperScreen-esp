@@ -21,13 +21,6 @@ static void on_menu(lv_event_t *e)
     panel_mgr_open((const char *)lv_event_get_user_data(e));
 }
 
-static void on_status_click(lv_event_t *e)
-{
-    LV_UNUSED(e);
-    if (printer_state() == PRINTER_STATE_PRINTING || printer_state() == PRINTER_STATE_PAUSED)
-        panel_mgr_open("job_status");
-}
-
 static void do_estop(void *ud)
 {
     LV_UNUSED(ud);
@@ -112,8 +105,7 @@ static lv_obj_t *create(void)
     card_status = theme_card(scr);
     lv_obj_set_size(card_status, ui_content_w(), ui_px(40));
     lv_obj_align(card_status, LV_ALIGN_TOP_MID, 0, THEME_TITLEBAR_H + ui_px(4));
-    lv_obj_add_flag(card_status, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(card_status, on_status_click, LV_EVENT_CLICKED, NULL);
+    /* 状态卡是纯展示（空闲时点击无操作），不参与编码器选中 */
 
     /* 状态图标（链接/断链/感叹号，着色随卡片底色反色） */
     img_state = theme_img(card_status, ui_icon(&img_link, &img_link_32), THEME_COL_BG);

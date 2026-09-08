@@ -175,7 +175,7 @@ lv_obj_t *theme_row_link(lv_obj_t *scr, const char *key, const char *val, int y,
     lv_obj_t *row = theme_card(scr);
     lv_obj_set_size(row, ui_content_w(), ui_px(38));
     lv_obj_align(row, LV_ALIGN_TOP_MID, 0, y);
-    lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_USER_1);   /* USER_1：进编码器焦点组 */
     lv_obj_add_event_cb(row, cb, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t *k = theme_label(row, key, THEME_FONT_M, THEME_COL_TEXT);

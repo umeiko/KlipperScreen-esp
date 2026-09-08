@@ -73,13 +73,15 @@ void ui_toast(const char *text, uint32_t accent_hex)
     ui_anim_after(2600, toast_slide_out, toast);
 }
 
-/* ---------- 转场 ---------- */
+/* ---------- 转场 ----------
+ * 用同步 lv_screen_load：动画版 lv_screen_load_anim 在动画期间活动屏仍是旧屏，
+ * show() 里立即重建焦点组会收集到旧页面对象（新页无法聚焦、返回后编码器失灵）。 */
 void ui_screen_push(lv_obj_t *scr)
 {
-    lv_screen_load_anim(scr, LV_SCR_LOAD_ANIM_MOVE_LEFT, UI_ANIM_NORMAL, 0, false);
+    lv_screen_load(scr);
 }
 
 void ui_screen_pop(lv_obj_t *scr)
 {
-    lv_screen_load_anim(scr, LV_SCR_LOAD_ANIM_MOVE_RIGHT, UI_ANIM_NORMAL, 0, false);
+    lv_screen_load(scr);
 }

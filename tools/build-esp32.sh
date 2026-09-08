@@ -25,6 +25,9 @@ board_conf() {
         jc8048w550)
             TARGET=esp32s3; BDIR=build-jc8048w550; SDKCFG=sdkconfig.jc8048w550
             DEFS="sdkconfig.defaults;sdkconfig.defaults.jc8048w550" ;;
+        esp32s3_st7789)
+            TARGET=esp32s3; BDIR=build-esp32s3_st7789; SDKCFG=sdkconfig.esp32s3_st7789
+            DEFS="sdkconfig.defaults;sdkconfig.defaults.esp32s3_st7789" ;;    
         *) echo "unknown board: $1 (cyd_2432s028r | e32r35t | jc8048w550 | all)" >&2; exit 1 ;;
     esac
 }
@@ -47,6 +50,7 @@ if [ "$BOARD" = all ]; then
     build_one cyd_2432s028r
     build_one e32r35t
     build_one jc8048w550
+    build_one esp32s3_st7789
     exit 0
 fi
 

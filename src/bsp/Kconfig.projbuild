@@ -15,6 +15,9 @@ menu "Board selection"
 
         config BOARD_JC8048W550
             bool "JC8048W550 (ESP32-S3, 800x480 ST7262 RGB + GT911)"
+
+        config BOARD_ESP32S3_ST7789
+            bool "ESP32-S3 ST7789 (ESP32-S3, 240x320 ST7789 SPI + GT911)"    
     endchoice
 
 endmenu

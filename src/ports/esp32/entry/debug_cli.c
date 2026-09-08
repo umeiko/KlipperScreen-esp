@@ -4,6 +4,7 @@
  *   scan                     扫描 AP 并打印（ssid / rssi / authmode）
  *   wifi <ssid> <pass>     连接 AP（pass 为空则按开放网络连；含空格需整体作为其余行内容）
  *   mr <host> [port]       保存 moonraker.conf 并重连
+ *   rx <file> <len>        从串口接收 len 字节原始二进制写入文件（开机图等）
  *   mrstart                按已存配置启动 moonraker 客户端
  *   status                 打印 wifi / moonraker 状态
  */
@@ -90,6 +91,33 @@ static void cmd_cat(char *args)
     }
     printf("\n");
     fclose(f);
+}
+
+static void cmd_rx(char *args)
+{
+    /* rx <file> <len>：随后的 len 字节原始二进制从 stdin 直接读入并写文件 */
+    char *sp = args ? strchr(args, 0x20) : NULL;
+    if (!sp) { printf("usage: rx <file> <len>\n"); return; }
+    *sp = 0;
+    long len = atol(sp + 1);
+    if (len <= 0 || len > 8 * 1024 * 1024) { printf("rx: bad len (%ld)\n", len); return; }
+    char path[96];
+    fs_resolve(args, path, sizeof(path));
+    FILE *f = fopen(path, "wb");
+    if (!f) { printf("rx: cannot create %s\n", path); return; }
+    printf("rx: receiving %ld bytes to %s, send data now...\n", len, path);
+    fflush(stdout);
+    static char rbuf[4096];
+    long left = len;
+    while (left > 0) {
+        size_t want = (size_t)(left > (long)sizeof(rbuf) ? sizeof(rbuf) : left);
+        size_t got = fread(rbuf, 1, want, stdin);
+        if (got == 0) { printf("\nrx: read failed at %ld/%ld\n", len - left, len); break; }
+        fwrite(rbuf, 1, got, f);
+        left -= (long)got;
+    }
+    fclose(f);
+    printf("rx: done %ld bytes -> %s\n", len - left, path);
 }
 
 static void cmd_rm(char *args)
@@ -244,6 +272,8 @@ static void cli_handle(char *line)
         cmd_cat(args);
     } else if (!strcmp(line, "rm")) {
         cmd_rm(args);
+    } else if (!strcmp(line, "rx")) {
+        cmd_rx(args);   /* 注意：不要在这里调用 cmd_rm —— 会把刚接收的文件删掉 */
     } else if (!strcmp(line, "mr")) {
         cmd_mr(args);
     } else if (!strcmp(line, "printer")) {

@@ -23,7 +23,8 @@ typedef struct {
 void panel_mgr_init(void);
 void panel_mgr_open(const char *name);   /* 入栈 + 左滑转场 */
 void panel_mgr_back(void);               /* 出栈 + 右滑转场 */
-void panel_mgr_home(void);               /* 直接回主面板（清空导航栈） */
+void panel_mgr_home(void);
+void panel_mgr_nav_refresh(void);   /* 动态列表重建后重建焦点组 */               /* 直接回主面板（清空导航栈） */
 int  panel_mgr_depth(void);
 const char *panel_mgr_current(void);
 void panel_mgr_tick(void);               /* mock/数据层节拍入口 */

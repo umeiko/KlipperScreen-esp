@@ -71,13 +71,16 @@ static lv_obj_t *create(void)
     lv_obj_align(b_in, LV_ALIGN_BOTTOM_RIGHT, -ui_px(10), -yb_bottom);
     lv_obj_add_event_cb(b_in, on_extrude, LV_EVENT_CLICKED, (void *)(intptr_t)0);
 
+    /* 装料/退料：暂无后端 API（未接 Klipper 宏），不参与焦点选中，避免无效块 */
     lv_obj_t *b_load = theme_button(scr, NULL, "装料", 0);
     lv_obj_set_size(b_load, bw, ui_px(32));
     lv_obj_align(b_load, LV_ALIGN_BOTTOM_LEFT, ui_px(10), -ui_px(10));
+    lv_obj_clear_flag(b_load, LV_OBJ_FLAG_CLICKABLE);
 
     lv_obj_t *b_unload = theme_button(scr, NULL, "退料", 0);
     lv_obj_set_size(b_unload, bw, ui_px(32));
     lv_obj_align(b_unload, LV_ALIGN_BOTTOM_RIGHT, -ui_px(10), -ui_px(10));
+    lv_obj_clear_flag(b_unload, LV_OBJ_FLAG_CLICKABLE);
 
     return scr;
 }

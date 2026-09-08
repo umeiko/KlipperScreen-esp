@@ -78,6 +78,8 @@ void bsp_lvgl_lock(void)   {}
 void bsp_lvgl_unlock(void) {}
 
 void bsp_restart(void)
+lv_indev_t *bsp_encoder_indev(void) { return NULL; }   /* 桌面端无旋转编码器 */
+
 {
     /* 桌面端无「重启」概念：退出进程，重新启动即按新配置加载 */
     printf("bsp_restart: exit for restart\n");

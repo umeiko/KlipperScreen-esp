@@ -5,6 +5,7 @@
 # 文件内部用 #if CONFIG_BOARD_* 裁剪；依赖也全部列上（对端目标都能编译）。
 idf_component_register(SRCS "esp32/bsp_cyd_2432s028r.c"
                             "esp32/bsp_e32r35t.c"
+                            "esp32/bsp_esp32s3_st7789.c"
                             "esp32/bsp_jc8048w550.c"
                             "esp32/bsp_wifi_esp32.c"
                             "esp32/bsp_conf_littlefs.c"

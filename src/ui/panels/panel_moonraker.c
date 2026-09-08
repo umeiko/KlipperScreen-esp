@@ -94,17 +94,26 @@ static void open_text_dialog(const char *title, char *target, size_t cap,
     lv_textarea_set_one_line(ta, true);
     lv_textarea_set_text(ta, target);
     lv_obj_set_width(ta, ui_px(300));
-    lv_obj_align(ta, LV_ALIGN_TOP_MID, 0, ui_px(34));
+    lv_obj_align(ta, LV_ALIGN_TOP_MID, 0, ui_px(30));
 
+    /* 软件键盘（LVGL 自带）：编码器可聚焦按键逐个输入字符，回车=确认 */
     lv_obj_t *kb = lv_keyboard_create(txt_overlay);
-    lv_obj_set_size(kb, ui_scr_w(), ui_px(150));
-    lv_obj_align(kb, LV_ALIGN_BOTTOM_MID, 0, 0);
-    /* 按键字符随屏幕档位放大：用 montserrat 图标档（16→32），
-       不能用 font_cjk —— 键盘的 确定/退格 等是 LV_SYMBOL 字形，CJK 字体不含会变方框 */
-    lv_obj_set_style_text_font(kb, ui_font_icon(), LV_PART_ITEMS);
     lv_keyboard_set_textarea(kb, ta);
+    lv_obj_set_size(kb, ui_scr_w(), ui_px(118));
+    lv_obj_align(kb, LV_ALIGN_TOP_MID, 0, ui_px(68));
     lv_obj_add_event_cb(kb, on_txt_ready, LV_EVENT_READY, NULL);
-    lv_obj_add_event_cb(kb, on_txt_cancel, LV_EVENT_CANCEL, NULL);
+    lv_obj_add_flag(kb, LV_OBJ_FLAG_USER_1);   /* buttonmatrix 非 button：显式标记进焦点组 */
+
+    /* 确定/取消 */
+    lv_obj_t *btn_ok = theme_button(txt_overlay, LV_SYMBOL_OK, TR("确定"), 1);
+    lv_obj_align(btn_ok, LV_ALIGN_BOTTOM_RIGHT, ui_px(-8), ui_px(-8));
+    lv_obj_add_event_cb(btn_ok, on_txt_ready, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *btn_cx = theme_button(txt_overlay, LV_SYMBOL_CLOSE, TR("取消"), 0);
+    lv_obj_align(btn_cx, LV_ALIGN_BOTTOM_LEFT, ui_px(8), ui_px(-8));
+    lv_obj_add_event_cb(btn_cx, on_txt_cancel, LV_EVENT_CLICKED, NULL);
+
+    panel_mgr_nav_refresh();   /* 弹层新对象（键盘键/按钮）进焦点组 */
 }
 
 /* ---------- 行点击 ---------- */
@@ -161,7 +170,7 @@ static lv_obj_t *make_row(lv_obj_t *parent, const char *key, lv_obj_t **val_lbl,
     lv_obj_t *row = theme_card(parent);
     lv_obj_set_size(row, ui_content_w(), ui_px(38));
     lv_obj_align(row, LV_ALIGN_TOP_MID, 0, y);
-    lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_USER_1);
 
     int text_x = ui_px(2);
     if (icon) {

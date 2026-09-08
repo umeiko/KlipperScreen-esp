@@ -12,6 +12,9 @@ void bsp_init(void);
 
 lv_display_t *bsp_get_display(void);
 
+/* 旋转编码器输入设备（无编码器/桌面平台返回 NULL）。配合 lv_group 做焦点导航 */
+lv_indev_t *bsp_encoder_indev(void);
+
 /* LVGL 线程互斥（所有 LVGL API 调用必须持锁） */
 void bsp_lvgl_lock(void);
 void bsp_lvgl_unlock(void);
