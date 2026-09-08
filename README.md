@@ -4,6 +4,9 @@
 
 [中文文档](README_zh.md)
 
+> **📖 文档站 / Documentation: https://umeiko.github.io/KlipperScreen-esp/**
+> 支持的板子与引脚、移植教程、贡献指南都在这里。Board pinouts, porting tutorial and contribution guide live there.
+
 <p align="center">
   <img src="docs/screenshots/main_photo.jpg" alt="Klipper Remote on a CYD 2432S028R" width="720">
 </p>

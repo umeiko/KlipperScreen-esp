@@ -2,6 +2,9 @@
 
 [English README](README.md)
 
+> **📖 文档站：https://umeiko.github.io/KlipperScreen-esp/zh/**
+> 支持的板子与引脚、零基础移植教程、贡献指南都在文档站里。
+
 <p align="center">
   <img src="docs/screenshots/main_photo.jpg" alt="CYD 2432S028R 实机运行效果" width="720">
 </p>

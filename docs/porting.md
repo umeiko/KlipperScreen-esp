@@ -2,6 +2,10 @@
 
 This tutorial assumes **little to no ESP32 experience**. Goal: walk you through porting this firmware to a new board, step by step, until you have a flashable binary. We use the **CYD 2432S028R** (the classic cheap 2.8" resistive-touch board) and its BSP file `src/bsp/esp32/bsp_cyd_2432s028r.c` as the reference implementation, explaining one function at a time.
 
+![Porting on a breadboard: the main UI running on a ZJY-1.54IPS 240×240 display](screenshots/porting_breadboard.png)
+
+*A real porting session: breadboard + jumper wires, the firmware running on a tiny 1.54" 240×240 panel.*
+
 The whole process is five steps:
 
 1. Set up the development environment (ESP-IDF)
