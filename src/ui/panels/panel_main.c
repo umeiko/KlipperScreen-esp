@@ -109,10 +109,9 @@ static lv_obj_t *create(void)
     lv_obj_set_style_bg_color(scr, theme_col(THEME_COL_BG), 0);
 
     /* 状态卡片 */
-    card_status = theme_card(scr);
+    card_status = theme_action_card(scr);
     lv_obj_set_size(card_status, ui_content_w(), ui_px(40));
     lv_obj_align(card_status, LV_ALIGN_TOP_MID, 0, THEME_TITLEBAR_H + ui_px(4));
-    lv_obj_add_flag(card_status, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(card_status, on_status_click, LV_EVENT_CLICKED, NULL);
 
     /* 状态图标（链接/断链/感叹号，着色随卡片底色反色） */

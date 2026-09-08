@@ -7,8 +7,11 @@
 extern "C" {
 #endif
 
-/* 板级初始化：显示 + 触摸 + LVGL 节拍任务 */
+/* 板级初始化：显示 + 板载主输入 + LVGL 节拍任务 */
 void bsp_init(void);
+
+/* 可选附加输入：ESP32 按 Kconfig 建旋钮；desktop 建鼠标滚轮模拟器。 */
+void bsp_input_init(void);
 
 lv_display_t *bsp_get_display(void);
 
@@ -32,6 +35,9 @@ void bsp_fade_out(uint32_t ms);
 
 /* 自动息屏超时（秒，0=永不）。超时后关背光，任意触摸唤醒并恢复亮度 */
 void bsp_set_screen_timeout(uint32_t sec);
+
+/* 记录任意输入活动并在需要时唤醒背光；返回 true 表示本次输入刚唤醒屏幕。 */
+bool bsp_screen_activity(void);
 
 /* 反色 / 180° 旋转：运行时立即生效（设置项落盘 klipperscreen.conf，
    开机由 app 层读回并调用 setter 应用）。

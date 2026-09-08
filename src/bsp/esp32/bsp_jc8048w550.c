@@ -129,13 +129,15 @@ void bsp_set_screen_timeout(uint32_t sec)
     }
 }
 
-static void screen_activity(void)               /* 触摸回调里打点 + 唤醒 */
+bool bsp_screen_activity(void)                  /* 任意输入打点 + 唤醒 */
 {
+    bool woke = screen_off;
     last_act_us = esp_timer_get_time();
     if (screen_off) {
         screen_off = false;
         bsp_set_brightness(bl_pct);
     }
+    return woke;
 }
 
 static void screen_off_check(void)              /* lvgl 任务里周期检查 */
@@ -206,8 +208,7 @@ static void touch_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
     uint8_t count = 0;
     esp_lcd_touch_read_data(touch_handle);
     if (esp_lcd_touch_get_data(touch_handle, pt, &count, 1) == ESP_OK && count > 0) {
-        if (screen_off) wake_swallow = true;    /* 息屏时的按下只为唤醒 */
-        screen_activity();          /* 息屏唤醒 + 重置超时计时 */
+        if (bsp_screen_activity()) wake_swallow = true; /* 息屏时的按下只为唤醒 */
         if (wake_swallow) {                     /* 唤醒点击不触发任何元素 */
             data->state = LV_INDEV_STATE_RELEASED;
             return;

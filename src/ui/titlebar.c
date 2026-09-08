@@ -62,6 +62,8 @@ void titlebar_init(void)
     titlebar_tick();
 }
 
+lv_obj_t *titlebar_back_button(void) { return btn_back; }
+
 void titlebar_show_temps(int show)
 {
     show_temps = show;

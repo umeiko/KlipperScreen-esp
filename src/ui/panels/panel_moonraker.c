@@ -8,6 +8,7 @@
 #include "../lang.h"
 #include "../ui_anim.h"
 #include "../panel_mgr.h"
+#include "../ui_nav.h"
 #include "../widgets/keypad.h"
 #include "../assets/icons.h"
 #include "app_settings.h"
@@ -15,6 +16,7 @@
 #include "printer.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdint.h>
 
 static moonraker_conf_t cfg;        /* 工作副本（当前槽），保存时才落盘 */
 static lv_obj_t *lbl_switch;
@@ -25,6 +27,7 @@ static lv_obj_t *lbl_status;
 
 /* ---------- 文本输入弹层 ---------- */
 static lv_obj_t *txt_overlay;
+static lv_group_t *txt_nav_group;
 static lv_obj_t *ta;
 static char  *edit_target;          /* 指向 cfg.host 或 cfg.api_key */
 static size_t edit_cap;
@@ -53,7 +56,13 @@ static void refresh_row(lv_obj_t *lbl, const char *val, int masked)
 
 static void txt_overlay_close(void)
 {
-    if (txt_overlay) { lv_obj_delete(txt_overlay); txt_overlay = NULL; }
+    if (txt_overlay) {
+        ui_nav_detach_scope(txt_overlay);
+        lv_obj_delete(txt_overlay);
+        txt_overlay = NULL;
+        ui_nav_modal_end(txt_nav_group);
+        txt_nav_group = NULL;
+    }
 }
 
 static void on_txt_ready(lv_event_t *e)
@@ -79,8 +88,10 @@ static void open_text_dialog(const char *title, char *target, size_t cap,
     edit_cap = cap;
     edit_label = row_label;
     edit_masked = masked;
+    txt_nav_group = ui_nav_modal_begin();
 
     txt_overlay = lv_obj_create(lv_layer_top());
+    ui_nav_attach_scope(txt_overlay, txt_nav_group);
     lv_obj_remove_style_all(txt_overlay);
     lv_obj_set_size(txt_overlay, ui_scr_w(), ui_scr_h());
     lv_obj_set_style_bg_color(txt_overlay, theme_col(THEME_COL_BG), 0);
@@ -105,13 +116,213 @@ static void open_text_dialog(const char *title, char *target, size_t cap,
     lv_keyboard_set_textarea(kb, ta);
     lv_obj_add_event_cb(kb, on_txt_ready, LV_EVENT_READY, NULL);
     lv_obj_add_event_cb(kb, on_txt_cancel, LV_EVENT_CANCEL, NULL);
+    /* The encoder edits the keyboard; the textarea only displays its text. */
+    lv_group_remove_obj(ta);
+    theme_focusable(kb);
+    lv_group_focus_obj(kb);
+    lv_group_set_editing(txt_nav_group, true);
+}
+
+/* ---------- 旋钮专用 IPv4 编辑弹层 ---------- */
+static lv_obj_t *ip_overlay;
+static lv_group_t *ip_nav_group;
+static lv_obj_t *ip_field[4];
+static lv_obj_t *ip_value_label[4];
+static lv_obj_t *ip_hint;
+static lv_obj_t *ip_btn_save;
+static int ip_value[4];
+static int ip_edit_index = -1;
+static int ip_speed_score;
+static int ip_step_size = 1;
+static uint32_t ip_last_step_at;
+
+static void ip_render_field(int index)
+{
+    lv_label_set_text_fmt(ip_value_label[index], "%d", ip_value[index]);
+}
+
+static void ip_render_hint(void)
+{
+    if (ip_edit_index >= 0)
+        lv_label_set_text_fmt(ip_hint, "OCTET %d/4   STEP %d", ip_edit_index + 1, ip_step_size);
+    else
+        lv_label_set_text(ip_hint, "OK");
+}
+
+static int ip_accelerated_step(uint32_t now)
+{
+    uint32_t dt = ip_last_step_at ? lv_tick_elaps(ip_last_step_at) : 1000;
+    ip_last_step_at = now;
+    if (dt <= 90) ip_speed_score += 3;
+    else if (dt <= 170) ip_speed_score += 2;
+    else if (dt <= 280) ip_speed_score += 1;
+    else ip_speed_score = 0;
+    if (ip_speed_score > 10) ip_speed_score = 10;
+    return ip_speed_score >= 8 ? 10 : ip_speed_score >= 5 ? 5 : ip_speed_score >= 3 ? 2 : 1;
+}
+
+static void ip_begin_edit(int index)
+{
+    if (index < 0 || index >= 4) return;
+    if (ip_nav_group && lv_group_get_editing(ip_nav_group))
+        lv_group_set_editing(ip_nav_group, false);
+    ip_edit_index = index;
+    ip_speed_score = 0;
+    ip_step_size = 1;
+    ip_last_step_at = 0;
+    lv_group_focus_obj(ip_field[index]);
+    lv_group_set_editing(ip_nav_group, true);
+    ip_render_hint();
+}
+
+static void ip_finish_octet(void)
+{
+    if (ip_edit_index < 0) return;
+    int finished = ip_edit_index;
+    ip_edit_index = -1;
+    lv_group_set_editing(ip_nav_group, false);
+    if (finished < 3) {
+        ip_begin_edit(finished + 1);
+    } else {
+        lv_group_focus_obj(ip_btn_save);
+        ip_render_hint();
+    }
+}
+
+static void ip_overlay_close(void)
+{
+    if (!ip_overlay) return;
+    ui_nav_detach_scope(ip_overlay);
+    lv_obj_delete(ip_overlay);
+    ip_overlay = NULL;
+    ip_edit_index = -1;
+    ui_nav_modal_end(ip_nav_group);
+    ip_nav_group = NULL;
+}
+
+static void on_ip_field(lv_event_t *e)
+{
+    int index = (int)(intptr_t)lv_event_get_user_data(e);
+    lv_event_code_t code = lv_event_get_code(e);
+
+    if (code == LV_EVENT_KEY && ip_edit_index == index) {
+        uint32_t key = lv_event_get_key(e);
+        if (key == LV_KEY_LEFT || key == LV_KEY_RIGHT) {
+            ip_step_size = ip_accelerated_step(lv_tick_get());
+            ip_value[index] += key == LV_KEY_RIGHT ? ip_step_size : -ip_step_size;
+            if (ip_value[index] < 0) ip_value[index] = 0;
+            if (ip_value[index] > 255) ip_value[index] = 255;
+            ip_render_field(index);
+            ip_render_hint();
+        } else if (key == LV_KEY_ENTER) {
+            ip_finish_octet();
+        }
+    } else if (code == LV_EVENT_CLICKED) {
+        if (ip_edit_index == index)
+            ip_finish_octet();
+        else
+            ip_begin_edit(index);
+    }
+}
+
+static void on_ip_save(lv_event_t *e)
+{
+    LV_UNUSED(e);
+    snprintf(cfg.host, sizeof(cfg.host), "%d.%d.%d.%d",
+             ip_value[0], ip_value[1], ip_value[2], ip_value[3]);
+    refresh_row(lbl_host, cfg.host, 0);
+    ip_overlay_close();
+}
+
+static void on_ip_cancel(lv_event_t *e)
+{
+    LV_UNUSED(e);
+    ip_overlay_close();
+}
+
+static void open_ip_dialog(void)
+{
+    if (ip_overlay) return;
+
+    int a, b, c, d;
+    char trailing;
+    if (sscanf(cfg.host, "%d.%d.%d.%d%c", &a, &b, &c, &d, &trailing) == 4 &&
+        a >= 0 && a <= 255 && b >= 0 && b <= 255 &&
+        c >= 0 && c <= 255 && d >= 0 && d <= 255) {
+        ip_value[0] = a; ip_value[1] = b; ip_value[2] = c; ip_value[3] = d;
+    } else {
+        ip_value[0] = 192; ip_value[1] = 168; ip_value[2] = 1; ip_value[3] = 100;
+    }
+
+    ip_nav_group = ui_nav_modal_begin();
+    if (!ip_nav_group) return;
+
+    ip_overlay = lv_obj_create(lv_layer_top());
+    ui_nav_attach_scope(ip_overlay, ip_nav_group);
+    lv_obj_remove_style_all(ip_overlay);
+    lv_obj_set_size(ip_overlay, ui_scr_w(), ui_scr_h());
+    lv_obj_set_style_bg_color(ip_overlay, theme_col(THEME_COL_BG), 0);
+    lv_obj_set_style_bg_opa(ip_overlay, LV_OPA_COVER, 0);
+
+    lv_obj_t *title = theme_label(ip_overlay, "IPv4 地址", THEME_FONT_M, THEME_COL_TEXT);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, ui_px(8));
+    ip_hint = theme_label(ip_overlay, "", THEME_FONT_S, THEME_COL_TEXT_DIM);
+    lv_obj_align(ip_hint, LV_ALIGN_TOP_MID, 0, ui_px(31));
+
+    int field_w = ui_px(58);
+    int dot_w = ui_px(10);
+    int total_w = field_w * 4 + dot_w * 3;
+    int x0 = (ui_scr_w() - total_w) / 2;
+    int field_y = ui_px(57);
+    for (int i = 0; i < 4; i++) {
+        ip_field[i] = theme_action_card(ip_overlay);
+        lv_obj_set_size(ip_field[i], field_w, ui_px(66));
+        lv_obj_set_pos(ip_field[i], x0 + i * (field_w + dot_w), field_y);
+        lv_obj_set_style_bg_color(ip_field[i], theme_col(THEME_COL_ACCENT),
+                                  LV_STATE_FOCUS_KEY | LV_STATE_EDITED);
+        lv_obj_set_style_bg_opa(ip_field[i], LV_OPA_30,
+                                LV_STATE_FOCUS_KEY | LV_STATE_EDITED);
+        lv_obj_set_style_outline_width(ip_field[i], ui_px(3),
+                                       LV_STATE_FOCUS_KEY | LV_STATE_EDITED);
+        lv_obj_add_event_cb(ip_field[i], on_ip_field, LV_EVENT_ALL, (void *)(intptr_t)i);
+
+        ip_value_label[i] = theme_label(ip_field[i], "", THEME_FONT_L, THEME_COL_TEXT);
+        lv_obj_center(ip_value_label[i]);
+        ip_render_field(i);
+
+        if (i < 3) {
+            lv_obj_t *dot = theme_label(ip_overlay, ".", THEME_FONT_L, THEME_COL_TEXT_DIM);
+            lv_obj_set_width(dot, dot_w);
+            lv_obj_set_style_text_align(dot, LV_TEXT_ALIGN_CENTER, 0);
+            lv_obj_set_pos(dot, x0 + field_w + i * (field_w + dot_w), field_y + ui_px(23));
+        }
+    }
+
+    int gap = ui_gap(8);
+    int btn_w = (ui_content_w() - gap) / 2;
+    /* Save is registered immediately after the fields, so reverse rotation
+       from it returns directly to the fourth octet for a quick correction. */
+    ip_btn_save = theme_button(ip_overlay, LV_SYMBOL_OK, "确定", 1);
+    lv_obj_set_size(ip_btn_save, btn_w, ui_px(38));
+    lv_obj_align(ip_btn_save, LV_ALIGN_BOTTOM_RIGHT, -ui_px(8), -ui_px(13));
+    lv_obj_add_event_cb(ip_btn_save, on_ip_save, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *cancel = theme_button(ip_overlay, LV_SYMBOL_CLOSE, "取消", 0);
+    lv_obj_set_size(cancel, btn_w, ui_px(38));
+    lv_obj_align(cancel, LV_ALIGN_BOTTOM_LEFT, ui_px(8), -ui_px(13));
+    lv_obj_add_event_cb(cancel, on_ip_cancel, LV_EVENT_CLICKED, NULL);
+
+    ip_begin_edit(0);
 }
 
 /* ---------- 行点击 ---------- */
 static void on_host_click(lv_event_t *e)
 {
-    LV_UNUSED(e);
-    open_text_dialog("Moonraker 主机（IP 或域名）", cfg.host, sizeof(cfg.host), &lbl_host, 0);
+    lv_indev_t *indev = lv_event_get_indev(e);
+    if (indev && lv_indev_get_type(indev) == LV_INDEV_TYPE_ENCODER)
+        open_ip_dialog();
+    else
+        open_text_dialog("Moonraker 主机（IP 或域名）", cfg.host, sizeof(cfg.host), &lbl_host, 0);
 }
 
 static void on_key_click(lv_event_t *e)
@@ -158,10 +369,9 @@ static void on_save_click(lv_event_t *e)
 static lv_obj_t *make_row(lv_obj_t *parent, const char *key, lv_obj_t **val_lbl, int y,
                           const void *icon)
 {
-    lv_obj_t *row = theme_card(parent);
+    lv_obj_t *row = theme_action_card(parent);
     lv_obj_set_size(row, ui_content_w(), ui_px(38));
     lv_obj_align(row, LV_ALIGN_TOP_MID, 0, y);
-    lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
 
     int text_x = ui_px(2);
     if (icon) {

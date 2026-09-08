@@ -30,5 +30,8 @@ tmp/
 # MkDocs 本地构建产物（CI 里重新构建）
 /site/
 
+# 本地打包产物（CI/Release 会重新生成）
+/dist/
+
 # desktop 后端运行时产生的本机配置（勿入库）
 src/ports/desktop/*.conf

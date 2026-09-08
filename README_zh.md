@@ -9,7 +9,7 @@
   <img src="docs/screenshots/main_photo.jpg" alt="CYD 2432S028R 实机运行效果" width="720">
 </p>
 
-基于 ESP32 CYD 系列开发板的 Klipper 远程触屏显示器（对标 KlipperScreen），通过 WiFi 连接 Moonraker。多后端架构：所有界面/业务代码共享，每个后端（ESP32 各板型、desktop SDL2、未来的 Pico/STM32…）地位平等。
+基于 ESP32 显示开发板的 Klipper 远程控制屏（对标 KlipperScreen），通过 WiFi 连接 Moonraker，支持触摸、旋钮或二者并存。多后端架构共享全部界面和业务代码。
 
 ## 界面实拍
 
@@ -26,8 +26,8 @@
 - 打印任务：G-code 历史列表、二级菜单打印/删除、进度环 + 已用/剩余时间、暂停/恢复/取消
 - 控制：轴点动/归零、挤出/回抽（冷挤出保护）、温度预设（PLA/PETG/ABS/冷却）、急停/下位机重启（带确认）
 - 链路健壮：WS 自动重连、应用层心跳 RTT 显示、僵尸连接检测、Klipper 报错 toast（如限位未触发）
-- 体验细节：「Umeko」开机动画、5 种语言（EN/简中/繁中/FR/IT，切换时渐暗到黑再重启）、背光滑杆、自动息屏（15秒~1小时/永不）触摸唤醒、标题栏时钟（从 Moonraker 上位机对时，纯内网）
-- 触摸两点校准一次持久化到 flash；2432S028R 预置出厂校准参数
+- 体验细节：「Umeko」开机动画、5 种语言（EN/简中/繁中/FR/IT，切换时渐暗到黑再重启）、背光滑杆、自动息屏（15秒~1小时/永不）触摸/旋钮唤醒、标题栏时钟（从 Moonraker 上位机对时，纯内网）
+- 电阻触摸使用两点校准并持久化到 flash；电容触摸直接使用屏幕坐标，纯旋钮板无需触摸层
 
 ## 技术栈
 
@@ -40,9 +40,20 @@ ESP-IDF v5.5.5 · LVGL v9.3 · 多后端（ESP32 各 CYD 板型 / desktop SDL2�
 - **Windows**：`flash.bat COM6`（zip 内含 esptool.exe，无需装 Python）
 - **macOS / Linux**：`./flash.sh /dev/ttyUSB0`（需 `pip install esptool`）
 
-支持板型：**CYD 2432S028R**（2.8" 电阻屏）；**E32R35T**（ESP32-32E 3.5" 480×320 ST7796 电阻屏）；**JC8048W550**（Guition 5" 800×480 RGB 电容屏，ESP32-S3）。三款自 v0.2.0 起均为正式支持，排坑记录见 [docs/jc8048w550-rgb-display-guide.md](docs/jc8048w550-rgb-display-guide.md)。
+支持板型：**CYD 2432S028R**（2.8" 电阻屏）；**E32R35T**（ESP32-32E 3.5" 480×320 ST7796 电阻屏）；**EC11 旋钮最小系统**（ESP32-S3 + 240×320 ST7789 + EC11，无触摸，构建目标 `ec11_knob_minimal`）；**JC8048W550**（Guition 5" 800×480 RGB 电容屏，ESP32-S3）。面包板接线与 Fritzing 源文件见[支持的板子](docs/boards.zh.md#ec11-旋钮最小系统)，RGB 屏排坑记录见 [docs/jc8048w550-rgb-display-guide.md](docs/jc8048w550-rgb-display-guide.md)。
 
-首次启动自动格式化 LittleFS 分区并写入出厂触摸校准参数。
+首次启动会自动格式化 LittleFS。电阻触摸板有出厂参数时直接加载，否则进入校准；电容触摸和纯旋钮板不会运行校准流程。
+
+## Windows 控制端
+
+Windows 发行包包含两个用途明确的程序：
+
+- `klipper_remote_desktop.exe` 是真实控制端。在“设置 → Moonraker”填写主机后，它通过系统 WinHTTP WebSocket 接收实时状态，并发送与 ESP32 固件相同的控制指令。
+- `klipper_remote_simulator.exe` 使用本地模拟打印机数据，供界面布局预研和截图回归。
+
+真实控制端的配置保存在 `%APPDATA%\KlipperRemote`，模拟器仍把便携配置留在运行目录，二者不会混用打印机状态。
+
+在“设置 → Moonraker → 主机”上按下旋钮会打开四段式 IPv4 编辑器：旋转修改当前 0–255 数值，按下进入下一段，快速旋转最高加速到每格 10。触摸点击仍打开完整键盘，因此可以继续输入域名。
 
 ## 首次配置
 
@@ -86,23 +97,27 @@ docs/                   # 设计文档
    tools/msys64/usr/bin/bash.exe -lc "echo ok"   # 首次运行完成初始化
    echo 'Server = https://mirrors.tuna.tsinghua.edu.cn/msys2/msys/$arch'  > tools/msys64/etc/pacman.d/mirrorlist.msys
    echo 'Server = https://mirrors.tuna.tsinghua.edu.cn/msys2/mingw/$repo' > tools/msys64/etc/pacman.d/mirrorlist.mingw
-   tools/msys64/usr/bin/bash.exe -lc "pacman -Sy --noconfirm mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-SDL2"
+   tools/msys64/usr/bin/bash.exe -lc "pacman -Sy --noconfirm mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-SDL2 mingw-w64-ucrt-x86_64-cjson"
    ```
 3. **LVGL**：`git clone --depth 1 -b release/v9.3 https://gitee.com/mirrors/lvgl.git third_party/lvgl`
 
 ## 构建
 
 ```bash
-# desktop 后端（产物 src/ports/desktop/build/klipper_remote_desktop.exe）
+# Windows：真实控制端 + 开发模拟器；Linux 当前构建模拟器
 bash tools/build-desktop.sh
-./src/ports/desktop/build/klipper_remote_desktop.exe            # 交互窗口
-./src/ports/desktop/build/klipper_remote_desktop.exe 3000 x.bmp # 3 秒后截图退出
+./src/ports/desktop/build/klipper_remote_desktop.exe              # 真实 Moonraker 控制端
+./src/ports/desktop/build/klipper_remote_simulator.exe            # 布局模拟器
+./src/ports/desktop/build/klipper_remote_simulator.exe 3000 x.bmp # 3 秒后截图退出
 
 # ESP32 后端（CYD 2432S028R，工程目录 src/ports/esp32）
 cd src/ports/esp32
 powershell -NoProfile -ExecutionPolicy Bypass -File ../../../tools/idf.ps1 build
 powershell -NoProfile -ExecutionPolicy Bypass -File ../../../tools/idf.ps1 -p COMx flash monitor
 ```
+
+桌面窗口中，鼠标左键仍模拟触摸；滚轮正反转模拟旋钮旋转，中键模拟按下旋钮，
+可以直接测试触摸与旋钮并存的交互。
 
 ## 中文字体（改了 UI 文案后必跑）
 

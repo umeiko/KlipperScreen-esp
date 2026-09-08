@@ -51,6 +51,12 @@ lv_color_t theme_col(uint32_t hex);
 /* 卡片容器（无边框圆角深色块） */
 lv_obj_t *theme_card(lv_obj_t *parent);
 
+/* 可点击卡片：语义上是按钮，会自动进入当前编码器/键盘焦点域 */
+lv_obj_t *theme_action_card(lv_obj_t *parent);
+
+/* 给原生 LVGL 控件添加统一焦点外框并登记到最近的导航域 */
+void theme_focusable(lv_obj_t *obj);
+
 /* 标准按钮：圆角 + 按压缩放反馈；icon 为 LV_SYMBOL_*（可 NULL），text 为 CJK 文本（可 NULL） */
 lv_obj_t *theme_button(lv_obj_t *parent, const char *icon, const char *text, int accent);
 

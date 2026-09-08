@@ -1,6 +1,6 @@
 # Contributing a new board (PR guide)
 
-Contributing support for a new board means "one BSP implementation + full plumbing registration". This page is the complete checklist (modelled on the actual E32R35T commit). Read the [porting guide](porting.md) first.
+Contributing support for a new board means "one BSP implementation + full plumbing registration". Always start from [`templates/board/`](https://github.com/umeiko/KlipperScreen-esp/tree/main/templates/board); existing BSPs are controller-specific references, not copy bases. Read the [porting guide](porting.md) first.
 
 ## Naming convention
 
@@ -10,7 +10,7 @@ Board identifiers are **lowercase snake_case** model names (e.g. `cyd_2432s028r`
 
 | # | File | Change | Required? |
 |---|---|---|---|
-| 1 | `src/bsp/esp32/bsp_<board>.c` | New BSP implementation, wrapped entirely in `#if CONFIG_BOARD_<BOARD>` | ✅ |
+| 1 | `src/bsp/esp32/bsp_<board>.c` | Copy the board template, then fill only the marked hardware sections; keep the whole file under `#if CONFIG_BOARD_<BOARD>` | ✅ |
 | 2 | `src/bsp/Kconfig.projbuild` | Add `config BOARD_<BOARD>` to `choice BOARD` | ✅ |
 | 3 | `src/bsp/CMakeLists.txt` | Add the source to SRCS; add the component name to REQUIRES if a new driver chip is used | ✅ |
 | 4 | `src/ports/esp32/entry/idf_component.yml` | Add the managed-component dependency with a version constraint if a new driver chip is used | If needed |
@@ -36,12 +36,15 @@ Board identifiers are **lowercase snake_case** model names (e.g. `cyd_2432s028r`
 1. Full local build of the new board passes: `bash tools/build-esp32.sh <board>`
 2. **Regression build** of at least one existing board (mandatory when shared files changed): `bash tools/build-esp32.sh cyd_2432s028r`
 3. Firmware size check: the `binary size` printed at the end of the build fits the app partition (currently 0x320000)
-4. Flash and verify display + touch on real hardware if you have it; otherwise state "not tested on hardware" in the PR
+4. Run the porting guide's five-colour test without LVGL, then verify the boot animation, full UI, and every declared input
+5. If no hardware was tested, state "not tested on hardware" explicitly and keep the board marked WIP
 
 ## What to include in the PR
 
 - Board documentation links (vendor wiki / schematic / pinout table)
-- On-device photos or serial logs proving display/touch work — or an explicit note that it's untested
+- Display interface class (SPI/I80/RGB/QSPI/MIPI), controller, and proven clock or timing values
+- On-device photos or logs for both the five-colour test and full UI — or an explicit note that they are untested
 - Intentional deviations from the template BSP (e.g. shared bus, no RST pin, forced calibration) to ease review
+- Input declaration: touch, rotary, both, or neither. Rotary GPIOs belong in Kconfig/sdkconfig rather than a private UI implementation
 
-Commit message style (see history): `feat: add <board> support (<display> + <touch>, WIP)`.
+Commit message style (see history): `feat: add <board> support (<display> + <touch/rotary>, WIP)`.

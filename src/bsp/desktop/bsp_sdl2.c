@@ -4,12 +4,14 @@
  * 环境变量 KLIPPER_RES=WxH 可模拟其它板型分辨率（如 KLIPPER_RES=800x480 模拟 JC8048W550）。
  */
 #include "bsp.h"
+#include <SDL.h>
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 static int scr_w = 320, scr_h = 240;
+static SDL_mutex *lvgl_mutex;
 
 void bsp_init(void)
 {
@@ -25,8 +27,23 @@ void bsp_init(void)
 
     lv_display_t *disp = lv_sdl_window_create(scr_w, scr_h);
     lv_sdl_window_set_zoom(disp, scr_w <= 320 ? 2 : 1);
-    lv_sdl_window_set_title(disp, "Klipper Remote (desktop)");
+#ifdef KLIPPER_DESKTOP_SIMULATOR
+    lv_sdl_window_set_title(disp, "Klipper Remote Simulator");
+#else
+    lv_sdl_window_set_title(disp, "Klipper Remote");
+#endif
     lv_sdl_mouse_create();
+    lvgl_mutex = SDL_CreateMutex();
+    if (!lvgl_mutex) {
+        fprintf(stderr, "SDL_CreateMutex failed: %s\n", SDL_GetError());
+        exit(1);
+    }
+}
+
+void bsp_input_init(void)
+{
+    /* 滚轮正/反转 = encoder diff；中键按下 = encoder push。 */
+    lv_sdl_mousewheel_create();
 }
 
 /* ---------- 开机动画推屏（boot_anim 调用；首次调用时建全屏 canvas） ---------- */
@@ -73,9 +90,9 @@ lv_display_t *bsp_get_display(void)
     return lv_display_get_default();
 }
 
-/* 桌面端 LVGL 单线程运行（LV_USE_OS=LV_OS_NONE），锁为空操作 */
-void bsp_lvgl_lock(void)   {}
-void bsp_lvgl_unlock(void) {}
+/* 网络线程只在持锁时向 LVGL 投递异步更新。主循环也持同一把锁。 */
+void bsp_lvgl_lock(void)   { if (lvgl_mutex) SDL_LockMutex(lvgl_mutex); }
+void bsp_lvgl_unlock(void) { if (lvgl_mutex) SDL_UnlockMutex(lvgl_mutex); }
 
 void bsp_restart(void)
 {
@@ -108,6 +125,8 @@ void bsp_set_screen_timeout(uint32_t sec)
     /* 桌面端不息屏，仅打印便于调试 */
     printf("bsp_set_screen_timeout: %us\n", (unsigned)sec);
 }
+
+bool bsp_screen_activity(void) { return false; }
 
 void bsp_time_sync_from_host(const char *host, uint16_t port)
 {

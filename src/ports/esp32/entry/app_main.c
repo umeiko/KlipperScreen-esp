@@ -11,6 +11,7 @@ void app_main(void)
     bsp_init();            /* 显示 + 触摸 + LVGL 任务（核 1） */
 
     bsp_lvgl_lock();
+    bsp_input_init();      /* 可选附加输入（Kconfig 旋转编码器），可与触摸并存 */
     boot_anim_play(bsp_lcd_push, bsp_delay_ms);   /* 「Umeko」开机动画（~2.5s） */
     ui_app_create();       /* 与 desktop 后端共享的同一份 UI 代码 */
     bsp_lvgl_unlock();

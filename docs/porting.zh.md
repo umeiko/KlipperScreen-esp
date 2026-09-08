@@ -1,18 +1,23 @@
 # 移植到自己的开发板（零基础教程）
 
-这篇教程假设你**几乎没碰过 ESP32 开发**，目标是：手把手带你把本项目的固件移植到一块新板子上，并且本地编译出可以烧录的产物。全程以 **CYD 2432S028R**（2.8 寸电阻屏，最经典最便宜的板子）的 BSP 文件 `src/bsp/esp32/bsp_cyd_2432s028r.c` 为参考实现，一个函数一个函数地讲。
+这篇教程面向第一次给 ESP32 接屏幕的人。目标不是让你复制一块已有板子的代码，而是让你按顺序证明每一层都能工作，最后得到一个容易维护的新板型。
+
+请从 `templates/board/` 开始。模板里的显示部分是一个**常见 SPI + ST7789 示例**，不是所有屏幕的通用答案。你的屏幕如果使用 ILI9341、ST7796、I80 并口、RGB 并口、QSPI 或 MIPI，显示部分必须按本章选择对应路线。
 
 ![面包板上的移植实验：一块 ZJY-1.54IPS 240×240 小屏跑起了主界面](screenshots/porting_breadboard.png)
 
-*移植中的真实场景：面包板 + 杜邦线，把固件跑在了一块 1.54 寸 240×240 的小屏上。*
+整个移植分成七步，每一步都有一个明确的成功标准：
 
-整个过程分五步：
+1. 准备环境，并成功编译已有板型。
+2. 查清硬件，先判断屏幕接口属于哪一类。
+3. 创建并登记一个干净的板型骨架。
+4. **只点亮屏幕**，显示稳定的纯色测试图。
+5. 把已经验证的显示代码接入 BSP 和 LVGL，再加入输入。
+6. 编译并分层验证正式固件。
+7. 按现象排错，准备贡献 PR。
 
-1. 准备开发环境（装 ESP-IDF）
-2. 拉代码、先编译一块已有板子验证环境
-3. 查清你的板子的硬件信息
-4. 写 BSP 文件（本教程的主体，逐函数讲解）
-5. 登记板型 + 编译出产物 + 排错
+!!! warning "一次只解决一层"
+    点屏阶段不要同时加入触摸、WiFi、Moonraker 和完整 UI。背光亮起也不等于屏幕已经工作：背光 LED 和液晶像素通常是两套独立电路。
 
 ---
 
@@ -20,584 +25,504 @@
 
 ### 0.1 安装 ESP-IDF v5.5.5
 
-ESP-IDF 是乐鑫官方的开发框架，**版本必须是 5.5.5**（本项目锁定此版本）。
+本项目固定使用 ESP-IDF v5.5.5。
 
-- **Windows**：下载 [ESP-IDF 在线安装器](https://dl.espressif.com/dl/esp-idf/)，选择 v5.5.5 安装。装完后你应该有：
-    - IDF 源码：`C:\esp\v5.5.5\esp-idf`
-    - 工具链：`C:\Espressif\tools`
-- **Linux/macOS**：按 [官方文档](https://docs.espressif.com/projects/esp-idf/zh_CN/v5.5.5/esp32/get-started/) 用 `install.sh` 安装。
+- Windows：用乐鑫安装器安装 v5.5.5。默认会得到 `C:\esp\v5.5.5\esp-idf` 和 `C:\Espressif\tools`。
+- Linux/macOS：使用对应版本 ESP-IDF 自带的 `install.sh`。
 
-本项目自带环境包装脚本 `tools/idf.ps1` / `tools/idf-env.bat`，构建脚本会自动调用它们激活环境，你**不需要**手动配置 PATH。
+仓库里的 `tools/idf.ps1`、`tools/idf-env.bat` 和构建脚本会负责激活环境，不需要自己长期修改 PATH。
 
-### 0.2 拉代码
+### 0.2 拉取项目并验证工具链
 
 ```bash
 git clone https://github.com/umeiko/KlipperScreen-esp.git
 cd KlipperScreen-esp
-```
-
-### 0.3 先编译一块已有板子，验证环境没问题
-
-```bash
 bash tools/build-esp32.sh cyd_2432s028r
 ```
 
-第一次构建要 3~10 分钟（要联网拉依赖组件）。看到末尾这样的输出就说明环境 OK：
+末尾出现 `Project build complete`，并且应用没有超过 `Smallest app partition`，才说明工具链正常。第一次构建需要下载依赖，通常比后续增量构建慢很多。
 
-```
-Project build complete. To flash, run:
- idf.py flash
-...
-klipper_remote_display.bin binary size 0x2d55a0 bytes. Smallest app partition is 0x320000 bytes. ...
-```
-
-产物在 `src/ports/esp32/build/` 下：`bootloader/bootloader.bin`、`partition_table/partition-table.bin`、`klipper_remote_display.bin`。
-
-如果你手上正好有一块 CYD，可以顺手烧录验证整条链路：
-
-```bash
-bash tools/build-esp32.sh cyd_2432s028r flash COM6   # COM6 换成你的串口号
-```
-
-!!! tip "串口号怎么查"
-    Windows 设备管理器 → 端口（COM 和 LPT）；Linux 一般是 `/dev/ttyUSB0`。
+**本步成功标准**：不修改源码也能编译一个已有板型。做不到就先修环境，不要开始改显示驱动。
 
 ---
 
-## 第 1 步：查清你的板子的硬件信息
+## 第 1 步：先把硬件资料查完整
 
-动手写代码前，必须从**厂商 wiki / 原理图**里确认下面这些信息（缺一个都别开工）：
+### 1.1 建立一张板型资料卡
 
-| 要查的项 | 例子（CYD） | 去哪查 |
+从原理图、厂商示例、屏幕排线丝印和芯片手册里填写下面的表。商品标题经常只写屏幕尺寸，不能代替这些信息。
+
+| 项目 | 你要记录的内容 | 例子 |
 |---|---|---|
-| 主控型号 | ESP32（双核 240MHz） | 板子丝印 / 商品页 |
-| Flash 大小 | 4MB | 商品页 / `esptool flash_id` |
-| 屏幕驱动 IC | ILI9341 | 厂商 wiki / 排线丝印 |
-| 屏幕接口 | SPI | 同上 |
-| 屏幕分辨率 | 240×320（竖屏原生） | 同上 |
-| 触摸 IC | XPT2046（电阻） | 同上 |
-| 触摸接口 | SPI（独立总线还是和屏共用？） | 引脚表 |
-| 全部引脚 | SCLK=14, MOSI=13, ... | 厂商引脚分配表 |
-| 背光引脚 + 点亮电平 | GPIO21，高电平点亮 | 原理图 |
+| ESP 芯片 | 精确型号 | ESP32、ESP32-S3、ESP32-P4 |
+| Flash / PSRAM | 容量、模式、频率 | 16MB Flash、8MB OPI PSRAM |
+| 显示控制器或时序芯片 | 完整型号 | ILI9341、ST7789、ST7796、ST7262 |
+| **像素接口** | SPI、I80、RGB、QSPI、MIPI DSI | SPI |
+| 原生分辨率 | 面板未旋转时的宽 × 高 | 240×320 |
+| 显示引脚 | 全部信号名和 GPIO | SCLK、MOSI、CS、DC、RST |
+| 显示参数 | SPI mode / 频率，或 RGB 时序 | 40MHz、mode 0 |
+| 背光 | GPIO、有效电平、是否支持 PWM | GPIO21，高电平点亮 |
+| 触摸（可选） | 控制器、接口、共用总线情况 | XPT2046，独立 SPI |
+| 旋钮（可选） | A、B、按键 GPIO | GPIO4/5/6 |
 
-常见查找渠道：厂商 wiki（如 lcdwiki）、原理图 PDF、别人写好的 TFT_eSPI `User_Setup.h`（里面就是现成的引脚定义）。
+资料优先级建议是：**能稳定运行的同板厂商示例 > 原理图和屏幕规格书 > 同控制器参考代码 > 商品页 > 猜测**。
 
-!!! warning "SPI 屏特别注意"
-    触摸屏的 SPI 是和屏幕**共用一组引脚**还是**独立一组**，决定了 BSP 里要初始化几条 SPI 总线。CYD 是独立的（共享实测 MISO 无应答），E32R35T 是共用的——两种写法本项目里都有现成例子。
+### 1.2 先根据引脚名字判断接口
+
+“并口屏”不是一种实现。I80 和 RGB 都有很多数据线，但工作方式完全不同。
+
+| 常见引脚 | 接口类型 | 屏幕如何收图 | 本项目中的起点 |
+|---|---|---|---|
+| `SCLK/MOSI/CS/DC/RST` | SPI 命令屏 | MCU 发送命令和像素，屏内 GRAM 保存画面 | 板型模板、CYD、E32R35T |
+| `D0..D7/15 + WR/RD/CS/DC` | I80/8080 命令并口 | 和 SPI 类似，只是一次并行传 8/16 位 | ESP-IDF I80 示例 + 匹配的 panel driver |
+| `R0..B4 + PCLK/HSYNC/VSYNC/DE` | RGB/DOTCLK 并口 | MCU 必须连续输出整帧，屏通常不替你保存画面 | ESP-IDF RGB panel 示例；JC8048 仅作特殊案例 |
+| `CLK + D0..D3 + CS` | QSPI | 用 4 条数据线传命令或像素，协议依控制器而定 | 对应控制器驱动或厂商示例 |
+| `D0P/D0N、CLKP/CLKN` | MIPI DSI | 高速差分链路 | 仅在芯片支持 DSI 时从 ESP-IDF DSI 示例开始 |
+
+!!! tip "控制器型号和接口是两个问题"
+    同一种 ST7789 控制器可以接 SPI，也可以接 I80。选择哪套总线代码要看板子实际接出了哪些引脚，不能只看“ST7789”这个名字。
+
+### 1.3 判断内存是否够用
+
+RGB565 每个像素占 2 字节：
+
+```text
+一帧字节数 = 宽 × 高 × 2
+320 × 240  = 153,600 字节
+480 × 320  = 307,200 字节
+800 × 480  = 768,000 字节
+```
+
+SPI/I80 命令屏通常只需要 20～40 行的局部 DMA 缓冲。RGB 屏通常需要至少一块完整帧缓冲，双缓冲则需要两倍空间。大分辨率 RGB 屏基本离不开 PSRAM，还要考虑 PSRAM 与显示 DMA 是否争用带宽。
+
+**本步成功标准**：你能明确说出自己的接口类型，并把所有显示引脚和关键参数写进资料卡。接口还不确定时不要复制 BSP。
 
 ---
 
-## 第 2 步：写 BSP 文件（逐函数教程）
+## 第 2 步：创建并登记板型骨架
 
-### 2.0 先理解什么是 BSP
-
-本项目所有"和硬件有关"的代码都隔离在一层叫 BSP（Board Support Package，板级支持包）的东西里。上层 UI 只调用 `bsp_xxx()` 函数，完全不关心你是什么屏、什么触摸。
-
-所以移植 = 写**一个 C 文件**，实现 `src/bsp/bsp.h` 里声明的函数。打开 `src/bsp/bsp.h` 可以看到全部 11 个函数，这就是我们接下来要逐个实现的清单。
-
-### 2.1 创建文件骨架
-
-复制参考实现再改是最快的：
+先复制干净模板：
 
 ```bash
-cp src/bsp/esp32/bsp_cyd_2432s028r.c src/bsp/esp32/bsp_myboard.c
+cp templates/board/bsp_board_template.c src/bsp/esp32/bsp_myboard.c
+cp templates/board/sdkconfig.defaults.board_template src/ports/esp32/sdkconfig.defaults.myboard
 ```
 
-文件的第一行和最后一行是**板型开关**，必须改：
+替换 `BOARD_TEMPLATE`、`board_template` 和全部 `TODO(board)`。此时显示部分仍可以暂时保留示例 ST7789 transport；第 3 步会在硬件测试前替换它。
 
-```c
-#include "sdkconfig.h"
-#if CONFIG_BOARD_MYBOARD        // ← 改成你的板型宏
+需要修改以下位置：
 
-// ... 全部实现 ...
+| 文件 | 要做什么 |
+|---|---|
+| `src/bsp/Kconfig.projbuild` | 在 board choice 中添加 `CONFIG_BOARD_MYBOARD` |
+| `src/bsp/CMakeLists.txt` | 添加 `bsp_myboard.c`；登记新显示/触摸组件依赖 |
+| `src/ports/esp32/entry/idf_component.yml` | 添加组件注册表中的新 driver 依赖 |
+| `src/ports/esp32/sdkconfig.defaults.myboard` | 芯片、Flash、PSRAM、板型和旋钮默认项 |
+| `src/ui/ui_layout.c` | 为分辨率选择小/大字体档 |
+| `tools/build-esp32.sh` | 增加 target、build 目录和 sdkconfig 名称 |
 
-#endif /* CONFIG_BOARD_MYBOARD */
+板型默认配置从模板开始，只从同芯片板型复制芯片/Flash/PSRAM 配置。不要复制另一个板子的显示 GPIO 或触摸配置。
+
+!!! warning "sdkconfig 容易让人误判"
+    第一次构建后会生成完整的 `sdkconfig.myboard`。之后只改 `sdkconfig.defaults.myboard` 不会更新旧 sdkconfig。调配置时要么同步修改两者，要么确认可以丢弃旧配置后重新生成。`# CONFIG_XXX is not set` 也会覆盖 defaults。
+
+---
+
+## 第 3 步：单独点亮屏幕
+
+这一章只解决一件事：让屏幕稳定显示红、绿、蓝、白、黑五条色带。只修改第 2 步新建板型文件中的显示 transport；LVGL 和输入留到后面。
+
+### 3.1 先分清“背光”和“画面”
+
+- 背光亮、整屏白色：通常只证明背光供电正常，显示控制器可能没有初始化。
+- 背光不亮、串口日志正常：先检查背光 GPIO、电平和供电；像素可能已经在刷新，只是你看不见。
+- 背光亮、颜色条稳定：显示总线、初始化序列和最基本的像素传输已经成立。
+
+点屏时先让背光固定 100%，暂时不要加入亮度滑杆和自动息屏。
+
+### 3.2 找一个“已知能亮”的最小参考
+
+优先使用同一块板子的厂商例程。先原样编译、烧录并确认它真的稳定，再抄出这些参数：
+
+- 显示接口和引脚；
+- 复位、背光和显示使能电平；
+- SPI mode、SPI 时钟，或 RGB PCLK 与 porch/pulse 时序；
+- 控制器初始化命令；
+- RGB/BGR、反色、旋转和坐标偏移；
+- 缓冲放在内部 RAM 还是 PSRAM。
+
+如果厂商例程也不亮，应先解决接线、供电或资料错误。本项目的 UI 无法补救错误的硬件参数。
+
+### 3.3 所有接口都遵循同一个点屏顺序
+
+1. 配置供电、背光和复位 GPIO。
+2. 初始化像素总线。
+3. 创建 panel 或时序驱动。
+4. 复位屏幕。
+5. 发送初始化序列。
+6. 打开显示输出。
+7. 推送五色测试图。
+8. 保持静止至少 30 秒，观察闪烁、偏移和撕裂。
+
+只有第 2、3、5、7 步会随屏幕类型大幅变化。
+
+### 3.4 路线 A：SPI 命令屏
+
+适合 ILI9341、ST7789、ST7796 等通过 SPI 接线的屏幕。模板就是这条路线。
+
+#### 先改什么
+
+1. 把模板中的引脚改成原理图数值。没有 MISO 很正常，显示通常只写不读。
+2. 从 10～20MHz 开始验证，稳定后再逐步提高到厂商确认的频率。
+3. 按厂商示例填写 `spi_mode`，不要靠反复试四种模式代替查资料。
+4. 把 `esp_lcd_new_panel_st7789()` 换成真实控制器的构造函数。
+5. 如果该驱动不在当前依赖中，在 `idf_component.yml` 和 BSP 的 CMake 依赖里登记它。
+6. 按实际需要设置 `swap_xy`、`mirror`、`invert_color` 和 `set_gap`。
+
+总线、panel IO 和控制器是三层不同的东西：
+
+```text
+GPIO/SPI host
+    └─ esp_lcd_new_panel_io_spi()     负责怎么发送字节
+          └─ esp_lcd_new_panel_xxx()  负责发送什么初始化命令
+                └─ draw_bitmap()      负责把一个矩形像素块写进屏幕 GRAM
 ```
 
-**为什么要有这个开关**：构建系统会把所有板子的 BSP 文件**全部编译**（CMake 组件注册早于 Kconfig 加载，没法在 CMake 层面按板型过滤源文件），所以每个文件自己用 `#if` 包住，只有选中的板型才会编译出实际内容。宏名规则：`CONFIG_BOARD_` + 板型名大写。
+换了控制器时，通常不只是换头文件。初始化命令、颜色格式、可见区域偏移和休眠/唤醒命令都可能不同。
 
-### 2.2 引脚定义
+#### SPI 屏适合的 LVGL 模式
 
-文件顶部的宏，照你第 1 步查到的引脚表填。CYD 的样子：
+使用 `LV_DISPLAY_RENDER_MODE_PARTIAL`，准备两块 20～40 行的 `MALLOC_CAP_DMA` 缓冲。flush 把 `area` 对应的矩形交给 `esp_lcd_panel_draw_bitmap()`。
 
-```c
-#define PIN_LCD_SCLK   14    // SPI 时钟
-#define PIN_LCD_MOSI   13    // SPI 主机输出
-#define PIN_LCD_MISO   12    // SPI 主机输入
-#define PIN_LCD_CS     15    // 屏幕片选
-#define PIN_LCD_DC     2     // 数据/命令切换
-#define PIN_LCD_RST    4     // 屏幕复位（没有就填 -1）
-#define PIN_LCD_BL     21    // 背光
+DMA 传输是异步的。只有确认传输完成后，才能调用 `lv_display_flush_ready()` 让 LVGL 复用缓冲。模板用 `on_color_done` + 信号量完成这个等待。
 
-#define PIN_TP_SCLK    25    // 触摸 SPI（独立总线时才有这三个）
-#define PIN_TP_MOSI    32
-#define PIN_TP_MISO    39
-#define PIN_TOUCH_CS   33    // 触摸片选
-#define PIN_TOUCH_IRQ  36    // 触摸中断
+#### 常见 SPI 特有问题
 
-#define LCD_H_RES      320   // 横屏逻辑宽度
-#define LCD_V_RES      240   // 横屏逻辑高度
-#define LCD_SPI_HZ     (40 * 1000 * 1000)  // 屏幕 SPI 速度
-#define DRAW_BUF_LINES 40    // LVGL 绘图缓冲行数
+- 全白：CS/DC/RST 错、控制器驱动错、初始化命令没发出。
+- 整体图像平移或边缘缺失：需要 `esp_lcd_panel_set_gap()`。
+- 红蓝互换：切换 RGB/BGR。
+- 像照片负片：切换 `esp_lcd_panel_invert_color()`。
+- 颜色像随机雪花：先降 SPI 时钟，再检查 RGB565 字节顺序。
+- 第一帧正常，动画后破碎：DMA 缓冲在传完以前被释放或重写。
+
+### 3.5 路线 B：I80/8080 命令并口
+
+I80 屏有 `WR`、`RD`、`CS`、`DC` 和 8/16 根数据线。它虽然叫并口，工作模型仍接近 SPI 命令屏：屏内有 GRAM，MCU 把矩形区域写进去后，屏幕自己保持画面。
+
+与 SPI 路线相比，主要替换两层：
+
+```text
+esp_lcd_new_i80_bus()
+esp_lcd_new_panel_io_i80()
 ```
 
-要点：
+后面的 `esp_lcd_new_panel_xxx()`、`esp_lcd_panel_draw_bitmap()`、传输完成回调和 LVGL PARTIAL 缓冲思路通常仍可复用。数据位宽、`WR` 时钟、数据线顺序和最大传输字节数必须来自原理图或已知可用示例。
 
-- `LCD_H_RES/V_RES` 填**横屏**后的逻辑分辨率（CYD 原生竖屏 240×320，横屏就是 320×240）。
-- `DRAW_BUF_LINES` 是 LVGL 每次渲染多少行再送屏。缓冲大小 = `H_RES × 行数 × 2 字节`，CYD 是 320×40×2 = 25KB，要开两块。ESP32 内部 RAM 紧张，别贪大，20~40 行合适。
-- RST 如果和 ESP32 的 EN 共用了（如 E32R35T），填 `-1`，驱动会自动改用软件复位。
+!!! warning "不要把 I80 当成 RGB"
+    I80 有 `WR/DC/CS`，RGB 有 `PCLK/HSYNC/VSYNC/DE`。二者的驱动、缓冲和时序不可互换。
 
-### 2.3 `bsp_lvgl_lock` / `bsp_lvgl_unlock` —— LVGL 线程锁
+### 3.6 路线 C：RGB/DOTCLK 并口
 
-**干什么**：LVGL 不是线程安全的。本项目 LVGL 跑在独立任务里，其他任务（网络回调、串口 CLI）要动 UI 前必须先拿锁。
+RGB 屏有多根颜色数据线和 `PCLK/HSYNC/VSYNC/DE`。屏幕按像素时钟不停扫描；如果数据停止，画面通常也不能像 SPI 屏那样继续由 GRAM 保持。
+
+#### 必须从可靠来源得到的参数
+
+- 每根 R/G/B 数据线对应的 GPIO，顺序不能错；
+- `PCLK` 频率以及在哪个边沿采样；
+- HSYNC/VSYNC 的 pulse width、back porch、front porch；
+- 是否使用 DE，及其有效电平；
+- 分辨率和一行/一帧的总时序；
+- 帧缓冲位置、数量及 PSRAM 配置。
+
+先从 ESP-IDF v5.5.5 的 `examples/peripherals/lcd/rgb_panel` 或同板厂商例程做最小色带测试。普通 RGB 板应先尝试官方 `esp_lcd_new_rgb_panel()`。不要一开始就复制 JC8048W550 的 `rgb44`。
+
+#### RGB 屏适合的 LVGL 模式
+
+RGB 屏通常由完整帧缓冲驱动，常见组合是：
+
+| 方案 | 内存 | 特点 |
+|---|---:|---|
+| 单全帧缓冲 | 1 帧 | 省内存，但边扫描边写可能撕裂 |
+| 双全帧缓冲 | 2 帧 | 离屏渲染后在 VSYNC 换页，画面更稳 |
+| bounce buffer | 全帧 + 小块内部 RAM | 可缓解某些 PSRAM/DMA 限制，但参数敏感 |
+
+本项目的 JC8048W550 使用 `rgb44` + LVGL DIRECT 双缓冲，是针对这块 ESP32-S3/800×480 板经过实测得到的特殊路径。它还要求 VSYNC 换页、等待换页完成，以及在自管 PSRAM 帧缓冲时正确处理 cache 写回。完整原因见 [JC8048W550 RGB 屏专项指南](jc8048w550-rgb-display-guide.md)。
+
+只有在下面三件事都成立时，才考虑借用这条特殊路径：
+
+1. 厂商最小例程稳定；
+2. 官方 RGB panel 最小例程在相同硬件参数下出现可重复的欠载、错位或撕裂；
+3. 你已经测量并确认问题在传输模型，而不是 PCLK、时序、引脚或 UI 负载。
+
+#### 常见 RGB 特有问题
+
+- 面板循环显示自检色：PCLK 或同步时序不被面板接受。
+- 整屏斜着滚、周期错位：一行/一帧总时序错误。
+- 颜色通道错乱：R/G/B 数据线顺序或位宽错误。
+- 静态正常，滑动时抽动：PSRAM 带宽、DMA 欠载或 cache 一致性问题。
+- 小块更新不出现，大面积更新偶尔出现：检查自管帧缓冲的 cache 写回和换页同步。
+
+调 RGB 屏时每次只改一个变量，并记录厂商例程和当前固件的对应参数。
+
+### 3.7 路线 D：QSPI、MIPI 或不认识的接口
+
+QSPI 不是“把 SPI 的 MOSI 改成四根线”；MIPI DSI 也不能套用 RGB 时序。先确认 ESP 芯片是否具有对应外设，再从 ESP-IDF 同版本的官方示例或控制器厂商驱动开始。
+
+本仓库目前没有可直接复制的 QSPI/MIPI 板型模板。此时仍可复用 BSP 公共接口、UI、输入和配置层，但显示 transport 是一个新的适配工作。PR 中应附上数据手册、已知可用最小例程和色带测试结果，避免后来的人再次猜协议。
+
+### 3.8 用统一的五色色带验收
+
+先实现 `bsp_lcd_push(x, y, w, h, pixels)`，然后在 panel/帧缓冲初始化完成后、`lv_init()` 之前临时调用下面的测试。它只使用 20 行缓冲，适合小内存板：
 
 ```c
-static SemaphoreHandle_t lvgl_mux;
-
-void bsp_lvgl_lock(void)   { xSemaphoreTakeRecursive(lvgl_mux, portMAX_DELAY); }
-void bsp_lvgl_unlock(void) { xSemaphoreGiveRecursive(lvgl_mux); }
-```
-
-**解释**：就是一个 FreeRTOS 递归互斥锁的两个包装函数。`lvgl_mux` 在 `bsp_init()` 开头创建。**照抄，不用改任何字。**
-
-### 2.4 `bsp_get_display` / `bsp_delay_ms` / `bsp_restart` —— 三个一行流
-
-```c
-lv_display_t *bsp_get_display(void) { return lv_display_get_default(); }
-
-void bsp_delay_ms(uint32_t ms)
+static void display_smoke_test(void)
 {
-    vTaskDelay(pdMS_TO_TICKS(ms));
-}
+    static const uint16_t colors[] = {
+        0xF800,  /* red   */
+        0x07E0,  /* green */
+        0x001F,  /* blue  */
+        0xFFFF,  /* white */
+        0x0000,  /* black */
+    };
+    const int lines = 20;
+    uint16_t *buf = heap_caps_malloc(LCD_H_RES * lines * 2, MALLOC_CAP_DMA);
+    ESP_ERROR_CHECK(buf ? ESP_OK : ESP_ERR_NO_MEM);
 
-void bsp_restart(void)
-{
-    lv_refr_now(NULL);                 // 先把"重启中"的提示画上屏
-    vTaskDelay(pdMS_TO_TICKS(800));    // 给用户 800ms 看到它
-    esp_restart();
-}
-```
-
-**解释**：
-
-- `bsp_get_display`：返回 LVGL 默认显示器（在 `bsp_init` 里创建的那个）。上层拿它查分辨率。
-- `bsp_delay_ms`：开机动画用的普通延时。
-- `bsp_restart`：语言切换要重建全部 UI，实现方式是直接重启。先 `lv_refr_now` 强制刷新一帧，不然提示画不上去就重启了。
-
-**全部照抄。**
-
-### 2.5 `bsp_set_brightness` —— 背光亮度
-
-**干什么**：设置页里的亮度滑条调它。ESP32 上用 LEDC（硬件 PWM）控制背光引脚。
-
-```c
-static uint8_t bl_duty = 255;
-static int     bl_pct = 100;
-
-void bsp_set_brightness(int pct)
-{
-    if (pct < 0) pct = 0;
-    if (pct > 100) pct = 100;
-    if (pct > 0 && pct < 5) pct = 5;     // 兜底：防止设成 1% 黑屏后摸不到设置
-    bl_pct = pct;
-    bl_duty = (uint8_t)(pct * 255 / 100);
-    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, bl_duty);
-    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
-}
-```
-
-**解释**：把 0~100 的百分比换算成 8bit PWM 占空比（0~255）写进 LEDC 通道。LEDC 定时器和通道的初始化在 `bsp_init` 里做（第 2.11 节会讲）。**照抄**；如果你的板子背光是**低电平点亮**（少见），把占空比反过来写 `255 - bl_duty`。
-
-### 2.6 自动息屏三件套 —— `bsp_set_screen_timeout` + 两个内部函数
-
-**干什么**：设置页可以设"N 秒无操作自动息屏"，触摸任意位置唤醒。
-
-```c
-static uint32_t so_after_s;      // 超时秒数，0 = 永不
-static bool     screen_off;
-static int64_t  last_act_us;
-
-void bsp_set_screen_timeout(uint32_t sec)
-{
-    so_after_s = sec;
-    last_act_us = esp_timer_get_time();
-    if (screen_off) {                    // 正在息屏时改了设置 → 先唤醒
-        screen_off = false;
-        bsp_set_brightness(bl_pct);
+    for (int band = 0; band < 5; band++) {
+        int y1 = band * LCD_V_RES / 5;
+        int y2 = (band + 1) * LCD_V_RES / 5;
+        for (int y = y1; y < y2; y += lines) {
+            int h = y + lines <= y2 ? lines : y2 - y;
+            for (int i = 0; i < LCD_H_RES * h; i++) buf[i] = colors[band];
+            bsp_lcd_push(0, y, LCD_H_RES, h, buf);
+        }
     }
-}
-
-static void screen_activity(void)        // 触摸回调里调用：打点 + 唤醒
-{
-    last_act_us = esp_timer_get_time();
-    if (screen_off) {
-        screen_off = false;
-        bsp_set_brightness(bl_pct);
-    }
-}
-
-static void screen_off_check(void)       // LVGL 任务里周期调用
-{
-    if (screen_off || !so_after_s) return;
-    if (esp_timer_get_time() - last_act_us > (int64_t)so_after_s * 1000000) {
-        screen_off = true;
-        ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);   // 息屏 = 背光 PWM 归零
-        ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
-    }
+    while (1) vTaskDelay(pdMS_TO_TICKS(1000));
 }
 ```
 
-**解释**：一个状态机。`last_act_us` 记录最后一次触摸时间，`screen_off_check` 每 5ms 检查一次有没有超时。息屏只关背光（LCD 内容还在），所以唤醒是即时的。**全部照抄。**
+`bsp_lcd_push()` 必须吸收具体传输差异：SPI/I80 路线写 panel GRAM 并等待 DMA；RGB 路线把像素写入当前测试帧缓冲并确保扫描端能看到它。
 
-### 2.7 `bsp_fade_out` —— 优雅关机式淡出
+验收时检查：
 
-**干什么**：切语言重启前，背光用硬件渐变平滑变暗，然后把屏幕整屏推黑（不然面板 GRAM 里残留旧帧，下次上电会闪一下旧画面）。
+- 五条颜色顺序和颜色本身正确；
+- 色带覆盖完整可见区域，没有固定偏移；
+- 画面方向符合产品安装方向；
+- 静止 30 秒不闪、不滚动、不出现随机线；
+- 重启十次都能点亮。
+
+通过后保存一张照片和串口日志，删除无限循环，再进入下一步。
+
+### 3.9 把已验证参数写在 BSP 顶部
+
+至少留下这些注释：资料来源、原生分辨率、接口、稳定频率/时序、颜色顺序、方向和任何非默认初始化命令。以后出现显示回归时，这份记录就是基线。
+
+**本步成功标准**：不启动 LVGL，也能稳定显示五色色带。未通过时不要继续。
+
+---
+
+## 第 4 步：把显示接入 BSP 和 LVGL
+
+### 4.1 先分清哪些保留、哪些替换
+
+继续使用第 2 步创建的板型文件。不要整份复制已有 BSP；它可能包含别的板子的触摸校准、显示时序、内存策略和硬件补丁。
+
+模板分成两类内容：
+
+- **公共生命周期**：锁、存储、重启、LVGL 任务、息屏契约。通常保留。
+- **显示 transport**：总线、panel、`bsp_lcd_push`、`flush_cb`、缓冲和渲染模式。必须使用第 3 步已经验证的方案。
+
+如果是 SPI/ST7789，可以直接从模板逐项修改。如果是其他 SPI 控制器，替换 panel driver 和初始化差异。如果是 I80 或 RGB，应删除模板的 SPI transport，再放入对应实现；不要同时保留两套。
+
+### 4.2 上层只要求这些显示边界
+
+| BSP 接口 | 上层用途 | 新板需要保证什么 |
+|---|---|---|
+| `bsp_lcd_push()` | LVGL 启动前的开机动画 | 调用返回时，传入缓冲已经可以安全复用 |
+| `bsp_get_display()` | UI 查询默认显示器 | 返回 `lv_display_create()` 创建的默认 display |
+| `bsp_set_brightness()` | 设置页和唤醒 | 接受 0～100；处理背光有效电平 |
+| `bsp_fade_out()` | 重启前渐暗 | 至少安全关闭背光；能清帧则更好 |
+| `bsp_disp_can_*()` | 是否显示反色/旋转设置 | 硬件或当前 transport 不支持就返回 false |
+
+`bsp_lcd_push()` 的“返回即安全”很重要。开机动画会复用同一块像素内存；异步 DMA 没结束就返回会产生条带和随机色块。
+
+### 4.3 选择 LVGL 缓冲模式
+
+| 显示 transport | 推荐起点 | 缓冲放置 | flush 的责任 |
+|---|---|---|---|
+| SPI 命令屏 | PARTIAL，双 20～40 行 | 内部 DMA RAM | 写脏矩形，等传输完成，再 `flush_ready` |
+| I80 命令屏 | PARTIAL，双局部缓冲 | 对应 DMA 可访问内存 | 与 SPI 相同，只是总线不同 |
+| RGB 并口 | 官方驱动建议的全帧方案 | 常在 PSRAM | 维护持续扫描、cache 和换页同步 |
+| 自管双帧 RGB | DIRECT，双全帧 | 按芯片能力选择 | 只在最后一个 flush 请求换页，完成后再 `flush_ready` |
+
+不要因为 FULL、DIRECT 看起来“更快”就随意切换。渲染模式必须和物理屏幕的传输模型及缓冲所有权一致。
+
+### 4.4 分三次把完整 UI 接回来
+
+1. **LVGL 基础测试**：只创建 display，画一个纯色背景和一个矩形。
+2. **项目开机动画**：确认 `bsp_lcd_push()` 连续更新稳定。
+3. **完整 `ui_app_create()`**：检查页面切换、列表滚动和大面积重绘。
+
+每次只增加一层。若第 1 层正常、第 2 层坏，重点检查 `bsp_lcd_push` 的缓冲生命周期；若前两层正常、完整 UI 滑动才坏，重点检查刷新吞吐、DMA/PSRAM 带宽和换页。
+
+### 4.5 公共 BSP 函数
+
+下面这些通常与显示控制器无关，可以保留模板实现：
+
+- `bsp_lvgl_lock()` / `bsp_lvgl_unlock()`：保护 LVGL；
+- `bsp_delay_ms()` / `bsp_restart()`：延时和重启；
+- NVS 与 LittleFS 初始化：保存网络、Moonraker 和界面配置；
+- `lvgl_task()`：周期调用 `lv_timer_handler()` 和息屏检查；
+- `bsp_screen_activity()`：所有输入共用的活动与唤醒入口。
+
+背光 PWM 要按硬件修改有效电平。有些板用独立背光驱动 IC，不能直接套 LEDC GPIO；此时只要保持 `bsp_set_brightness(0..100)` 的接口语义即可。
+
+**本步成功标准**：开机动画和完整 UI 都能稳定显示，连续滚动不会出现花屏、撕裂或错位。
+
+---
+
+## 第 5 步：最后加入输入
+
+显示没通过第 4 步之前，不要调触摸坐标。
+
+### 5.1 选择产品输入形态
+
+- **只有触摸**：BSP 创建 pointer，不启用旋钮 Kconfig。
+- **触摸 + 旋钮**：BSP 创建 pointer；共享输入层再创建 encoder，两者同时工作。
+- **只有旋钮**：BSP 不创建假的 pointer，只启用旋钮 Kconfig。
+
+### 5.2 电阻触摸
+
+XPT2046 一类电阻控制器输出原始 ADC 坐标，需要校准。使用 `touch_cal_load()` / `touch_cal_run()`，并把结果存入 LittleFS 的 `touch.json`。新板没有实测出厂参数时，文件不存在就应进入校准流程。
+
+触摸可能和显示共用 SPI，也可能使用独立 SPI。必须按原理图确认。共用总线时不要再次初始化同一个 SPI host；独立总线则分别初始化。
+
+### 5.3 电容触摸
+
+GT911、CST816S、FT5x06 一类电容控制器通常直接返回屏幕坐标。只根据安装方向做必要的 swap/mirror，然后报告给 LVGL；不要复制电阻屏的 `touch.json` 和两点校准。
+
+#### 5.3.1 一个能照着改的 CST816S 实现
+
+模板中提供了两个完整文件：
+
+- `templates/board/touch_input_board_template.h`：BSP 能看到的小接口。
+- `templates/board/touch_input_board_template.c`：I2C、CST816S、息屏唤醒和 LVGL pointer 的具体实现。
+
+BSP 只调用下面这个函数，不需要知道 CST816S 寄存器或 LVGL 读取细节：
 
 ```c
-void bsp_fade_out(uint32_t ms)
-{
-    static bool fade_installed;
-    if (!fade_installed) {
-        ledc_fade_func_install(0);       // LEDC 渐变功能要装一次中断服务
-        fade_installed = true;
-    }
-    ledc_set_fade_with_time(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0, ms);
-    ledc_fade_start(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, LEDC_FADE_WAIT_DONE);
-    bl_duty = 0;
-
-    static uint16_t black[LCD_H_RES * 40];    // 静态数组零初始化 = 全黑
-    for (int y = 0; y < LCD_V_RES; y += 40) {
-        xSemaphoreTake(lcd_trans_done, 0);
-        esp_lcd_panel_draw_bitmap(panel_handle, 0, y, LCD_H_RES, y + 40, black);
-        xSemaphoreTake(lcd_trans_done, pdMS_TO_TICKS(500));
-    }
-}
+esp_err_t board_template_touch_input_create(
+    lv_display_t *display,
+    i2c_master_bus_handle_t i2c_bus,
+    const board_template_touch_input_config_t *config);
 ```
 
-**解释**：前半段是 LEDC 硬件渐变；后半段每次推 40 行黑色块直到整屏。`lcd_trans_done` 信号量下一节解释。**照抄**（行数 40 与 `DRAW_BUF_LINES` 无关，只是凑块大小，可以不用改）。
+它内部按顺序做了四件事：
 
-### 2.8 `on_color_trans_done` + `bsp_lcd_push` —— DMA 推屏
+1. 用 `ESP_LCD_TOUCH_IO_I2C_CST816S_CONFIG()` 创建触摸 I2C IO。
+2. 用 `esp_lcd_touch_new_i2c_cst816s()` 创建控制器驱动。
+3. 在 `touch_read_cb()` 中把坐标和按下/松开状态交给 LVGL。
+4. 调用 `bsp_screen_activity()`，吞掉只用于唤醒屏幕的第一次触摸。
 
-**干什么**：`bsp_lcd_push` 是"把一块 RGB565 像素直接推上屏"的底层函数，开机动画用它（那时 LVGL 还没跑起来）。
+CST816S 有一个容易踩坑的特点：它在触摸事件后才短暂响应 I2C。示例因此使用 INT 引脚和信号量，只有收到中断后才读数据；不要把它改成每次 LVGL 轮询都无条件访问 I2C。这个行为和“某些芯片读 ID 会初始化失败”的开关记录在 [Espressif CST816S 驱动说明](https://github.com/espressif/esp-bsp/tree/master/components/lcd_touch/esp_lcd_touch_cst816s) 中。
 
-**先要理解一个坑**：`esp_lcd_panel_draw_bitmap()` 是 **DMA 异步**的——函数返回时数据还在往外搬。如果你立刻释放或改写像素缓冲，DMA 就会读到垃圾，画面出现条状撕裂。所以必须注册"传输完成"回调，用一个信号量等它：
+把示例接到新板时：
 
-```c
-static SemaphoreHandle_t lcd_trans_done;
+1. 将两个 `touch_input_board_template` 文件复制到 `src/bsp/esp32/`，文件名和所有 `board_template` 都替换为板型名。
+2. 在 `src/bsp/CMakeLists.txt` 的 `SRCS` 加入新的 `.c` 文件。
+3. 在 `src/ports/esp32/entry/idf_component.yml` 加入驱动：
 
-static bool on_color_trans_done(esp_lcd_panel_io_handle_t io,
-                                esp_lcd_panel_io_event_data_t *edata, void *user_ctx)
-{
-    LV_UNUSED(io); LV_UNUSED(edata); LV_UNUSED(user_ctx);
-    BaseType_t hp = pdFALSE;
-    xSemaphoreGiveFromISR(lcd_trans_done, &hp);   // DMA 完成，在中断里给信号量
-    return hp == pdTRUE;
-}
-
-void bsp_lcd_push(int x, int y, int w, int h, const uint16_t *px)
-{
-    /* SPI 屏要求先发像素高字节，LVGL/内存里是小端 → 拷一份交换字节再推 */
-    size_t n = (size_t)w * h;
-    uint16_t *tmp = malloc(n * 2);
-    if (!tmp) return;
-    for (size_t i = 0; i < n; i++) tmp[i] = (uint16_t)((px[i] >> 8) | (px[i] << 8));
-    xSemaphoreTake(lcd_trans_done, 0);            // 清掉残留信号
-    esp_lcd_panel_draw_bitmap(panel_handle, x, y, x + w, y + h, tmp);
-    xSemaphoreTake(lcd_trans_done, pdMS_TO_TICKS(500));  // 等 DMA 搬完
-    free(tmp);
-}
-```
-
-**解释**：
-
-- 字节序交换：RGB565 在内存里低字节在前，SPI 屏要求高字节在前。这里交换是因为 `px` 是调用方的缓冲不能改，所以拷一份。
-- `xSemaphoreTake(lcd_trans_done, 0)`（超时 0）的作用是"清空"，防止上次遗留的信号造成误判。
-- 回调的注册在 `bsp_init` 里。
-
-**照抄**；如果你的屏是 RGB 并口（不用 SPI），不需要字节交换，参考 `bsp_jc8048w550.c`。
-
-### 2.9 `flush_cb` —— LVGL 与屏幕之间的桥（全文件最重要）
-
-**干什么**：LVGL 每渲染完一块区域就调它，你的任务是**把这块像素送上屏**。
-
-```c
-static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
-{
-    /* 就地交换字节序（不要用 LV_COLOR_FORMAT_RGB565_SWAPPED，实测雪花屏） */
-    uint16_t *p = (uint16_t *)px_map;
-    int32_t n = (int32_t)(area->x2 - area->x1 + 1) * (area->y2 - area->y1 + 1);
-    for (int32_t i = 0; i < n; i++) p[i] = (uint16_t)((p[i] >> 8) | (p[i] << 8));
-    esp_lcd_panel_draw_bitmap(panel_handle, area->x1, area->y1,
-                              area->x2 + 1, area->y2 + 1, px_map);
-    lv_display_flush_ready(disp);    // 告诉 LVGL"这块缓冲你可以再用了"
-}
-```
-
-**解释**：
-
-- `area` 是脏区域的坐标，`px_map` 是像素数据。
-- 注意这里**就地**改 `px_map`（LVGL 的缓冲反正下一轮要重画），而 `bsp_lcd_push` 是拷贝——区别在于调用方身份不同。
-- `lv_display_flush_ready` 必须调，且 LVGL 双缓冲机制保证这次 flush 的 DMA 读完之前不会给你同一个缓冲（配合 `on_color_trans_done` 由 esp_lcd 内部处理）。
-
-**照抄。**（SPI 屏通用。RGB 并口屏走 DIRECT 模式，完全不同，参考 rgb44。）
-
-### 2.10 触摸部分 —— `tp_read_raw` / 校准 / `touch_read_cb`
-
-**干什么**：把触摸芯片的原始读数变成屏幕坐标。电阻屏（XPT2046）因为安装方向、走线差异，每台都得校准，所以本项目用**两点线性校准**，参数存 LittleFS 的 `touch.json`。
-
-核心思路：**驱动层不做任何坐标变换**，直接拿 12bit 原始 ADC 值（0~4095），校准公式 `screen = raw × 斜率 + 截距` 会吸收所有镜像/交换。
-
-这一整块（`tp_read_raw`、`touch_cal_save`、`touch_cal_load`、`cal_pump`、`cal_sample`、`touch_cal_run`）大约 160 行，**建议原样照抄**，只需要理解两件事：
-
-1. `tp_read_raw` 里交换了 x/y：
-
-    ```c
-    *x = pt[0].y;   /* CYD 横屏安装下 raw 轴与屏幕轴交叉，交换后
-        *y = pt[0].x;      *x 恒为屏幕水平（长）轴原始值 */
+    ```yaml
+    espressif/esp_lcd_touch_cst816s: "^1.1.0"
     ```
 
-    你的板子轴怎么交叉**不用管**——两点校准的斜率带符号，任何方向都能吸收。照抄即可。
+4. 在板型 BSP 中把 `BOARD_HAS_CST816S_TOUCH` 改为 `1`，填写 SDA、SCL、RST、INT。板上已经有 I2C bus 时直接复用它，不要用相同端口再创建一次。
+5. 第一次先让 `swap_xy`、`mirror_x`、`mirror_y` 全为 `false`。显示一个四角测试页，只改必要的方向标志。
 
-2. `touch_cal_load()` 的行为决定**首次启动要不要进校准**：
-    - CYD 有真机测出的出厂默认值 → 文件缺失时写默认值、不进校准。
-    - 你的新板子没有出厂值 → 让 load 在文件缺失时 `return false`，`bsp_init` 里就会自动进阻塞式校准流程（照抄 `bsp_e32r35t.c` 的写法，把 `touch_cal_load` 末尾的 `return true` 改成 `return false`）。
+商品资料写 **CST816T** 时先核对芯片丝印和数据手册。示例使用的是 Espressif 明确支持的 **CST816S** 驱动；名字接近不等于寄存器和中断行为一定兼容。如果控制器不同，但也使用 `esp_lcd_touch` 系列驱动，通常只需替换头文件、`ESP_LCD_TOUCH_IO_*_CONFIG()` 和 `esp_lcd_touch_new_*()`，`touch_read_cb()` 到 LVGL 的部分可以保留。
 
-`touch_read_cb` 是 LVGL 的触摸读取回调，除了校准映射外还有两个小机关：
+如果初始化日志停在读取芯片 ID，确认芯片型号后可在板型 sdkconfig 中尝试：
 
-```c
-} else if (pressing && esp_timer_get_time() - last_valid_us < 50 * 1000) {
-    rx = last_rx;   /* 滑动中采样瞬时丢失 → 桥接为仍按住，防止手势被拆成点按 */
-    ry = last_ry;
-}
+```ini
+CONFIG_ESP_LCD_TOUCH_CST816S_DISABLE_READ_ID=y
 ```
 
-以及息屏唤醒那次点击会被"吞掉"（`wake_swallow`），防止唤醒屏幕的同时误触按钮。**照抄。**
+### 5.4 旋转编码器
 
-!!! note "电容屏（GT911 等）"
-    不用校准，驱动直接输出屏幕坐标，`touch_read_cb` 简单得多。参考 `bsp_jc8048w550.c`。
+编码器由共享 `bsp_input_init()` 根据 Kconfig 创建，不要把 GPIO 中断、PCNT 或焦点遍历写进板型 BSP。
 
-### 2.11 `bsp_init` —— 初始化总装（最长的函数，拆成 7 小段）
-
-这是上电后第一个跑的函数。对照 `bsp_cyd_2432s028r.c` 的 401~532 行，按顺序讲每一段：
-
-**① 锁 + NVS + LittleFS**
-
-```c
-lvgl_mux = xSemaphoreCreateRecursiveMutex();
-
-esp_err_t err = nvs_flash_init();
-if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-    nvs_flash_erase();
-    nvs_flash_init();
-}
-
-esp_vfs_littlefs_conf_t fs_conf = {
-    .base_path = "/littlefs",
-    .partition_label = "storage",
-    .format_if_mount_failed = true,
-    .dont_mount = false,
-};
-ESP_ERROR_CHECK(esp_vfs_littlefs_register(&fs_conf));
+```ini
+CONFIG_INPUT_ROTARY_ENCODER=y
+CONFIG_INPUT_ROTARY_GPIO_A=4
+CONFIG_INPUT_ROTARY_GPIO_B=5
+CONFIG_INPUT_ROTARY_GPIO_BUTTON=6
+CONFIG_INPUT_ROTARY_COUNTS_PER_DETENT=4
+CONFIG_INPUT_ROTARY_PHASE_PULLUPS=y
+CONFIG_INPUT_ROTARY_BUTTON_ACTIVE_LOW=y
 ```
 
-创建 2.3 节的互斥锁；NVS 是 WiFi 模块要用的键值存储；LittleFS 挂载 `storage` 分区（分区表 `partitions.csv` 里定义好了）到 `/littlefs`，用来存 `touch.json` 校准文件，首次启动自动格式化。**照抄。**
+裸编码器公共脚通常接 GND，A/B 和按键接对应 GPIO。模块已有外部上拉时关闭内部相位上拉；方向反了启用 `CONFIG_INPUT_ROTARY_REVERSE`；一格跳过多个控件时把 counts 从 4 降到 2 或 1。
 
-**② 背光 LEDC 初始化**
+纯旋钮板会使用专用交互：Moonraker 主机地址按四个 0～255 段输入，温度直接在卡片内旋转调节。域名或 API Key 等任意文本需要由出厂配置、维护接口或触摸键盘提供；常见同局域网部署也可使用 Moonraker `trusted_clients`。
 
-```c
-ledc_timer_config_t bl_timer = {
-    .speed_mode = LEDC_LOW_SPEED_MODE,
-    .duty_resolution = LEDC_TIMER_8_BIT,
-    .timer_num = LEDC_TIMER_0,
-    .freq_hz = 5000,
-    .clk_cfg = LEDC_AUTO_CLK,
-};
-ESP_ERROR_CHECK(ledc_timer_config(&bl_timer));
-ledc_channel_config_t bl_ch = {
-    .gpio_num = PIN_LCD_BL,                 // ← 你的背光引脚
-    .speed_mode = LEDC_LOW_SPEED_MODE,
-    .channel = LEDC_CHANNEL_0,
-    .timer_sel = LEDC_TIMER_0,
-    .duty = 255,                            // 上电全亮
-    .hpoint = 0,
-};
-ESP_ERROR_CHECK(ledc_channel_config(&bl_ch));
-```
+### 5.5 息屏唤醒
 
-**只有引脚要改。** 8bit / 5kHz 是通用值。
+触摸和旋钮都调用 `bsp_screen_activity()`。它返回“这次操作是否只是唤醒屏幕”，输入驱动据此吞掉第一次点击或旋转，避免用户只想点亮屏幕却误触按钮。
 
-**③ SPI 总线初始化（LCD）**
-
-```c
-spi_bus_config_t buscfg = {
-    .sclk_io_num = PIN_LCD_SCLK,
-    .mosi_io_num = PIN_LCD_MOSI,
-    .miso_io_num = PIN_LCD_MISO,
-    .quadwp_io_num = -1,
-    .quadhd_io_num = -1,
-    .max_transfer_sz = LCD_H_RES * DRAW_BUF_LINES * 2 + 8,  // 一次 DMA 最大搬运量
-};
-ESP_ERROR_CHECK(spi_bus_initialize(SPI2_HOST, &buscfg, SPI_DMA_CH_AUTO));
-```
-
-**改引脚。** `max_transfer_sz` 必须 ≥ 一块 LVGL 缓冲的字节数，按公式照抄。
-
-**④ 触摸 SPI 总线（仅独立总线的板子需要）**
-
-```c
-spi_bus_config_t tp_buscfg = { ... PIN_TP_SCLK ... };
-ESP_ERROR_CHECK(spi_bus_initialize(SPI3_HOST, &tp_buscfg, SPI_DMA_DISABLED));
-```
-
-触摸是低速设备，不用 DMA。**如果你的板子触摸与屏共用总线，删掉这段**（参考 `bsp_e32r35t.c`），第 ⑥ 步里把触摸挂到 `SPI2_HOST`。
-
-**⑤ 屏幕：IO 句柄 + 驱动 + 方向**
-
-```c
-esp_lcd_panel_io_handle_t io_handle;
-esp_lcd_panel_io_spi_config_t io_cfg = {
-    .dc_gpio_num = PIN_LCD_DC,
-    .cs_gpio_num = PIN_LCD_CS,
-    .pclk_hz = LCD_SPI_HZ,
-    .lcd_cmd_bits = 8,
-    .lcd_param_bits = 8,
-    .spi_mode = 0,
-    .trans_queue_depth = 10,
-};
-ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)SPI2_HOST, &io_cfg, &io_handle));
-
-/* 传输完成信号量：bsp_lcd_push / fade_out 等 DMA 用 */
-lcd_trans_done = xSemaphoreCreateBinary();
-esp_lcd_panel_io_callbacks_t io_cbs = { .on_color_trans_done = on_color_trans_done };
-ESP_ERROR_CHECK(esp_lcd_panel_io_register_event_callbacks(io_handle, &io_cbs, NULL));
-
-esp_lcd_panel_dev_config_t panel_cfg = {
-    .reset_gpio_num = PIN_LCD_RST,
-    .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_BGR,   // 颜色偏红蓝对调就改成 RGB
-    .bits_per_pixel = 16,
-};
-ESP_ERROR_CHECK(esp_lcd_new_panel_ili9341(io_handle, &panel_cfg, &panel_handle));  // ← 换你的驱动
-ESP_ERROR_CHECK(esp_lcd_panel_reset(panel_handle));
-ESP_ERROR_CHECK(esp_lcd_panel_init(panel_handle));
-/* 横屏：swap_xy 转 90°，mirror 调镜像方向 */
-ESP_ERROR_CHECK(esp_lcd_panel_swap_xy(panel_handle, true));
-ESP_ERROR_CHECK(esp_lcd_panel_mirror(panel_handle, true, true));
-ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_handle, true));
-```
-
-这段是**你最可能要改的地方**：
-
-- 驱动函数换成你的屏幕 IC 对应的：`esp_lcd_new_panel_ili9341` / `esp_lcd_new_panel_st7796` / …（组件仓库里有几十种，搜 [components.espressif.com](https://components.espressif.com)）。换驱动还要登记依赖，见第 3 步。
-- ST7796 类屏幕通常还要加一句 `esp_lcd_panel_invert_color(panel_handle, true)`（不然颜色像底片）。
-- `swap_xy(true)` + `mirror(true, true)` 决定横屏方向。画面左右/上下颠倒就调 mirror 的两个参数（排列组合 4 种，试一次只要重新编译烧录）。
-- `rgb_ele_order`：颜色红蓝互换就 BGR ↔ RGB 切换。
-
-**⑥ 触摸初始化**
-
-```c
-esp_lcd_panel_io_handle_t tp_io;
-esp_lcd_panel_io_spi_config_t tp_io_cfg = ESP_LCD_TOUCH_IO_SPI_XPT2046_CONFIG(PIN_TOUCH_CS);
-ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)SPI3_HOST, &tp_io_cfg, &tp_io));
-//                                            共总线的板子这里写 SPI2_HOST ↑
-
-esp_lcd_touch_config_t tp_cfg = {
-    .x_max = 4096,   // 拿原始 12bit ADC，不做驱动层换算（交给两点校准）
-    .y_max = 4096,
-    .rst_gpio_num = GPIO_NUM_NC,
-    .int_gpio_num = PIN_TOUCH_IRQ,
-    .levels = {.reset = 0, .interrupt = 0},
-    .flags = {.swap_xy = false, .mirror_x = false, .mirror_y = false},
-};
-ESP_ERROR_CHECK(esp_lcd_touch_new_spi_xpt2046(tp_io, &tp_cfg, &touch_handle));
-```
-
-**改总线号和引脚。** `x_max/y_max = 4096` + 三个 flags 全 false 是刻意的：原始值进校准。
-
-**⑦ LVGL 初始化 + 启动任务**
-
-```c
-lv_init();
-lv_tick_set_cb(tick_cb);          // 告诉 LVGL 怎么读毫秒时钟
-
-lv_display_t *disp = lv_display_create(LCD_H_RES, LCD_V_RES);
-size_t buf_sz = LCD_H_RES * DRAW_BUF_LINES * 2;
-void *buf1 = heap_caps_malloc(buf_sz, MALLOC_CAP_DMA);   // DMA 能读内部 RAM
-void *buf2 = heap_caps_malloc(buf_sz, MALLOC_CAP_DMA);
-ESP_ERROR_CHECK(buf1 && buf2 ? ESP_OK : ESP_ERR_NO_MEM);
-lv_display_set_buffers(disp, buf1, buf2, buf_sz, LV_DISPLAY_RENDER_MODE_PARTIAL);
-lv_display_set_flush_cb(disp, flush_cb);                 // 挂上 2.9 的桥
-
-lv_indev_t *indev = lv_indev_create();
-lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
-lv_indev_set_read_cb(indev, touch_read_cb);              // 挂上 2.10 的触摸
-
-/* 无校准数据 → 进两点校准（LVGL 任务没起，校准函数内部自己泵帧） */
-if (!touch_cal_load()) {
-    touch_cal_run();
-}
-
-xTaskCreatePinnedToCore(lvgl_task, "lvgl", 12288, NULL, 4, NULL, 1);
-```
-
-要点：双缓冲（一块在 DMA 送屏、一块给 LVGL 渲染）；`MALLOC_CAP_DMA` 必须加（SPI DMA 读不了 PSRAM 和普通堆）；`lvgl_task` 就是每 5ms 跑一次 `lv_timer_handler()` + `screen_off_check()` 的循环（照抄）。
+**本步成功标准**：声明的每种输入都能遍历页面、控制弹窗并从息屏唤醒；电容屏不出现校准页，纯旋钮板不创建 pointer。
 
 ---
 
-到这里 BSP 文件就写完了。`bsp_time_sync_from_host` 和配置持久化（`bsp_conf_*`）是**全板共用**的实现，不用你写。
-
-## 第 3 步：登记板型（5 个文件，每个加几行）
-
-| 文件 | 干什么 | 加什么 |
-|---|---|---|
-| `src/bsp/Kconfig.projbuild` | 让 `CONFIG_BOARD_MYBOARD` 宏存在 | `choice BOARD` 里加 `config BOARD_MYBOARD` + 一行描述 |
-| `src/bsp/CMakeLists.txt` | 让新 .c 参与编译 | SRCS 里加 `"esp32/bsp_myboard.c"`；换了新驱动 IC 时 REQUIRES 加组件名 |
-| `src/ports/esp32/entry/idf_component.yml` | 声明第三方驱动依赖 | 换了新驱动 IC 时加一行，如 `espressif/esp_lcd_st7796: "^1.4.0"` |
-| `src/ports/esp32/sdkconfig.defaults.myboard` | 新板型的默认配置 | 新建，照抄同芯片板子的，把 `CONFIG_BOARD_XXX=y` 换成你的宏 |
-| `tools/build-esp32.sh` | 让构建脚本认识新板子 | `board_conf()` 里加一个 case：`TARGET=esp32; BDIR=build-myboard; SDKCFG=sdkconfig.myboard; DEFS="sdkconfig.defaults;sdkconfig.defaults.myboard"` |
-
-sdkconfig.defaults 的完整内容（ESP32 经典款照这个抄）：
-
-```
-CONFIG_BOARD_MYBOARD=y
-CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
-CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
-CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y    # 你的 flash 不是 4MB 就改
-CONFIG_ESP32_DEFAULT_CPU_FREQ_240=y
-```
-
-!!! warning "sdkconfig 大坑"
-    构建过一次后会生成完整的 `sdkconfig.myboard`，之后再改 `sdkconfig.defaults.myboard` **不生效**——要改必须两个文件都改（sdkconfig 里搜同名配置行，注意 `# CONFIG_XXX is not set` 会覆盖 defaults）。
-
-另外 `src/ui/ui_layout.c` 里加一个字号档（决定用大字还是小字，预处理期裁剪省 flash）：
-
-```c
-#elif defined(CONFIG_BOARD_MYBOARD)
-#define UI_FONT_BIG 0    // 320×240 / 480×320 用 0；800×480 用 1
-```
-
-## 第 4 步：编译、烧录、验证
+## 第 6 步：编译、烧录和分层验收
 
 ```bash
-bash tools/build-esp32.sh myboard              # 首次自动 set-target + 全量编译
-bash tools/build-esp32.sh myboard flash COM6   # 编译 + 烧录
+bash tools/build-esp32.sh myboard
+bash tools/build-esp32.sh myboard flash COM6
 ```
 
-**怎么算成功**：构建末尾打印 `Project build complete`，且 `binary size` 没超过 `Smallest app partition`。烧录后屏幕亮起、出现开机动画 → 主界面，就大功告成。
+按下面顺序验收，不要只看“主界面出现了”：
 
-串口日志（115200 8N1）能看到 `BSP ready (...)` 和触摸校准加载情况，有问题先看日志。
+1. **构建**：产物没有超过应用分区。
+2. **重复上电**：十次都能点亮，不偶发白屏。
+3. **静态画面**：一分钟没有随机线、闪烁或颜色跳变。
+4. **高负载显示**：快速切页和滚动列表仍稳定。
+5. **输入**：触摸、旋钮或二者并存都符合声明。
+6. **网络**：配置 Moonraker，能接收状态并发出一次低风险控制。
+7. **息屏**：超时熄灭，第一次输入只唤醒。
 
-## 第 5 步：常见问题对照表
+再构建至少一个已有板型，确认共享 UI 和 BSP 接口没有被新板修改破坏。
 
-| 现象 | 原因 | 改哪里 |
-|---|---|---|
-| 全白/全黑，背光亮 | 驱动 IC 不对 / SPI 模式不对 | `esp_lcd_new_panel_xxx` 换驱动 |
-| 颜色像底片（反色） | 面板需要 INVON | 加 `esp_lcd_panel_invert_color(panel, true)` 或改 false |
-| 红蓝互换 | RGB/BGR 序错 | `rgb_ele_order` BGR ↔ RGB |
-| 画面颠倒/镜像 | 安装方向不同 | `esp_lcd_panel_mirror` 两个参数排列组合 |
-| 颜色雪花/噪点 | 误用 `RGB565_SWAPPED` 格式 | 用回就地字节交换的 flush_cb |
-| 触摸完全没反应 | 总线接错 / 共总线 vs 独立总线搞错 | 核对第 1 步的引脚表 |
-| 触摸位置乱 | 没校准 | 删 `touch.json` 重启进校准（串口 CLI `rm /littlefs/touch.json`） |
-| 画面条状撕裂 | DMA 缓冲被提前复用 | 检查 `on_color_trans_done` 信号量逻辑 |
-| 编译报 `esp_lcd_new_panel_xxx` 未声明 | 依赖没登记 | 第 3 步的 idf_component.yml + CMakeLists |
+---
 
-确认稳定后想把板子贡献回仓库？看[贡献新板型（PR 指南）](contributing-board.md)。
+## 第 7 步：按现象排错
+
+### 7.1 显示问题快速表
+
+| 现象 | 先查什么 |
+|---|---|
+| 背光不亮 | 背光供电、GPIO、有效电平、PWM |
+| 背光亮但整屏白/黑 | 复位、CS/DC、panel driver、初始化序列 |
+| 完全无规律噪点 | 接线、供电、时钟过高、字节顺序 |
+| 画面固定偏移 | 原生分辨率和 `set_gap` |
+| 红蓝互换 | RGB/BGR 或 RGB 数据线顺序 |
+| 颜色像负片 | invert 设置 |
+| 镜像或转了 90° | swap_xy 与 mirror；先画带方向标记的测试图 |
+| 第一帧对，动画花 | DMA 未完成就复用缓冲 |
+| RGB 屏整幅滚动 | PCLK、HSYNC/VSYNC、porch |
+| RGB 静态稳、滑动抽 | DMA 欠载、PSRAM 带宽、cache/换页同步 |
+| 编译找不到 panel 构造函数 | driver 依赖和头文件没有登记 |
+
+### 7.2 输入问题快速表
+
+| 现象 | 先查什么 |
+|---|---|
+| 电阻触摸位置乱 | 原始轴对应关系和两点校准 |
+| 电容屏进入校准 | 错误复制了电阻屏流程 |
+| 触摸完全没反应 | 控制器型号、总线、CS/IRQ、共用总线方式 |
+| 旋钮方向反 | `CONFIG_INPUT_ROTARY_REVERSE` |
+| 一格跳多项 | `COUNTS_PER_DETENT` |
+| 唤醒同时误点 | 是否使用 `bsp_screen_activity()` 的返回值 |
+
+仍未解决时，回到最近一个成功阶段做 A/B。提交问题时附上板型资料卡、五色色带照片、串口日志、已知可用厂商例程和每次只改一个变量的记录。
+
+准备贡献新板型时，再阅读 [贡献新板型（PR 指南）](contributing-board.zh.md)。

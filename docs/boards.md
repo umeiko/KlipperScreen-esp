@@ -4,6 +4,7 @@
 |---|---|---|---|---|---|
 | [CYD 2432S028R](#cyd-2432s028r) | `cyd_2432s028r` | 2.8" 240×320 ILI9341 SPI | XPT2046 resistive | ESP32 / 4MB | ✅ Stable |
 | [E32R35T](#e32r35t) | `e32r35t` | 3.5" 320×480 ST7796U SPI | XPT2046 resistive | ESP32-32E / 4MB | ✅ Stable |
+| [EC11 Knob Minimal System](#ec11-knob-minimal-system) | `ec11_knob_minimal` | 240×320 ST7789 SPI | None, rotary only | ESP32-S3 N16R8 / 16MB | ✅ Official reference, contributor tested |
 | [JC8048W550](#jc8048w550) | `jc8048w550` | 5" 800×480 ST7262 RGB parallel | GT911 capacitive | ESP32-S3 / 16MB | ✅ Stable |
 
 Flash packages are named `klipper-remote-esp32-<board>.zip` (asset names carry no version, so the links below always point to the latest stable release). Please report problems in [Issues](https://github.com/umeiko/KlipperScreen-esp/issues).
@@ -12,6 +13,7 @@ Flash packages are named `klipper-remote-esp32-<board>.zip` (asset names carry n
 |---|---|
 | CYD 2432S028R | [klipper-remote-esp32-cyd_2432s028r.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/klipper-remote-esp32-cyd_2432s028r.zip) |
 | E32R35T | [klipper-remote-esp32-e32r35t.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/klipper-remote-esp32-e32r35t.zip) |
+| EC11 Knob Minimal System | [klipper-remote-esp32-ec11_knob_minimal.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/klipper-remote-esp32-ec11_knob_minimal.zip) |
 | JC8048W550 | [klipper-remote-esp32-jc8048w550.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/klipper-remote-esp32-jc8048w550.zip) |
 | Windows desktop simulator | [klipper-remote-desktop-win-x86_64.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/klipper-remote-desktop-win-x86_64.zip) |
 
@@ -63,6 +65,32 @@ Logical resolution **480×320 landscape**.
 | Audio enable / DAC out | 4 / 26 | speaker connector (unused by firmware) |
 | Battery voltage ADC | 34 | input |
 | BOOT button | 0 | |
+
+## EC11 Knob Minimal System
+
+![EC11 Knob Minimal System Fritzing reference wiring](screenshots/boards/ec11_knob_minimal_breadboard.en.png)
+
+This official reference can be assembled directly with jumper wires: **ESP32-S3-DevKitC-1 N16R8 + an 8-pin 240×320 ST7789 SPI display + a KY-040/EC11 encoder module**. It follows the display and encoder pins tested by the contributor in [PR #6](https://github.com/umeiko/KlipperScreen-esp/pull/6) and [Issue #5](https://github.com/umeiko/KlipperScreen-esp/issues/5), while keeping only the two peripherals required by the minimal system. Logical resolution is **320×240 landscape**.
+
+Download and edit the [Fritzing source (.fzz)](hardware/ec11_knob_minimal.fzz), or inspect the [SVG exported by Fritzing](hardware/ec11_knob_minimal_breadboard.svg). The drawing uses a generic 8-pin ST7789 module with the same pin order; PCB shape, colour, and label placement vary between sellers.
+
+| Module pin | ESP32-S3 pin | Purpose |
+|---|---|---|
+| ST7789 GND | GND | Ground |
+| ST7789 VCC | 3V3 | Display power |
+| ST7789 SCL / SCK | GPIO21 | SPI clock |
+| ST7789 SDA / MOSI | GPIO47 | SPI data out |
+| ST7789 CS | GPIO41 | Chip select |
+| ST7789 DC / RS | GPIO40 | Data/command select |
+| ST7789 RST / RES | GPIO45 | Display reset |
+| ST7789 BL / LED / BLK | GPIO42 | Backlight, active high |
+| EC11 CLK / A | GPIO13 | Encoder phase A |
+| EC11 DT / B | GPIO14 | Encoder phase B |
+| EC11 SW / KEY | GPIO46 | Encoder press |
+| EC11 + / VCC | 3V3 | Module power |
+| EC11 GND | GND | Ground |
+
+Power the DevKit from USB-C. Many SPI display boards label clock and data as `SCL` and `SDA`; here they still mean **SPI SCLK and MOSI**, not I2C. Rotation and press provide all navigation, and either action wakes the display after its timeout. This target has no touch layer and never enters touch calibration.
 
 ## JC8048W550
 

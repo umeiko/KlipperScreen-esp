@@ -21,6 +21,7 @@ The same UI code also compiles as a **desktop simulator** (SDL2, Windows/Linux),
 |---|---|---|---|---|
 | CYD 2432S028R | 2.8" 320×240 ILI9341 SPI | XPT2046 resistive | ESP32 | ✅ Stable |
 | E32R35T (ESP32-32E 3.5") | 3.5" 480×320 ST7796 SPI | XPT2046 resistive (shared bus) | ESP32-32E | ✅ Stable |
+| EC11 Knob Minimal System | 240×320 ST7789 SPI | None, rotary only | ESP32-S3 N16R8 | ✅ Official reference, contributor tested |
 | JC8048W550 | 5" 800×480 ST7262 RGB parallel | GT911 capacitive | ESP32-S3 | ✅ Stable |
 
 Full pinouts and hardware details: [Supported boards](boards.md).

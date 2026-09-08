@@ -1,6 +1,7 @@
 #include "theme.h"
 #include "lang.h"
 #include "app_settings.h"
+#include "ui_nav.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -55,14 +56,37 @@ lv_color_t theme_col(uint32_t hex)
     return lv_color_hex(hex);
 }
 
-lv_obj_t *theme_card(lv_obj_t *parent)
+static void style_card(lv_obj_t *obj)
 {
-    lv_obj_t *obj = lv_obj_create(parent);
     lv_obj_remove_style_all(obj);
     lv_obj_set_style_bg_color(obj, theme_col(THEME_COL_SURFACE), 0);
     lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(obj, THEME_RADIUS_CARD, 0);
     lv_obj_set_style_pad_all(obj, THEME_PAD, 0);
+}
+
+void theme_focusable(lv_obj_t *obj)
+{
+    lv_obj_set_style_outline_color(obj, theme_col(THEME_COL_ACCENT), LV_STATE_FOCUS_KEY);
+    lv_obj_set_style_outline_width(obj, ui_px(2), LV_STATE_FOCUS_KEY);
+    lv_obj_set_style_outline_pad(obj, ui_px(1), LV_STATE_FOCUS_KEY);
+    lv_obj_set_style_outline_opa(obj, LV_OPA_COVER, LV_STATE_FOCUS_KEY);
+    ui_nav_register_obj(obj);
+}
+
+lv_obj_t *theme_card(lv_obj_t *parent)
+{
+    lv_obj_t *obj = lv_obj_create(parent);
+    style_card(obj);
+    return obj;
+}
+
+lv_obj_t *theme_action_card(lv_obj_t *parent)
+{
+    lv_obj_t *obj = lv_button_create(parent);
+    style_card(obj);
+    lv_obj_set_style_bg_opa(obj, LV_OPA_70, LV_STATE_PRESSED);
+    theme_focusable(obj);
     return obj;
 }
 
@@ -77,6 +101,7 @@ lv_obj_t *theme_button(lv_obj_t *parent, const char *icon, const char *text, int
        不能用 transform_scale/opa —— 它们会强制 LVGL 把控件渲染进中间层缓冲，
        ESP32 堆紧张时该分配失败会让 lvgl 任务死循环（看门狗卡死 UI） */
     lv_obj_set_style_bg_opa(btn, LV_OPA_70, LV_STATE_PRESSED);
+    theme_focusable(btn);
 
     if ((icon && icon[0]) || (text && text[0])) {
         lv_obj_set_flex_flow(btn, LV_FLEX_FLOW_ROW);
@@ -172,10 +197,9 @@ lv_obj_t *theme_row(lv_obj_t *parent, const char *key, const char *val, int y)
 
 lv_obj_t *theme_row_link(lv_obj_t *scr, const char *key, const char *val, int y, lv_event_cb_t cb)
 {
-    lv_obj_t *row = theme_card(scr);
+    lv_obj_t *row = theme_action_card(scr);
     lv_obj_set_size(row, ui_content_w(), ui_px(38));
     lv_obj_align(row, LV_ALIGN_TOP_MID, 0, y);
-    lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(row, cb, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t *k = theme_label(row, key, THEME_FONT_M, THEME_COL_TEXT);
@@ -229,6 +253,7 @@ lv_obj_t *theme_row_dropdown(lv_obj_t *scr, const char *key, const char *options
     lv_obj_set_style_bg_opa(list, LV_OPA_COVER, LV_PART_SELECTED);
     lv_dropdown_set_selected(dd, sel);
     lv_obj_add_event_cb(dd, cb, LV_EVENT_VALUE_CHANGED, NULL);
+    theme_focusable(dd);
     return row;
 }
 
@@ -251,5 +276,6 @@ lv_obj_t *theme_row_switch(lv_obj_t *scr, const char *key, int y, int on, lv_eve
                               LV_PART_INDICATOR | LV_STATE_CHECKED);
     if (on) lv_obj_add_state(sw, LV_STATE_CHECKED);
     lv_obj_add_event_cb(sw, cb, LV_EVENT_VALUE_CHANGED, NULL);
+    theme_focusable(sw);
     return row;
 }

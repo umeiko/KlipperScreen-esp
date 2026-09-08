@@ -31,6 +31,14 @@ jobs:
             chip: esp32
             flash_size: 4MB
             bl_offset: 0x1000
+          - board: ec11_knob_minimal       # EC11 Knob Minimal System: ESP32-S3 + ST7789 + EC11
+            target: esp32s3
+            bdir: build-ec11-knob-minimal
+            sdkcfg: sdkconfig.ec11_knob_minimal
+            defs: sdkconfig.defaults;sdkconfig.defaults.ec11_knob_minimal
+            chip: esp32s3
+            flash_size: 16MB
+            bl_offset: 0x0
           - board: jc8048w550         # JC8048W550 5" ESP32-S3
             target: esp32s3
             bdir: build-jc8048w550
@@ -84,6 +92,8 @@ jobs:
             suffix: ""
           - board: e32r35t
             suffix: ""
+          - board: ec11_knob_minimal
+            suffix: ""
           - board: jc8048w550
             suffix: ""
     steps:
@@ -119,6 +129,12 @@ jobs:
         run: |
           cp tools/release/flash.bat tools/release/flash.sh dist/
           chmod +x dist/flash.sh
+          if [ "${{ matrix.board }}" = "ec11_knob_minimal" ]; then
+            cp tools/release/README-ec11_knob_minimal.md dist/README.md
+            cp docs/hardware/ec11_knob_minimal.fzz dist/
+            cp docs/screenshots/boards/ec11_knob_minimal_breadboard.zh.png dist/
+            cp docs/screenshots/boards/ec11_knob_minimal_breadboard.en.png dist/
+          fi
 
       # 直接把 dist 内容作为 artifact：GitHub 下载时会打一层 zip，
       # 解压后即是平铺的刷机文件，不再出现"zip 套 zip"
@@ -140,6 +156,7 @@ jobs:
             mingw-w64-ucrt-x86_64-cmake
             mingw-w64-ucrt-x86_64-ninja
             mingw-w64-ucrt-x86_64-SDL2
+            mingw-w64-ucrt-x86_64-cjson
             zip
 
       - name: Fetch LVGL v9.3.0 (third_party/lvgl is gitignored)
@@ -163,7 +180,8 @@ jobs:
         shell: msys2 {0}
         run: |
           mkdir -p dist-win
-          cp src/ports/desktop/build/klipper_remote_desktop.exe src/ports/desktop/build/SDL2.dll dist-win/
+          cp src/ports/desktop/build/klipper_remote_desktop.exe src/ports/desktop/build/klipper_remote_simulator.exe src/ports/desktop/build/SDL2.dll dist-win/
+          cp /ucrt64/share/licenses/cjson/LICENSE dist-win/cJSON-LICENSE.txt
           ls -la dist-win
 
       - uses: actions/upload-artifact@v4

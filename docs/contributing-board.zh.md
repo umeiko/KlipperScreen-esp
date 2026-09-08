@@ -1,6 +1,6 @@
 # 贡献新板型（PR 指南）
 
-给仓库贡献一块新板子的支持，需要"一个 BSP 实现 + 全链路登记"。本页给出完整清单（以 E32R35T 的实际提交为范例）。开始动手前建议先读[移植指南](porting.md)。
+给仓库贡献一块新板子的支持，需要“一个 BSP 实现 + 全链路登记”。必须从 [`templates/board/`](https://github.com/umeiko/KlipperScreen-esp/tree/main/templates/board) 开始；现有 BSP 只用于查阅某个控制器的特殊实现，不作为复制底板。开始动手前先读[移植指南](porting.zh.md)。
 
 ## 命名约定
 
@@ -10,7 +10,7 @@
 
 | # | 文件 | 改动 | 必需？ |
 |---|---|---|---|
-| 1 | `src/bsp/esp32/bsp_<board>.c` | 新建 BSP 实现，整文件包在 `#if CONFIG_BOARD_<BOARD>` 里 | ✅ |
+| 1 | `src/bsp/esp32/bsp_<board>.c` | 复制板型模板，只填写标出的硬件区块；整文件包在 `#if CONFIG_BOARD_<BOARD>` 里 | ✅ |
 | 2 | `src/bsp/Kconfig.projbuild` | `choice BOARD` 里加 `config BOARD_<BOARD>` | ✅ |
 | 3 | `src/bsp/CMakeLists.txt` | SRCS 加新文件；新驱动芯片时 REQUIRES 加组件名 | ✅ |
 | 4 | `src/ports/esp32/entry/idf_component.yml` | 新驱动芯片时加 managed component 依赖及版本约束 | 视情况 |
@@ -36,12 +36,15 @@
 1. 本地全量构建新板型通过：`bash tools/build-esp32.sh <board>`
 2. **回归构建**至少一块既有板型（共享文件有改动时必须）：`bash tools/build-esp32.sh cyd_2432s028r`
 3. 固件大小检查：构建末尾的 `binary size` 不超过应用分区（当前 0x320000）
-4. 有真机就刷机验证显示 + 触摸；没有就在 PR 里注明"未经真机验证"
+4. 按移植教程先做不带 LVGL 的五色色带测试，再验证开机动画、完整 UI 和声明的全部输入
+5. 没有真机就在 PR 里明确注明“未经真机验证”，板型继续保持 WIP
 
 ## PR 里请附上
 
 - 板子资料链接（厂商 wiki / 原理图 / 引脚表）
-- 真机照片或串口日志（显示/触摸正常工作的证据），没有则说明
+- 屏幕接口分类（SPI/I80/RGB/QSPI/MIPI）、控制器型号、稳定频率或时序参数
+- 五色色带和完整 UI 的真机照片或串口日志；没有则明确说明
 - 与模板 BSP 的有意差异点（例如共总线、无 RST、强制校准），方便 review
+- 输入形态：触摸、旋钮、两者都有或都没有。旋钮 GPIO 写进 Kconfig/sdkconfig，不写私有 UI 实现
 
-提交信息风格参考历史：`feat: 新增 <板型> 板型支持（<屏幕> + <触摸>，WIP）`。
+提交信息风格参考历史：`feat: 新增 <板型> 板型支持（<屏幕> + <触摸/旋钮>，WIP）`。

@@ -38,9 +38,8 @@ static void rebuild_rows(void)
     lv_obj_clean(list);
     int row_w = ui_content_w();   /* 行撑满列表宽（list 无内边距），大屏不右侧留白 */
     for (int i = 0; i < file_count; i++) {
-        lv_obj_t *row = theme_card(list);
+        lv_obj_t *row = theme_action_card(list);
         lv_obj_set_size(row, row_w, ui_px(40));
-        lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_add_event_cb(row, on_row, LV_EVENT_CLICKED, (void *)(intptr_t)i);
 
         lv_obj_t *ic = theme_label(row, LV_SYMBOL_FILE, THEME_FONT_ICON, THEME_COL_ACCENT);
