@@ -200,7 +200,7 @@ jobs:
         with:
           files: |
             klipper-remote-esp32-*.zip
-            klipper-remote-desktop-win-x86_64-*.zip
+            klipper-remote-desktop-win-x86_64*.zip
           generate_release_notes: true
           # 标签含 wip（如 v0.2.0-wip.1）时标为预发布，不抢占 latest
           prerelease: ${{ contains(github.ref_name, 'wip') }}
