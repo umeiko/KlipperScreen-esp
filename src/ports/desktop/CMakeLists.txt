@@ -116,9 +116,16 @@ else()
         ${SRC_ROOT}/core/moonraker_client_posix.c
     )
     configure_desktop_target(klipper_remote_desktop)
-    if(CJSON_INCLUDE_DIR)
-        target_include_directories(klipper_remote_desktop PRIVATE ${CJSON_INCLUDE_DIR})
+    # 代码写的是 #include "cJSON.h"，而头文件实际装在 include/cjson/ 子目录。
+    # config 包目标只暴露 .../include 本体，所以无论上面走了哪个分支，
+    # 都再显式找一次带 cjson 后缀的目录（brew 实测踩坑）
+    if(NOT CJSON_INCLUDE_DIR)
+        find_path(CJSON_INCLUDE_DIR NAMES cJSON.h PATH_SUFFIXES cjson)
     endif()
+    if(NOT CJSON_INCLUDE_DIR)
+        message(FATAL_ERROR "cJSON headers not found (brew install cjson / apt install libcjson-dev)")
+    endif()
+    target_include_directories(klipper_remote_desktop PRIVATE ${CJSON_INCLUDE_DIR})
     target_link_libraries(klipper_remote_desktop PRIVATE ${CJSON_LINK} Threads::Threads)
 
     add_executable(klipper_remote_simulator
