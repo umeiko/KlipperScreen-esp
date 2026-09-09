@@ -340,7 +340,7 @@ For SPI/ST7789, modify the template item by item. For another SPI controller, re
 |---|---|---|
 | `bsp_lcd_push()` | Boot animation before LVGL | Input buffer is safe to reuse when the call returns |
 | `bsp_get_display()` | UI queries the default display | Returns the display created by `lv_display_create()` |
-| `bsp_set_brightness()` | Settings and wake-up | Accepts 0–100 and handles backlight polarity |
+| `bsp_screen_power_init()` | Registers the backlight implementation | Receives the board's `backlight_apply(0..100)` and a millisecond clock |
 | `bsp_fade_out()` | Fade before restart | At least turns the backlight off safely; clear a frame when practical |
 | `bsp_disp_can_*()` | Shows optional invert/rotate settings | Returns false when hardware/transport cannot implement the feature |
 
@@ -372,10 +372,28 @@ These functions normally do not depend on the display controller and can retain 
 - `bsp_lvgl_lock()` / `bsp_lvgl_unlock()` protect LVGL;
 - `bsp_delay_ms()` / `bsp_restart()` provide delay and restart;
 - NVS and LittleFS initialization store network, Moonraker, and UI settings;
-- `lvgl_task()` runs `lv_timer_handler()` and the screen-off check;
-- `bsp_screen_activity()` is the shared activity/wake entry point for every input.
+- `lvgl_task()` runs `lv_timer_handler()` and `bsp_screen_power_poll()`;
+- `bsp_screen_activity()`, remembered brightness, timeout and wake state come from shared `bsp_screen_power`; do not copy those state variables into a new board.
 
-Change backlight PWM for the actual active level. A board with a dedicated backlight IC may not use LEDC GPIO at all; it only needs to preserve the `bsp_set_brightness(0..100)` behaviour.
+The board implements only `static void backlight_apply(int percent)`. It converts the shared state machine's 0–100 value to PWM, GPIO, or a backlight-IC command. Keep polarity and nonlinear response curves in this function; do not store user brightness or `screen_off` again in the board BSP.
+
+```c
+static void backlight_apply(int percent)
+{
+    /* TODO(board): translate 0..100 into the real hardware signal here. */
+    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0,
+                  percent * 255 / 100);
+    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
+}
+
+static uint64_t screen_now_ms(void)
+{
+    return (uint64_t)(esp_timer_get_time() / 1000);
+}
+
+/* Call once after the backlight hardware is ready. */
+bsp_screen_power_init(backlight_apply, screen_now_ms);
+```
 
 **Pass condition**: the boot animation and complete UI remain stable during continuous page changes and scrolling.
 
@@ -385,71 +403,198 @@ Change backlight PWM for the actual active level. A board with a dedicated backl
 
 Do not debug touch coordinates before the display passes Step 4.
 
-### 5.1 Choose the product input shape
+### 5.1 First answer one question: does this product have touch?
 
-- **Touch only**: the BSP creates a pointer; rotary Kconfig stays disabled.
-- **Touch + rotary**: the BSP creates a pointer and the shared input layer creates an encoder. Both work together.
-- **Rotary only**: the BSP creates no dummy pointer and enables only rotary Kconfig.
+There are only two top-level routes. A rotary encoder is an optional input that can be added to either route; it does not change how the touch driver is written.
 
-### 5.2 Resistive touch
+- **No touch**: create no LVGL pointer and include no touch initialization or calibration code. A rotary-only product enables only the rotary Kconfig in Section 5.6.
+- **Has touch**: create exactly one LVGL pointer, then choose either the resistive implementation or the capacitive implementation for the actual controller. Enable the optional rotary in Section 5.6 when the product has one; touch and rotary can coexist.
 
-XPT2046-style resistive controllers return raw ADC coordinates and need calibration. Use `touch_cal_load()` / `touch_cal_run()` and store the result in LittleFS `touch.json`. A new board without measured factory values should enter calibration when the file is absent.
+```text
+No touch ──> no pointer ──> optional rotary
 
-Touch may share the display SPI bus or use a separate bus. Confirm this from the schematic. Do not initialize the same SPI host twice on a shared-bus board.
-
-### 5.3 Capacitive touch
-
-Capacitive controllers such as GT911, CST816S, and FT5x06 normally return screen coordinates. Apply only the swap/mirror required by mounting, then report them to LVGL. Do not copy resistive `touch.json` or two-point calibration.
-
-#### 5.3.1 A complete CST816S example to copy
-
-The template contains two complete files:
-
-- `templates/board/touch_input_board_template.h`: the small interface visible to the BSP.
-- `templates/board/touch_input_board_template.c`: the concrete I2C, CST816S, screen-wake, and LVGL pointer implementation.
-
-The BSP calls only this function. It does not need to know CST816S registers or LVGL read details:
-
-```c
-esp_err_t board_template_touch_input_create(
-    lv_display_t *display,
-    i2c_master_bus_handle_t i2c_bus,
-    const board_template_touch_input_config_t *config);
+Has touch ─> choose exactly one touch implementation ─> create pointer
+                                                   └──> optional rotary
+              ├─ resistive: raw coordinates ─> calibration/mapping ─┐
+              └─ capacitive: screen coordinates ───────────────────┴─> LVGL
 ```
 
-The function performs four steps:
+Do not implement both examples below. They are alternative implementations of the same touch-adapter boundary.
 
-1. Create the touch I2C IO with `ESP_LCD_TOUCH_IO_I2C_CST816S_CONFIG()`.
-2. Create the controller with `esp_lcd_touch_new_i2c_cst816s()`.
-3. Pass coordinates and press/release state to LVGL in `touch_read_cb()`.
-4. Call `bsp_screen_activity()` and swallow the first touch when it only wakes the screen.
+### 5.2 Both touch types end as one LVGL pointer
 
-CST816S has one unusual constraint: it responds to I2C for a short time after a touch event. The example therefore uses the INT pin and a semaphore and reads only after an interrupt. Do not change it to unconditional I2C reads on every LVGL poll. This behavior and the option for chips that fail while reading their ID are documented by the [Espressif CST816S driver](https://github.com/espressif/esp-bsp/tree/master/components/lcd_touch/esp_lcd_touch_cst816s).
+Regardless of controller type, the board BSP creates one touch adapter:
 
-To connect the example to a new board:
+```c
+#if BOARD_HAS_TOUCH
+ESP_ERROR_CHECK(board_touch_input_create(display, &touch_config));
+#endif
+```
 
-1. Copy both `touch_input_board_template` files into `src/bsp/esp32/`. Replace their filenames and every `board_template` token with the board name.
-2. Add the new `.c` file to `SRCS` in `src/bsp/CMakeLists.txt`.
-3. Add the driver to `src/ports/esp32/entry/idf_component.yml`:
+`board_touch_input_create()` initializes the real controller, creates an `LV_INDEV_TYPE_POINTER`, and registers a read callback. Controller differences stay inside that adapter. The final LVGL-facing logic has the same shape in both cases:
 
-    ```yaml
-    espressif/esp_lcd_touch_cst816s: "^1.1.0"
-    ```
+Names such as `board_touch_input_create()` and `touch_read_screen_point()` describe the adapter shape; they are not literal common APIs that every port must define. Concrete references are the resistive implementations in
+[`bsp_cyd_2432s028r.c`](../src/bsp/esp32/bsp_cyd_2432s028r.c) and
+[`bsp_e32r35t.c`](../src/bsp/esp32/bsp_e32r35t.c), and the capacitive implementations in
+[`bsp_jc8048w550.c`](../src/bsp/esp32/bsp_jc8048w550.c) and
+[`touch_input_board_template.c`](../templates/board/touch_input_board_template.c).
 
-4. Set `BOARD_HAS_CST816S_TOUCH` to `1` in the board BSP and fill SDA, SCL, RST, and INT. Reuse an existing I2C bus handle when the board already has one; do not create the same port twice.
-5. Begin with `swap_xy`, `mirror_x`, and `mirror_y` all `false`. Show a four-corner test page and change only the flags that the physical mounting requires.
+```c
+static void touch_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
+{
+    static bool swallow_until_release;
+    uint16_t x, y;
 
-If a product page says **CST816T**, first verify the chip marking and data sheet. The example uses the **CST816S** driver explicitly supported by Espressif; similar names do not prove compatible registers or interrupt behavior. For another controller in the `esp_lcd_touch` family, you usually replace only the include, `ESP_LCD_TOUCH_IO_*_CONFIG()`, and `esp_lcd_touch_new_*()` call. The `touch_read_cb()` bridge to LVGL can stay.
+    if (!touch_read_screen_point(&x, &y)) {
+        swallow_until_release = false;
+        data->state = LV_INDEV_STATE_RELEASED;
+        return;
+    }
 
-If initialization stops while reading the chip ID, confirm the controller and then try this board sdkconfig option:
+    if (bsp_screen_activity())
+        swallow_until_release = true;   /* This press only woke the screen. */
+
+    if (swallow_until_release) {
+        data->state = LV_INDEV_STATE_RELEASED;
+        return;
+    }
+
+    data->point.x = x;
+    data->point.y = y;
+    data->state = LV_INDEV_STATE_PRESSED;
+}
+```
+
+`touch_read_screen_point()` is the part you choose: a resistive implementation reads raw ADC coordinates and applies calibration; a capacitive implementation normally reads screen coordinates directly.
+
+### 5.3 How do I choose resistive or capacitive?
+
+Use the touch-controller model and driver output, not the LCD model.
+
+| Typical controller | Driver normally returns | Project-side calibration |
+|---|---|---|
+| XPT2046, ADS7846 | Raw ADC coordinates | Usually required |
+| GT911, CST816S, FT5x06 | Screen coordinates | Usually unnecessary |
+
+The driver output is the final test. If the same physical point produces board-dependent raw values, store a calibration mapping. If the driver already returns stable `0..width-1` and `0..height-1` coordinates, do not add two-point calibration.
+
+### 5.4 Resistive implementation: map raw values to screen coordinates
+
+This is the core shape for an XPT2046-style controller. `xpt2046_read_raw()` talks only to hardware. `touch_cal` belongs to this resistive adapter, not to the common BSP:
+
+```c
+typedef struct {
+    float x_mul, x_add;
+    float y_mul, y_add;
+} touch_cal_t;
+
+static touch_cal_t touch_cal;
+
+static bool touch_read_screen_point(uint16_t *x, uint16_t *y)
+{
+    uint16_t raw_x, raw_y;
+    if (!xpt2046_read_raw(&raw_x, &raw_y))
+        return false;
+
+    int32_t sx = lroundf(raw_x * touch_cal.x_mul + touch_cal.x_add);
+    int32_t sy = lroundf(raw_y * touch_cal.y_mul + touch_cal.y_add);
+    *x = LV_CLAMP(0, sx, LCD_H_RES - 1);
+    *y = LV_CLAMP(0, sy, LCD_V_RES - 1);
+    return true;
+}
+```
+
+Touch may share the display SPI bus or use a separate bus. Confirm this from the schematic. Reuse an initialized SPI host on a shared-bus board; do not initialize the same host twice.
+
+#### 5.4.1 The resistive panel has reliable factory calibration
+
+A mapping is still required, but the user does not need a calibration page. Load measured defaults for this exact board when saved data is absent:
+
+```c
+xpt2046_init();
+
+if (!touch_cal_load(&touch_cal)) {
+    touch_cal = BOARD_FACTORY_TOUCH_CAL;  /* Measured on this board model. */
+    touch_cal_save(&touch_cal);
+}
+
+board_touch_register_pointer(display);
+```
+
+Do not copy defaults from another board. Panel size, mounting direction, and ADC range can make its values entirely different even when both boards use XPT2046.
+
+#### 5.4.2 The resistive panel needs user calibration
+
+First make the controller return raw coordinates. Show calibration points only when no saved mapping exists, calculate the mapping, and save it:
+
+```c
+xpt2046_init();
+
+if (!touch_cal_load(&touch_cal)) {
+    touch_cal_run(&touch_cal);   /* Show targets and sample raw_x/raw_y. */
+    touch_cal_save(&touch_cal);
+}
+
+board_touch_register_pointer(display);
+```
+
+`touch_cal_load/run/save()` are functions in the resistive adapter; they are not mandatory BSP APIs. Calibration consumes display output and raw touch samples, so keep it beside the resistive controller code.
+
+#### 5.4.3 What does code look like when calibration is unnecessary?
+
+Omit `touch_cal_*` and `touch.json` entirely:
+
+```c
+touch_controller_init();
+board_touch_register_pointer(display);
+```
+
+This is the normal capacitive route and also applies to an unusual controller whose driver already performs coordinate conversion. Do not add empty calibration functions merely to make the interface look complete.
+
+### 5.5 Capacitive implementation: read screen coordinates directly
+
+Controllers such as GT911, CST816S, and FT5x06 normally report screen coordinates. Initialize the controller, configure only the swap/mirror required by mounting, then send coordinates through the pointer callback from Section 5.2. Do not read `touch.json` or open a calibration page.
+
+The repository includes one complete CST816S implementation:
+
+- `templates/board/touch_input_board_template.h`: the small interface seen by the board BSP;
+- `templates/board/touch_input_board_template.c`: I2C setup, interrupt-gated CST816S reads, coordinate reporting, and screen wake.
+
+The template BSP uses this single path:
+
+```c
+board_template_touch_input_config_t touch_config = {
+    .h_res = LCD_H_RES,
+    .v_res = LCD_V_RES,
+    .reset_gpio = PIN_TOUCH_RST,
+    .interrupt_gpio = PIN_TOUCH_INT,
+    .swap_xy = false,
+    .mirror_x = false,
+    .mirror_y = false,
+};
+
+ESP_ERROR_CHECK(board_template_touch_input_create(
+    display, touch_i2c_bus, &touch_config));
+```
+
+To connect it to a new board:
+
+1. Copy `touch_input_board_template.c/.h`; rename the files and every `board_template` token.
+2. Add the `.c` file to `SRCS` in `src/bsp/CMakeLists.txt`.
+3. Add the matching controller component to `src/ports/esp32/entry/idf_component.yml`.
+4. Start with every swap/mirror flag false. Use a four-corner test and change only what physical mounting requires.
+
+CST816S responds to I2C for a short period after a touch event, so the example uses INT plus a semaphore and reads only after an interrupt. If a product page says **CST816T**, verify the marking and data sheet first; similar names do not guarantee compatible registers or interrupt behavior. For another `esp_lcd_touch` controller, normally replace the include, IO configuration macro, create function, and any required read policy. Keep the LVGL pointer shape from Section 5.2.
+
+After confirming that the chip really is CST816S, this option can help a module that stalls while reading its ID:
 
 ```ini
 CONFIG_ESP_LCD_TOUCH_CST816S_DISABLE_READ_ID=y
 ```
 
-### 5.4 Rotary encoder
+### 5.6 Optional rotary encoder
 
-The shared `bsp_input_init()` creates the encoder from Kconfig. Do not add GPIO interrupt, PCNT, or focus traversal code to the board BSP.
+The encoder is independent of whether touch exists. Shared `bsp_input_init()` creates it from Kconfig. Do not put GPIO interrupts, PCNT, or focus traversal into the board BSP.
 
 ```ini
 CONFIG_INPUT_ROTARY_ENCODER=y
@@ -465,11 +610,11 @@ A bare encoder's common pin normally goes to GND. Connect A/B and the button to 
 
 Rotary-only products get dedicated interactions: the Moonraker host uses four 0–255 octets, and temperature changes directly on its card. Arbitrary hostname or API-key text should be factory-provisioned, entered through a maintenance interface, or entered with touch; common same-LAN deployments may also use Moonraker `trusted_clients`.
 
-### 5.5 Screen-off wake
+### 5.7 Screen wake is shared policy
 
-Both touch and rotary call `bsp_screen_activity()`. Its return value tells the driver that this action only woke the screen, so the first tap/turn is swallowed instead of activating a control.
+Touch and rotary call `bsp_screen_activity()`. It reports whether this action just woke the screen, and each adapter then swallows the current tap, turn, or press in the way appropriate for that device. A dedicated screen button calls `bsp_screen_toggle()` and is not an LVGL input.
 
-**Pass condition**: every declared input traverses pages, controls modals, and wakes from screen-off. Capacitive builds never show calibration, and rotary-only builds create no pointer.
+**Pass condition**: a no-touch board contains no pointer or calibration path; a touch board compiles exactly one implementation matching its controller; capacitive products never enter calibration; a resistive product either loads defaults measured for that board or completes one calibration; the optional rotary works with either route.
 
 ---
 

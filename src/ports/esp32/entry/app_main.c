@@ -14,10 +14,10 @@ void app_main(void)
     bsp_input_init();      /* 可选附加输入（Kconfig 旋转编码器），可与触摸并存 */
     boot_anim_play(bsp_lcd_push, bsp_delay_ms);   /* 「Umeko」开机动画（~2.5s） */
     ui_app_create();       /* 与 desktop 后端共享的同一份 UI 代码 */
-    bsp_lvgl_unlock();
-
     bsp_set_brightness(settings_load_brightness());   /* 背光偏好（klipperscreen.conf） */
     bsp_set_screen_timeout(settings_load_screen_off());   /* 自动息屏（0=永不） */
+    bsp_lvgl_unlock();
+
     bsp_disp_set_invert(settings_load_display_invert());    /* 反色偏好 */
     bsp_disp_set_rotate180(settings_load_display_rotate()); /* 180° 旋转偏好 */
 

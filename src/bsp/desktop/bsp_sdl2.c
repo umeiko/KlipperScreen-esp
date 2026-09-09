@@ -4,6 +4,7 @@
  * 环境变量 KLIPPER_RES=WxH 可模拟其它板型分辨率（如 KLIPPER_RES=800x480 模拟 JC8048W550）。
  */
 #include "bsp.h"
+#include "bsp_screen_power.h"
 #include <SDL.h>
 
 #include <stdio.h>
@@ -12,6 +13,31 @@
 
 static int scr_w = 320, scr_h = 240;
 static SDL_mutex *lvgl_mutex;
+
+static uint64_t screen_now_ms(void)
+{
+    return SDL_GetTicks64();
+}
+
+static void backlight_apply(int pct)
+{
+    /* Desktop has no physical backlight; keep the state observable in logs. */
+    printf("backlight: %d%%\n", pct);
+}
+
+static int SDLCALL screen_input_filter(void *userdata, SDL_Event *event)
+{
+    (void)userdata;
+    bool activity = event->type == SDL_MOUSEWHEEL ||
+                    event->type == SDL_FINGERDOWN ||
+                    (event->type == SDL_MOUSEBUTTONDOWN &&
+                     (event->button.button == SDL_BUTTON_LEFT ||
+                      event->button.button == SDL_BUTTON_MIDDLE));
+
+    /* Dropping the first event mirrors the hardware adapters: waking the
+       screen must not also click a control or move encoder focus. */
+    return activity && bsp_screen_activity() ? 0 : 1;
+}
 
 void bsp_init(void)
 {
@@ -38,6 +64,8 @@ void bsp_init(void)
         fprintf(stderr, "SDL_CreateMutex failed: %s\n", SDL_GetError());
         exit(1);
     }
+    bsp_screen_power_init(backlight_apply, screen_now_ms);
+    SDL_SetEventFilter(screen_input_filter, NULL);
 }
 
 void bsp_input_init(void)
@@ -101,12 +129,6 @@ void bsp_restart(void)
     exit(0);
 }
 
-void bsp_set_brightness(int pct)
-{
-    /* 桌面端无背光硬件，仅打印便于调试 */
-    printf("bsp_set_brightness: %d%%\n", pct);
-}
-
 /* 桌面端调试前端：反色/旋转不提供（UI 会按 can_* 隐藏开关） */
 bool bsp_disp_can_invert(void)    { return false; }
 bool bsp_disp_can_rotate180(void) { return false; }
@@ -119,19 +141,6 @@ void bsp_fade_out(uint32_t ms)
     printf("bsp_fade_out: %ums\n", (unsigned)ms);
     lv_delay_ms(ms);
 }
-
-void bsp_set_screen_timeout(uint32_t sec)
-{
-    /* 桌面端不息屏，仅打印便于调试 */
-    printf("bsp_set_screen_timeout: %us\n", (unsigned)sec);
-}
-
-bool bsp_screen_activity(void) { return false; }
-
-/* 桌面端无背光硬件：息屏按钮三件套均为空调试输出 */
-void bsp_screen_off(void) { printf("bsp_screen_off\n"); }
-void bsp_screen_wake(void) { printf("bsp_screen_wake\n"); }
-bool bsp_screen_is_off(void) { return false; }
 
 void bsp_time_sync_from_host(const char *host, uint16_t port)
 {

@@ -134,8 +134,15 @@ void          bsp_input_init(void);      // 初始化共享可选输入（旋钮
 lv_display_t *bsp_get_display(void);
 void          bsp_lvgl_lock(void);       // LVGL 互斥锁（单线程后端为空操作）
 void          bsp_lvgl_unlock(void);
-// 规划：bsp_backlight_set(percent)、bsp_backlight_off()
+void          bsp_set_brightness(int);   // 公共状态机保存用户亮度
+bool          bsp_screen_activity(void); // 活动打点；返回本次是否刚唤醒
+void          bsp_screen_toggle(void);   // 独立息屏键使用
 ```
+
+亮度、自动息屏时间、当前开关状态和最后活动时间由
+`src/bsp/bsp_screen_power.c` 统一保存。板型只向它注册
+`backlight_apply(0..100)`，负责把有效亮度换算成 PWM、GPIO 或背光 IC
+命令；板型不再各自保存 `screen_off` 和用户亮度。
 
 WiFi 也是 BSP 级抽象（`src/bsp/bsp_wifi.h`，全非阻塞轮询模型，UI 节拍里 poll）：
 
@@ -156,7 +163,7 @@ bool             bsp_wifi_connected(void);               // 真实连接状态�
 
 ### 4.2 输入与焦点域
 
-输入分成两个彼此独立的通道：
+输入分成三个彼此独立的通道：
 
 ```
 touch / mouse pointer ───────────────▶ LVGL pointer hit-test
@@ -165,6 +172,8 @@ EC11 PCNT / SDL mousewheel ─▶ encoder indev ─▶ ui_nav ─▶ 当前焦�
 keyboard ───────────────────▶ keypad indev  ──┘            │
                                                            ├─ page group
                                                            └─ modal group
+
+dedicated screen GPIO ──────▶ debounce ─▶ screen_power.toggle
 ```
 
 - 板型 BSP 只创建板载 pointer（如果有）；`bsp_input_init()` 根据 Kconfig 创建共享 PCNT 旋钮。pointer 可以不存在，因此触摸、触摸 + 旋钮和纯旋钮都是完整配置。desktop 同时创建 SDL mouse 与 mousewheel，可验证输入并存。
@@ -173,6 +182,8 @@ keyboard ───────────────────▶ keypad ind
 - 弹窗压入临时 group，关闭时恢复原 group。旋钮不会穿透遮罩触发底层页面。
 - 可操作卡片使用 `theme_action_card()`（真实 `lv_button`），普通 `theme_card()` 只作容器。原生 slider/dropdown/switch 用 `theme_focusable()` 登记，避免靠对象树和点击标志猜测可操作性。
 - `bsp_screen_activity()` 是触摸和旋钮共用的唤醒契约。它返回“本次是否刚唤醒”，让驱动吞掉唤醒动作，防止同时触发控件。
+- 独立息屏键不是 LVGL 按键。它在 LVGL 所在任务中轮询消抖，并直接调用
+  `bsp_screen_toggle()`；因此不会参与焦点，也不会跨任务读写屏幕状态。
 - 同一控件可以按输入来源提供更合适的交互：Moonraker 主机行的 pointer 点击打开可输入域名的完整键盘，encoder 点击打开四个 0–255 段的 IPv4 编辑器；温度卡也分别使用触摸数字键盘与旋钮就地调节。输入差异留在控件语义层，不渗入 BSP。
 
 旋钮 GPIO、方向、每刻度计数与按键消抖属于 `Optional input devices` Kconfig。板型默认配置可以启用它，现有板型默认关闭；因此给 CYD 外接旋钮不需要派生新的 BSP。

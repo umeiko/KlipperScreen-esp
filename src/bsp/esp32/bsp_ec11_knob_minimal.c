@@ -13,6 +13,7 @@
 #if CONFIG_BOARD_EC11_KNOB_MINIMAL
 
 #include "bsp.h"
+#include "bsp_screen_power.h"
 #include "bsp_sleep_button.h"
 
 #include "driver/ledc.h"
@@ -53,10 +54,6 @@ static const char *TAG = "bsp";
 static esp_lcd_panel_handle_t panel_handle;
 static SemaphoreHandle_t lvgl_mux;
 static SemaphoreHandle_t lcd_done;
-static int brightness_pct = 100;
-static uint32_t screen_timeout_s;
-static int64_t last_activity_us;
-static bool screen_off;
 
 static bool on_color_done(esp_lcd_panel_io_handle_t io,
                           esp_lcd_panel_io_event_data_t *event,
@@ -123,47 +120,9 @@ static void backlight_apply(int pct)
     ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0));
 }
 
-void bsp_set_brightness(int pct)
+static uint64_t screen_now_ms(void)
 {
-    if (pct < 0) pct = 0;
-    if (pct > 100) pct = 100;
-    brightness_pct = pct;
-    backlight_apply(screen_off ? 0 : pct);
-}
-
-bool bsp_screen_activity(void)
-{
-    bool woke = screen_off;
-    last_activity_us = esp_timer_get_time();
-    if (screen_off) {
-        screen_off = false;
-        backlight_apply(brightness_pct);
-    }
-    return woke;
-}
-
-void bsp_set_screen_timeout(uint32_t sec)
-{
-    screen_timeout_s = sec;
-    bsp_screen_activity();
-}
-
-void bsp_screen_off(void)                        /* 外部触发息屏（息屏按钮） */
-{
-    screen_off = true;
-    backlight_apply(0);
-}
-
-void bsp_screen_wake(void) { bsp_screen_activity(); }
-bool bsp_screen_is_off(void) { return screen_off; }
-
-static void screen_off_check(void)
-{
-    if (!screen_off && screen_timeout_s &&
-        esp_timer_get_time() - last_activity_us >
-            (int64_t)screen_timeout_s * 1000000) {
-        bsp_screen_off();
-    }
+    return (uint64_t)(esp_timer_get_time() / 1000);
 }
 
 void bsp_lcd_push(int x, int y, int w, int h, const uint16_t *pixels)
@@ -224,8 +183,9 @@ static void lvgl_task(void *arg)
     for (;;) {
         bsp_lvgl_lock();
         lv_timer_handler();
+        bsp_screen_power_poll();
+        bsp_sleep_button_poll();
         bsp_lvgl_unlock();
-        screen_off_check();
         vTaskDelay(pdMS_TO_TICKS(5));
     }
 }
@@ -270,6 +230,7 @@ void bsp_init(void)
         .hpoint = 0,
     };
     ESP_ERROR_CHECK(ledc_channel_config(&channel));
+    bsp_screen_power_init(backlight_apply, screen_now_ms);
 
     spi_bus_config_t bus = {
         .sclk_io_num = PIN_LCD_SCLK,
@@ -325,7 +286,6 @@ void bsp_init(void)
     lv_display_set_flush_cb(display, flush_cb);
 
     /* No pointer input: this official wiring is controlled entirely by EC11. */
-    last_activity_us = esp_timer_get_time();
 
     /* 息屏/唤醒按钮（BOOT + GPIO39 外挂按钮，低电平有效） */
     const bsp_sleep_button_cfg_t sleep_btns[] = {

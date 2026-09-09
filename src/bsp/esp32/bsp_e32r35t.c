@@ -15,6 +15,7 @@
 #if CONFIG_BOARD_E32R35T
 
 #include "bsp.h"
+#include "bsp_screen_power.h"
 #include "bsp_sleep_button.h"
 
 #include <math.h>
@@ -293,65 +294,22 @@ void bsp_disp_set_rotate180(bool en)
     if (panel_handle) esp_lcd_panel_mirror(panel_handle, !en, !en);
 }
 
-/* 背光亮度 0-100（0 也会留 5% 兜底，避免黑屏后摸不到设置） */
+/* 板级背光实现：本板非零占空比至少 5%，逻辑亮度与息屏状态由公共状态机管理。 */
 static uint8_t bl_duty = 255;
-static int     bl_pct = 100;
 
-void bsp_set_brightness(int pct)
+static void backlight_apply(int pct)
 {
     if (pct < 0) pct = 0;
     if (pct > 100) pct = 100;
     if (pct > 0 && pct < 5) pct = 5;
-    bl_pct = pct;
     bl_duty = (uint8_t)(pct * 255 / 100);
     ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, bl_duty);
     ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
 }
 
-/* ---------- 自动息屏：超时灭背光，触摸唤醒 ---------- */
-static uint32_t so_after_s;                     /* 0 = 永不 */
-static bool     screen_off;
-static int64_t  last_act_us;
-
-void bsp_set_screen_timeout(uint32_t sec)
+static uint64_t screen_now_ms(void)
 {
-    so_after_s = sec;
-    last_act_us = esp_timer_get_time();
-    if (screen_off) {                           /* 改设置时若正息屏，先唤醒 */
-        screen_off = false;
-        bsp_set_brightness(bl_pct);
-    }
-}
-
-bool bsp_screen_activity(void)                  /* 任意输入打点 + 唤醒 */
-{
-    bool woke = screen_off;
-    last_act_us = esp_timer_get_time();
-    if (screen_off) {
-        screen_off = false;
-        bsp_set_brightness(bl_pct);
-    }
-    return woke;
-}
-
-void bsp_screen_off(void)                       /* 外部触发息屏（息屏按钮） */
-{
-    screen_off = true;
-    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
-    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
-}
-
-void bsp_screen_wake(void) { bsp_screen_activity(); }
-bool bsp_screen_is_off(void) { return screen_off; }
-
-static void screen_off_check(void)              /* lvgl 任务里周期检查 */
-{
-    if (screen_off || !so_after_s) return;
-    if (esp_timer_get_time() - last_act_us > (int64_t)so_after_s * 1000000) {
-        screen_off = true;
-        ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
-        ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
-    }
+    return (uint64_t)(esp_timer_get_time() / 1000);
 }
 
 /* LEDC 硬件渐变到灭（阻塞至完成）。语言切换重启前调用，避免生硬跳变 */
@@ -438,8 +396,9 @@ static void lvgl_task(void *arg)
     for (;;) {
         bsp_lvgl_lock();
         lv_timer_handler();
+        bsp_screen_power_poll();
+        bsp_sleep_button_poll();
         bsp_lvgl_unlock();
-        screen_off_check();
         vTaskDelay(pdMS_TO_TICKS(5));
     }
 }
@@ -485,6 +444,7 @@ void bsp_init(void)
         .hpoint = 0,
     };
     ESP_ERROR_CHECK(ledc_channel_config(&bl_ch));
+    bsp_screen_power_init(backlight_apply, screen_now_ms);
 
     /* SPI2 总线（LCD + 触摸共用，厂商引脚分配如此） */
     spi_bus_config_t buscfg = {
@@ -568,11 +528,11 @@ void bsp_init(void)
         touch_cal_run();
     }
 
-    xTaskCreatePinnedToCore(lvgl_task, "lvgl", 12288, NULL, 4, NULL, 1);
-
     /* BOOT 键 = 息屏/唤醒按钮（低电平有效，内部上拉） */
     const bsp_sleep_button_cfg_t sleep_btns[] = {{ PIN_BTN_BOOT, true }};
     ESP_ERROR_CHECK(bsp_sleep_button_init(sleep_btns, 1));
+
+    xTaskCreatePinnedToCore(lvgl_task, "lvgl", 12288, NULL, 4, NULL, 1);
 
     ESP_LOGI(TAG, "BSP ready (E32R35T, %dx%d)", LCD_H_RES, LCD_V_RES);
 }

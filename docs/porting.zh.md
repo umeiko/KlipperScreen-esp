@@ -340,7 +340,7 @@ static void display_smoke_test(void)
 |---|---|---|
 | `bsp_lcd_push()` | LVGL 启动前的开机动画 | 调用返回时，传入缓冲已经可以安全复用 |
 | `bsp_get_display()` | UI 查询默认显示器 | 返回 `lv_display_create()` 创建的默认 display |
-| `bsp_set_brightness()` | 设置页和唤醒 | 接受 0～100；处理背光有效电平 |
+| `bsp_screen_power_init()` | 注册背光实现 | 传入板级 `backlight_apply(0..100)` 和毫秒时钟 |
 | `bsp_fade_out()` | 重启前渐暗 | 至少安全关闭背光；能清帧则更好 |
 | `bsp_disp_can_*()` | 是否显示反色/旋转设置 | 硬件或当前 transport 不支持就返回 false |
 
@@ -372,10 +372,28 @@ static void display_smoke_test(void)
 - `bsp_lvgl_lock()` / `bsp_lvgl_unlock()`：保护 LVGL；
 - `bsp_delay_ms()` / `bsp_restart()`：延时和重启；
 - NVS 与 LittleFS 初始化：保存网络、Moonraker 和界面配置；
-- `lvgl_task()`：周期调用 `lv_timer_handler()` 和息屏检查；
-- `bsp_screen_activity()`：所有输入共用的活动与唤醒入口。
+- `lvgl_task()`：周期调用 `lv_timer_handler()` 和 `bsp_screen_power_poll()`；
+- `bsp_screen_activity()`、亮度记忆、自动息屏和唤醒：由公共 `bsp_screen_power` 实现，新板不要复制一套状态变量。
 
-背光 PWM 要按硬件修改有效电平。有些板用独立背光驱动 IC，不能直接套 LEDC GPIO；此时只要保持 `bsp_set_brightness(0..100)` 的接口语义即可。
+板型只实现 `static void backlight_apply(int percent)`：把公共状态机给出的 0～100 转成真实 PWM、GPIO 或背光 IC 命令。有效电平和非线性曲线留在这个函数里；不要在板型 BSP 再保存用户亮度或 `screen_off`。
+
+```c
+static void backlight_apply(int percent)
+{
+    /* TODO(board)：只在这里把 0..100 换算成真实硬件信号。 */
+    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0,
+                  percent * 255 / 100);
+    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
+}
+
+static uint64_t screen_now_ms(void)
+{
+    return (uint64_t)(esp_timer_get_time() / 1000);
+}
+
+/* 背光硬件初始化完成后调用一次。 */
+bsp_screen_power_init(backlight_apply, screen_now_ms);
+```
 
 **本步成功标准**：开机动画和完整 UI 都能稳定显示，连续滚动不会出现花屏、撕裂或错位。
 
@@ -385,71 +403,198 @@ static void display_smoke_test(void)
 
 显示没通过第 4 步之前，不要调触摸坐标。
 
-### 5.1 选择产品输入形态
+### 5.1 先只回答一个问题：这个产品有没有触摸？
 
-- **只有触摸**：BSP 创建 pointer，不启用旋钮 Kconfig。
-- **触摸 + 旋钮**：BSP 创建 pointer；共享输入层再创建 encoder，两者同时工作。
-- **只有旋钮**：BSP 不创建假的 pointer，只启用旋钮 Kconfig。
+输入路线只有下面两条。旋钮是两条路线都能追加的可选输入，不会改变触摸驱动的写法。
 
-### 5.2 电阻触摸
+- **没有触摸**：不要创建 LVGL pointer，也不要放入任何触摸初始化或校准代码。纯旋钮产品只需启用第 5.6 节的旋钮 Kconfig。
+- **有触摸**：只创建一个 LVGL pointer，然后根据实际控制器在“电阻触摸实现”和“电容触摸实现”中二选一。需要旋钮时再额外启用第 5.6 节；触摸和旋钮可以同时存在。
 
-XPT2046 一类电阻控制器输出原始 ADC 坐标，需要校准。使用 `touch_cal_load()` / `touch_cal_run()`，并把结果存入 LittleFS 的 `touch.json`。新板没有实测出厂参数时，文件不存在就应进入校准流程。
+```text
+没有触摸 ──> 不创建 pointer ──> 可选：启用旋钮
 
-触摸可能和显示共用 SPI，也可能使用独立 SPI。必须按原理图确认。共用总线时不要再次初始化同一个 SPI host；独立总线则分别初始化。
-
-### 5.3 电容触摸
-
-GT911、CST816S、FT5x06 一类电容控制器通常直接返回屏幕坐标。只根据安装方向做必要的 swap/mirror，然后报告给 LVGL；不要复制电阻屏的 `touch.json` 和两点校准。
-
-#### 5.3.1 一个能照着改的 CST816S 实现
-
-模板中提供了两个完整文件：
-
-- `templates/board/touch_input_board_template.h`：BSP 能看到的小接口。
-- `templates/board/touch_input_board_template.c`：I2C、CST816S、息屏唤醒和 LVGL pointer 的具体实现。
-
-BSP 只调用下面这个函数，不需要知道 CST816S 寄存器或 LVGL 读取细节：
-
-```c
-esp_err_t board_template_touch_input_create(
-    lv_display_t *display,
-    i2c_master_bus_handle_t i2c_bus,
-    const board_template_touch_input_config_t *config);
+有触摸 ───> 选择且只选择一种触摸实现 ──> 创建 pointer
+                                      └──> 可选：同时启用旋钮
+             ├─ 电阻控制器：原始坐标 ──> 校准/映射 ──┐
+             └─ 电容控制器：屏幕坐标 ──────────────┴─> LVGL
 ```
 
-它内部按顺序做了四件事：
+不要同时实现下面两套示例。它们是同一个触摸适配器接口的两种替代实现。
 
-1. 用 `ESP_LCD_TOUCH_IO_I2C_CST816S_CONFIG()` 创建触摸 I2C IO。
-2. 用 `esp_lcd_touch_new_i2c_cst816s()` 创建控制器驱动。
-3. 在 `touch_read_cb()` 中把坐标和按下/松开状态交给 LVGL。
-4. 调用 `bsp_screen_activity()`，吞掉只用于唤醒屏幕的第一次触摸。
+### 5.2 两种触摸最终都交给同一个 LVGL pointer
 
-CST816S 有一个容易踩坑的特点：它在触摸事件后才短暂响应 I2C。示例因此使用 INT 引脚和信号量，只有收到中断后才读数据；不要把它改成每次 LVGL 轮询都无条件访问 I2C。这个行为和“某些芯片读 ID 会初始化失败”的开关记录在 [Espressif CST816S 驱动说明](https://github.com/espressif/esp-bsp/tree/master/components/lcd_touch/esp_lcd_touch_cst816s) 中。
+无论控制器是电阻还是电容，板型 BSP 最终只需要创建一个触摸适配器：
 
-把示例接到新板时：
+```c
+#if BOARD_HAS_TOUCH
+ESP_ERROR_CHECK(board_touch_input_create(display, &touch_config));
+#endif
+```
 
-1. 将两个 `touch_input_board_template` 文件复制到 `src/bsp/esp32/`，文件名和所有 `board_template` 都替换为板型名。
-2. 在 `src/bsp/CMakeLists.txt` 的 `SRCS` 加入新的 `.c` 文件。
-3. 在 `src/ports/esp32/entry/idf_component.yml` 加入驱动：
+`board_touch_input_create()` 负责初始化真实触摸芯片、创建 `LV_INDEV_TYPE_POINTER`，并注册一个读取回调。控制器差异应藏在这个适配器内部。给 LVGL 的最后一段逻辑基本相同：
 
-    ```yaml
-    espressif/esp_lcd_touch_cst816s: "^1.1.0"
-    ```
+这里的 `board_touch_input_create()`、`touch_read_screen_point()` 等名字用于说明接口形状，不是要求逐字复制的公共 API。可直接对照仓库中的电阻屏实现
+[`bsp_cyd_2432s028r.c`](../src/bsp/esp32/bsp_cyd_2432s028r.c)、
+[`bsp_e32r35t.c`](../src/bsp/esp32/bsp_e32r35t.c)，以及电容屏实现
+[`bsp_jc8048w550.c`](../src/bsp/esp32/bsp_jc8048w550.c) 和
+[`touch_input_board_template.c`](../templates/board/touch_input_board_template.c)。
 
-4. 在板型 BSP 中把 `BOARD_HAS_CST816S_TOUCH` 改为 `1`，填写 SDA、SCL、RST、INT。板上已经有 I2C bus 时直接复用它，不要用相同端口再创建一次。
-5. 第一次先让 `swap_xy`、`mirror_x`、`mirror_y` 全为 `false`。显示一个四角测试页，只改必要的方向标志。
+```c
+static void touch_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
+{
+    static bool swallow_until_release;
+    uint16_t x, y;
 
-商品资料写 **CST816T** 时先核对芯片丝印和数据手册。示例使用的是 Espressif 明确支持的 **CST816S** 驱动；名字接近不等于寄存器和中断行为一定兼容。如果控制器不同，但也使用 `esp_lcd_touch` 系列驱动，通常只需替换头文件、`ESP_LCD_TOUCH_IO_*_CONFIG()` 和 `esp_lcd_touch_new_*()`，`touch_read_cb()` 到 LVGL 的部分可以保留。
+    if (!touch_read_screen_point(&x, &y)) {
+        swallow_until_release = false;
+        data->state = LV_INDEV_STATE_RELEASED;
+        return;
+    }
 
-如果初始化日志停在读取芯片 ID，确认芯片型号后可在板型 sdkconfig 中尝试：
+    if (bsp_screen_activity())
+        swallow_until_release = true;   /* 本次按下只用于唤醒 */
+
+    if (swallow_until_release) {
+        data->state = LV_INDEV_STATE_RELEASED;
+        return;
+    }
+
+    data->point.x = x;
+    data->point.y = y;
+    data->state = LV_INDEV_STATE_PRESSED;
+}
+```
+
+这里的 `touch_read_screen_point()` 是需要二选一的部分：电阻屏实现先读原始 ADC 坐标再做校准映射；电容屏实现通常直接读取屏幕坐标。
+
+### 5.3 怎样判断是电阻还是电容实现？
+
+看触摸控制器型号和驱动输出，不要根据 LCD 型号猜。
+
+| 典型控制器 | 驱动通常返回 | 项目侧校准 |
+|---|---|---|
+| XPT2046、ADS7846 | 原始 ADC 坐标 | 通常需要 |
+| GT911、CST816S、FT5x06 | 已换算的屏幕坐标 | 通常不需要 |
+
+最终判断标准是驱动输出：如果同一个物理点在不同机器上得到明显不同的原始数值，就需要保存校准参数；如果驱动已经稳定返回 `0..宽-1`、`0..高-1` 的坐标，就不应再套两点校准。
+
+### 5.4 电阻触摸实现：读取原始值，再映射成屏幕坐标
+
+下面是 XPT2046 一类控制器的核心形状。`xpt2046_read_raw()` 只读取硬件，`touch_cal` 属于这个电阻触摸适配器，不属于公共 BSP：
+
+```c
+typedef struct {
+    float x_mul, x_add;
+    float y_mul, y_add;
+} touch_cal_t;
+
+static touch_cal_t touch_cal;
+
+static bool touch_read_screen_point(uint16_t *x, uint16_t *y)
+{
+    uint16_t raw_x, raw_y;
+    if (!xpt2046_read_raw(&raw_x, &raw_y))
+        return false;
+
+    int32_t sx = lroundf(raw_x * touch_cal.x_mul + touch_cal.x_add);
+    int32_t sy = lroundf(raw_y * touch_cal.y_mul + touch_cal.y_add);
+    *x = LV_CLAMP(0, sx, LCD_H_RES - 1);
+    *y = LV_CLAMP(0, sy, LCD_V_RES - 1);
+    return true;
+}
+```
+
+触摸可能与显示共用 SPI，也可能使用独立 SPI，必须按原理图确认。共用总线时复用已经创建的 SPI host，不能再次初始化同一个 host。
+
+#### 5.4.1 电阻屏已经有可靠的出厂校准值
+
+这仍然需要“校准映射”，只是用户不需要看见校准页面。没有已保存数据时装入该板实测过的默认值：
+
+```c
+xpt2046_init();
+
+if (!touch_cal_load(&touch_cal)) {
+    touch_cal = BOARD_FACTORY_TOUCH_CAL;  /* 必须来自该板真机测量 */
+    touch_cal_save(&touch_cal);
+}
+
+board_touch_register_pointer(display);
+```
+
+不要从另一种板型复制默认值。同一个 XPT2046，因为面板尺寸、安装方向和 ADC 范围不同，参数也可能完全不同。
+
+#### 5.4.2 电阻屏没有可靠的出厂值，需要用户校准
+
+先让触摸硬件能够返回原始坐标；找不到已保存参数时才显示校准点，计算映射并保存：
+
+```c
+xpt2046_init();
+
+if (!touch_cal_load(&touch_cal)) {
+    touch_cal_run(&touch_cal);   /* 显示校准点并采集 raw_x/raw_y */
+    touch_cal_save(&touch_cal);
+}
+
+board_touch_register_pointer(display);
+```
+
+`touch_cal_load/run/save()` 是电阻触摸适配器自己的函数，不是每块板都必须实现的 BSP 接口。校准流程使用显示和原始触摸采样，因此应留在电阻屏代码旁边。
+
+#### 5.4.3 完全不需要校准时，代码是什么样？
+
+不需要校准就完全不要出现 `touch_cal_*` 或 `touch.json`：
+
+```c
+touch_controller_init();
+board_touch_register_pointer(display);
+```
+
+这种路线通常用于电容屏，或者用于已经在驱动内部完成坐标换算的特殊控制器。不要为了“接口完整”创建空校准函数。
+
+### 5.5 电容触摸实现：直接读取屏幕坐标
+
+GT911、CST816S、FT5x06 一类控制器通常直接报告屏幕坐标。适配器只需初始化控制器，按安装方向设置 swap/mirror，并把坐标交给第 5.2 节的公共 pointer 回调；不读取 `touch.json`，也不进入校准页面。
+
+仓库提供了一个可以直接阅读和复制的 CST816S 实现：
+
+- `templates/board/touch_input_board_template.h`：板型 BSP 看到的小接口；
+- `templates/board/touch_input_board_template.c`：I2C、CST816S、中断后读取、坐标上报和息屏唤醒。
+
+模板 BSP 的调用只有这一条路线：
+
+```c
+board_template_touch_input_config_t touch_config = {
+    .h_res = LCD_H_RES,
+    .v_res = LCD_V_RES,
+    .reset_gpio = PIN_TOUCH_RST,
+    .interrupt_gpio = PIN_TOUCH_INT,
+    .swap_xy = false,
+    .mirror_x = false,
+    .mirror_y = false,
+};
+
+ESP_ERROR_CHECK(board_template_touch_input_create(
+    display, touch_i2c_bus, &touch_config));
+```
+
+接入新板时：
+
+1. 复制 `touch_input_board_template.c/.h`，把文件名及 `board_template` 改成板名。
+2. 在 `src/bsp/CMakeLists.txt` 的 `SRCS` 加入 `.c` 文件。
+3. 在 `src/ports/esp32/entry/idf_component.yml` 加入匹配的触摸驱动。
+4. 先把 swap/mirror 全设为 false，用四角测试页只调整实际需要的方向。
+
+CST816S 在触摸事件后才短暂响应 I2C，所以示例使用 INT 和信号量，只在中断后读取。商品资料写 **CST816T** 时应先核对丝印和数据手册；名字接近不代表寄存器和中断行为兼容。换成另一个 `esp_lcd_touch` 控制器时，通常替换头文件、IO 配置宏、创建函数和必要的读取策略，第 5.2 节的 LVGL pointer 形状可以保留。
+
+如果确认是 CST816S，但初始化停在读取芯片 ID，可按驱动说明尝试：
 
 ```ini
 CONFIG_ESP_LCD_TOUCH_CST816S_DISABLE_READ_ID=y
 ```
 
-### 5.4 旋转编码器
+### 5.6 可选的旋转编码器
 
-编码器由共享 `bsp_input_init()` 根据 Kconfig 创建，不要把 GPIO 中断、PCNT 或焦点遍历写进板型 BSP。
+编码器与“有没有触摸”是两个独立选择。共享 `bsp_input_init()` 根据 Kconfig 创建 encoder，不要把 GPIO 中断、PCNT 或焦点遍历写进板型 BSP。
 
 ```ini
 CONFIG_INPUT_ROTARY_ENCODER=y
@@ -465,11 +610,11 @@ CONFIG_INPUT_ROTARY_BUTTON_ACTIVE_LOW=y
 
 纯旋钮板会使用专用交互：Moonraker 主机地址按四个 0～255 段输入，温度直接在卡片内旋转调节。域名或 API Key 等任意文本需要由出厂配置、维护接口或触摸键盘提供；常见同局域网部署也可使用 Moonraker `trusted_clients`。
 
-### 5.5 息屏唤醒
+### 5.7 息屏唤醒属于公共策略
 
-触摸和旋钮都调用 `bsp_screen_activity()`。它返回“这次操作是否只是唤醒屏幕”，输入驱动据此吞掉第一次点击或旋转，避免用户只想点亮屏幕却误触按钮。
+触摸和旋钮都调用 `bsp_screen_activity()`。它返回“这次操作是否刚刚唤醒屏幕”，各自的适配器再按输入形态吞掉本次点击、旋转或按压。独立息屏键调用 `bsp_screen_toggle()`，不作为 LVGL 输入。
 
-**本步成功标准**：声明的每种输入都能遍历页面、控制弹窗并从息屏唤醒；电容屏不出现校准页，纯旋钮板不创建 pointer。
+**本步成功标准**：无触摸板完全没有 pointer 和校准流程；有触摸板只编译一种匹配控制器的实现；电容屏永不进入校准；电阻屏能装入该板的出厂参数或完成一次校准；可选旋钮能与两条路线正常组合。
 
 ---
 

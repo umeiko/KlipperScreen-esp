@@ -4,10 +4,6 @@
 #include "driver/gpio.h"
 #include "esp_log.h"
 #include "esp_timer.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include <stdlib.h>
-#include <string.h>
 
 #define POLL_PERIOD_MS   10
 #define DEBOUNCE_MS      30
@@ -25,40 +21,34 @@ typedef struct {
 
 static button_state_t buttons[MAX_BUTTONS];
 static size_t         button_count;
-static TaskHandle_t   poll_task;
+static int64_t        next_poll_us;
 
 static bool read_pressed(const button_state_t *b)
 {
     return gpio_get_level(b->gpio) == (b->active_low ? 0 : 1);
 }
 
-static void poll_loop(void *arg)
+void bsp_sleep_button_poll(void)
 {
-    (void)arg;
-    for (;;) {
-        int64_t now = esp_timer_get_time();
-        for (size_t i = 0; i < button_count; i++) {
-            button_state_t *b = &buttons[i];
-            bool pressed = read_pressed(b);
-            if (pressed != b->raw_pressed) {
-                b->raw_pressed = pressed;
-                b->raw_since_us = now;
-            }
-            if (pressed != b->stable_pressed &&
-                now - b->raw_since_us >= (int64_t)DEBOUNCE_MS * 1000) {
-                b->stable_pressed = pressed;
-                if (pressed) {
-                    if (bsp_screen_is_off()) {
-                        ESP_LOGI(TAG, "GPIO%d pressed: wake", b->gpio);
-                        bsp_screen_wake();
-                    } else {
-                        ESP_LOGI(TAG, "GPIO%d pressed: screen off", b->gpio);
-                        bsp_screen_off();
-                    }
-                }
+    int64_t now = esp_timer_get_time();
+    if (now < next_poll_us) return;
+    next_poll_us = now + (int64_t)POLL_PERIOD_MS * 1000;
+
+    for (size_t i = 0; i < button_count; i++) {
+        button_state_t *b = &buttons[i];
+        bool pressed = read_pressed(b);
+        if (pressed != b->raw_pressed) {
+            b->raw_pressed = pressed;
+            b->raw_since_us = now;
+        }
+        if (pressed != b->stable_pressed &&
+            now - b->raw_since_us >= (int64_t)DEBOUNCE_MS * 1000) {
+            b->stable_pressed = pressed;
+            if (pressed) {
+                ESP_LOGI(TAG, "GPIO%d pressed: toggle screen", b->gpio);
+                bsp_screen_toggle();
             }
         }
-        vTaskDelay(pdMS_TO_TICKS(POLL_PERIOD_MS));
     }
 }
 
@@ -89,9 +79,5 @@ esp_err_t bsp_sleep_button_init(const bsp_sleep_button_cfg_t *cfgs, size_t count
                  b->active_low ? "active-low" : "active-high");
     }
 
-    if (!poll_task) {
-        BaseType_t ok = xTaskCreate(poll_loop, "sleep_btn", 2048, NULL, 3, &poll_task);
-        if (ok != pdPASS) return ESP_ERR_NO_MEM;
-    }
     return ESP_OK;
 }

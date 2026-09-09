@@ -3,7 +3,8 @@
 # 注意：组件注册的第一遍扫描早于 kconfig 加载，CONFIG_BOARD_* 此时为空，
 # 因此不能用 if(CONFIG_...) 决定 SRCS/REQUIRES —— 两个板型的源都编译，
 # 文件内部用 #if CONFIG_BOARD_* 裁剪；依赖也全部列上（对端目标都能编译）。
-idf_component_register(SRCS "esp32/bsp_cyd_2432s028r.c"
+idf_component_register(SRCS "bsp_screen_power.c"
+                            "esp32/bsp_cyd_2432s028r.c"
                             "esp32/bsp_e32r35t.c"
                             "esp32/bsp_ec11_knob_minimal.c"
                             "esp32/bsp_jc8048w550.c"

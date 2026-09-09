@@ -6,9 +6,11 @@
  *   klipper_remote_simulator[.exe] <毫秒> <out.bmp> 运行指定毫秒后截图保存并退出
  */
 #include "bsp.h"
+#include "bsp_screen_power.h"
 #include "ui_app.h"
 #include "printer.h"
 #include "boot_anim.h"
+#include "app_settings.h"
 #include <SDL.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -129,6 +131,8 @@ int main(int argc, char **argv)
     bsp_input_init();       /* 鼠标滚轮 + 中键模拟旋转编码器 */
     boot_anim_play(bsp_lcd_push, bsp_delay_ms);   /* 「Umeko」开机动画（~2.5s） */
     ui_app_create();
+    bsp_set_brightness(settings_load_brightness());
+    bsp_set_screen_timeout(settings_load_screen_off());
 
     /* 截图模式: <毫秒> <out.bmp> [面板名] */
     int shot_at = 0;
@@ -163,6 +167,7 @@ int main(int argc, char **argv)
     while (1) {
         bsp_lvgl_lock();
         lv_timer_handler();
+        bsp_screen_power_poll();
         if (shot_path && (int)(lv_tick_elaps(start)) >= shot_at) {
             int result = save_bmp(shot_path);
             bsp_lvgl_unlock();

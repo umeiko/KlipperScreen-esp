@@ -7,8 +7,8 @@
 2. 把 `bsp_board_template.c` 复制为 `src/bsp/esp32/bsp_<board>.c`。
 3. 把 `sdkconfig.defaults.board_template` 复制为
    `src/ports/esp32/sdkconfig.defaults.<board>`。
-4. 使用 CST816S 电容触摸时，再复制 `touch_input_board_template.c/.h`，文件名和
-   所有 `board_template` 都替换为板型名；其它触摸控制器把它作为适配层示例。
+4. 只有产品带触摸时才添加触摸适配器。使用 CST816S 电容触摸可复制
+   `touch_input_board_template.c/.h`；电阻触摸则按移植教程创建带校准映射的适配器。
 5. 替换所有 `BOARD_TEMPLATE`、`board_template` 和 `TODO(board)` 标记。
 6. 按 [`docs/contributing-board.zh.md`](../../docs/contributing-board.zh.md) 的清单登记板型。
 7. 先构建新板型，再构建一个现有板型检查共享代码。
@@ -18,11 +18,11 @@ I80、RGB/DOTCLK、QSPI 和 MIPI 必须替换整个显示 transport，包括总�
 `flush_cb`；只改 `esp_lcd_new_panel_st7789()` 不会把 SPI 模板变成并口实现。
 公共 BSP 生命周期仍然可以保留。没有触摸的板不要创建假的 pointer。
 
-输入按硬件三选一：触摸、触摸 + 旋钮、纯旋钮。只有 XPT2046 一类电阻触摸需要
-`touch.json` 和校准流程；GT911、CST816S 一类电容触摸通常直接报告屏幕坐标，
-不调用校准函数。`touch_input_board_template.c` 是 CST816S 的完整实现示例，包含
-中断后读 I2C、坐标上报和息屏唤醒。CST816T 等相近型号仍需先核对数据手册，不能
-只看名称就假设与 CST816S 驱动兼容。
+先按硬件选择“无触摸”或“有触摸”。无触摸板不创建 pointer，也没有任何校准代码；
+有触摸板只选择一种控制器实现。XPT2046 一类电阻触摸通常需要原始坐标校准，
+GT911、CST816S 一类电容触摸通常直接报告屏幕坐标，不调用校准函数。
+`touch_input_board_template.c` 是其中一种完整的 CST816S 电容实现，并不是还要与
+电阻实现同时使用。CST816T 等相近型号仍需先核对数据手册。
 
 旋转编码器属于共享的可选输入，不要把 EC11/编码器驱动塞进板型 BSP。只需在板型
 sdkconfig defaults 中启用 `Optional input devices`，填写 A、B、按键三个 GPIO；

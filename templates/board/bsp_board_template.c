@@ -16,6 +16,7 @@
 #error "TODO(board): rename CONFIG_BOARD_TEMPLATE, fill the pin table, then remove this line"
 
 #include "bsp.h"
+#include "bsp_screen_power.h"
 #include "driver/ledc.h"
 #include "driver/i2c_master.h"
 #include "driver/spi_master.h"
@@ -44,24 +45,22 @@
 #define LCD_SPI_HZ         (40 * 1000 * 1000)
 #define DRAW_BUF_LINES     32
 
-/* Set to 1 only for a CST816S board after copying the touch_input example. */
-#define BOARD_HAS_CST816S_TOUCH 0
+/* Set to 1 only when this product has touch.  The supplied adapter is a
+ * concrete CST816S example; replace its controller-specific code for another
+ * touch chip.  A no-touch/rotary-only product leaves this at 0. */
+#define BOARD_HAS_TOUCH 0
 #define PIN_TOUCH_SDA      GPIO_NUM_NC
 #define PIN_TOUCH_SCL      GPIO_NUM_NC
 #define PIN_TOUCH_RST      GPIO_NUM_NC
 #define PIN_TOUCH_INT      GPIO_NUM_NC
 
-#if BOARD_HAS_CST816S_TOUCH
+#if BOARD_HAS_TOUCH
 #include "touch_input_board_template.h"
 #endif
 
 static esp_lcd_panel_handle_t panel;
 static SemaphoreHandle_t lvgl_mux;
 static SemaphoreHandle_t lcd_done;
-static int brightness_pct = 100;
-static uint32_t screen_timeout_s;
-static int64_t last_activity_us;
-static bool screen_off;
 
 static bool on_color_done(esp_lcd_panel_io_handle_t io,
                           esp_lcd_panel_io_event_data_t *event,
@@ -99,41 +98,20 @@ void bsp_lvgl_unlock(void) { xSemaphoreGiveRecursive(lvgl_mux); }
 lv_display_t *bsp_get_display(void) { return lv_display_get_default(); }
 void bsp_delay_ms(uint32_t ms) { vTaskDelay(pdMS_TO_TICKS(ms)); }
 
-void bsp_set_brightness(int pct)
+/* This is the only board-specific part of brightness control.  The shared
+ * state machine stores the user's 0..100 value and supplies 0 while off. */
+static void backlight_apply(int pct)
 {
     if (pct < 0) pct = 0;
     if (pct > 100) pct = 100;
-    brightness_pct = pct;
     /* TODO(board): invert this duty when the backlight is active-low. */
     ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, pct * 255 / 100);
     ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
 }
 
-bool bsp_screen_activity(void)
+static uint64_t screen_now_ms(void)
 {
-    bool woke = screen_off;
-    last_activity_us = esp_timer_get_time();
-    if (screen_off) {
-        screen_off = false;
-        bsp_set_brightness(brightness_pct);
-    }
-    return woke;
-}
-
-void bsp_set_screen_timeout(uint32_t sec)
-{
-    screen_timeout_s = sec;
-    bsp_screen_activity();
-}
-
-static void screen_off_check(void)
-{
-    if (!screen_off && screen_timeout_s &&
-        esp_timer_get_time() - last_activity_us > (int64_t)screen_timeout_s * 1000000) {
-        screen_off = true;
-        ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
-        ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
-    }
+    return (uint64_t)(esp_timer_get_time() / 1000);
 }
 
 void bsp_lcd_push(int x, int y, int w, int h, const uint16_t *pixels)
@@ -156,7 +134,7 @@ void bsp_restart(void)
 
 void bsp_fade_out(uint32_t ms)
 {
-    bsp_set_brightness(0);
+    backlight_apply(0);
     vTaskDelay(pdMS_TO_TICKS(ms));
 }
 
@@ -173,8 +151,8 @@ static void lvgl_task(void *arg)
     for (;;) {
         bsp_lvgl_lock();
         lv_timer_handler();
+        bsp_screen_power_poll();
         bsp_lvgl_unlock();
-        screen_off_check();
         vTaskDelay(pdMS_TO_TICKS(5));
     }
 }
@@ -205,6 +183,7 @@ void bsp_init(void)
         .channel = LEDC_CHANNEL_0, .timer_sel = LEDC_TIMER_0, .duty = 255,
     };
     ESP_ERROR_CHECK(ledc_channel_config(&channel));
+    bsp_screen_power_init(backlight_apply, screen_now_ms);
 
     /* DISPLAY TRANSPORT: SPI command-panel example only. Replace this entire
      * block for I80, RGB/DOTCLK, QSPI or MIPI; changing only the panel factory
@@ -251,7 +230,7 @@ void bsp_init(void)
 
     /* Optional concrete input example: CST816S capacitive touch over I2C.
        Reuse an existing I2C bus handle here if this board already created one. */
-#if BOARD_HAS_CST816S_TOUCH
+#if BOARD_HAS_TOUCH
     i2c_master_bus_config_t touch_i2c_config = {
         .i2c_port = I2C_NUM_0,
         .sda_io_num = PIN_TOUCH_SDA,
@@ -280,7 +259,6 @@ void bsp_init(void)
        rotary-only board creates no pointer here. Shared bsp_input_init()
        creates the optional rotary encoder from Kconfig after bsp_init(). */
 
-    last_activity_us = esp_timer_get_time();
     xTaskCreatePinnedToCore(lvgl_task, "lvgl", 12288, NULL, 4, NULL, 1);
 }
 

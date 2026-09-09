@@ -27,23 +27,23 @@ void bsp_restart(void);
 void bsp_lcd_push(int x, int y, int w, int h, const uint16_t *px);
 void bsp_delay_ms(uint32_t ms);
 
-/* 背光亮度 0-100（desktop 为空操作；esp32 走 LEDC PWM） */
+/* 用户亮度 0-100。公共状态机保存目标亮度；板型只负责映射到实际背光硬件。 */
 void bsp_set_brightness(int pct);
 
 /* 背光从当前值在 ms 内渐变到纯黑（语言切换重启前的淡出；阻塞至渐变完成） */
 void bsp_fade_out(uint32_t ms);
 
-/* 自动息屏超时（秒，0=永不）。超时后关背光，任意触摸唤醒并恢复亮度 */
+/* 自动息屏超时（秒，0=永不）。只更新配置和计时，不隐式唤醒屏幕。 */
 void bsp_set_screen_timeout(uint32_t sec);
 
 /* 记录任意输入活动并在需要时唤醒背光；返回 true 表示本次输入刚唤醒屏幕。 */
 bool bsp_screen_activity(void);
 
 /* 外部触发的息屏/唤醒（息屏按钮等硬开关用，与自动超时息屏共享同一状态）：
-   off = 立即灭背光；wake = 恢复亮度并刷新活动计时；is_off 查询当前是否息屏。
-   desktop 为空操作。 */
+   off = 立即灭背光；wake = 恢复亮度并刷新活动计时；toggle = 原子语义的状态切换。 */
 void bsp_screen_off(void);
 void bsp_screen_wake(void);
+void bsp_screen_toggle(void);
 bool bsp_screen_is_off(void);
 
 /* 反色 / 180° 旋转：运行时立即生效（设置项落盘 klipperscreen.conf，

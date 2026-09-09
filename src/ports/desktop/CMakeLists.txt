@@ -28,6 +28,7 @@ file(GLOB UI_SRCS
 
 set(DESKTOP_COMMON_SRCS
     main.c
+    ${SRC_ROOT}/bsp/bsp_screen_power.c
     ${SRC_ROOT}/bsp/desktop/bsp_sdl2.c
     ${SRC_ROOT}/bsp/desktop/bsp_wifi_windows.c
     ${SRC_ROOT}/bsp/desktop/bsp_wifi_linux.c
