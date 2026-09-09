@@ -57,6 +57,8 @@
 #define PIN_ENC_KEY     46
 
 /* 一键息屏/唤醒独立按键（低有效，内部上拉，公共端接 GND） */
+/* 息屏/唤醒按键（EC11 minimal 合并）：BOOT(GPIO0) + GPIO39 双键等效，任一按下触发 */
+#define PIN_BTN_BOOT     0
 #define PIN_PWR_KEY     39
 
 #define LCD_H_RES      320    /* 240x320 面板右转 90° → 横屏 320x240 */
@@ -159,11 +161,13 @@ static void screen_off_check(void)
     }
 }
 
-/* 一键息屏/唤醒：稳定按下 50ms 触发一次，释放后再按可再触发 */
+/* 息屏/唤醒（EC11 minimal 合并）：BOOT(GPIO0) + GPIO39 双键，低电平有效，
+   任一稳定按下 50ms 触发一次；释放后再按可再触发 */
 static void pwr_key_check(void)
 {
     int64_t now = esp_timer_get_time() / 1000;
-    int cur = gpio_get_level(PIN_PWR_KEY);   /* 0=按下 */
+    int cur = gpio_get_level(PIN_BTN_BOOT) & gpio_get_level(PIN_PWR_KEY);
+    /* 两键任一为 0（按下）→ cur=0；全释放 → cur=1 */
     switch (pwr_key_state) {
     case 0:
         if (cur == 0) { pwr_key_state = 1; pwr_key_debounce_ms = now; }
@@ -435,7 +439,7 @@ ESP_ERROR_CHECK(esp_lcd_panel_set_gap(panel_handle, 0, 0));
     ESP_ERROR_CHECK(pcnt_unit_start(enc_pcnt));
     /* 一键息屏/唤醒按键 IO39 */
     gpio_config_t pwr_io_cfg = {
-        .pin_bit_mask = (1ULL << PIN_PWR_KEY),
+        .pin_bit_mask = (1ULL << PIN_BTN_BOOT) | (1ULL << PIN_PWR_KEY),
         .mode = GPIO_MODE_INPUT,
         .pull_up_en = GPIO_PULLUP_ENABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
