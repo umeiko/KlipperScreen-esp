@@ -120,6 +120,20 @@ static lv_obj_t *make_link_row(lv_obj_t *scr, const char *key, const char *val, 
     return row;
 }
 
+/* 展示行（主题/版本）：可聚焦（进编码器焦点组），随选项滚动可见 */
+static lv_obj_t *make_show_row(lv_obj_t *scr, const char *key, const char *val, int y)
+{
+    lv_obj_t *row = theme_card(scr);
+    lv_obj_set_size(row, ui_content_w(), ui_px(38));
+    lv_obj_align(row, LV_ALIGN_TOP_MID, 0, y);
+    lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_USER_1);
+    lv_obj_t *k = theme_label(row, key, THEME_FONT_M, THEME_COL_TEXT);
+    lv_obj_align(k, LV_ALIGN_LEFT_MID, ui_px(2), 0);
+    lv_obj_t *v = theme_label(row, val, THEME_FONT_S, THEME_COL_TEXT_DIM);
+    lv_obj_align(v, LV_ALIGN_RIGHT_MID, -ui_px(4), 0);
+    return row;
+}
+
 static lv_obj_t *create(void)
 {
     lv_obj_t *scr = lv_obj_create(NULL);
@@ -158,6 +172,10 @@ static lv_obj_t *create(void)
     }
     make_dropdown_row(scr, "自动息屏", so_opts, THEME_TITLEBAR_H + ui_px(160), so_sel,
                       on_screen_off_select, NULL);
+
+    /* 屏外展示行（补回）：主题 + 版本，随编码器滚动可见 */
+    make_show_row(scr, "主题", "Dark", THEME_TITLEBAR_H + ui_px(199));
+    make_show_row(scr, "版本", "v" KR_VERSION, THEME_TITLEBAR_H + ui_px(238));
 
     return scr;
 }

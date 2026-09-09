@@ -520,7 +520,7 @@ int bsp_battery_mv(void)
     /* ADC2 与 WiFi 共用硬件互斥：WiFi 活跃时读取可能超时 → 用上次缓存（避免跳 0） */
     if (adc_oneshot_read(bat_adc, ADC_CHANNEL_6, &raw) != ESP_OK) return bat_last_mv;
     /* 100k 高阻抗源采样不足：连续读几次取最大，接近真值 */
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 7; i++) {
         int r = 0;
         if (adc_oneshot_read(bat_adc, ADC_CHANNEL_6, &r) == ESP_OK && r > raw) raw = r;
     }
