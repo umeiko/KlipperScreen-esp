@@ -32,6 +32,12 @@ set(DESKTOP_COMMON_SRCS
     ${UI_SRCS}
 )
 
+# macOS 没有桌面 WiFi 后端（windows=netsh / linux=nmcli 都带 OS 守卫，mac 全编空），
+# 编一个空实现补符号：WiFi 页图标常灰、扫描报失败。
+if(APPLE)
+    list(APPEND DESKTOP_COMMON_SRCS bsp_wifi_stub.c)
+endif()
+
 function(configure_desktop_target target)
     target_include_directories(${target} PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
@@ -70,12 +76,49 @@ if(WIN32)
     configure_desktop_target(klipper_remote_simulator)
     target_compile_definitions(klipper_remote_simulator PRIVATE KLIPPER_DESKTOP_SIMULATOR=1)
 else()
-    # Linux remains the layout simulator until it gains a native transport.
+    # macOS / Linux：POSIX sockets 原生传输（moonraker_client_posix.c），
+    # 另保留 mock 数据的 simulator 目标作开发/布局工具。
+    if(APPLE)
+        # brew 前缀（arm64=/opt/homebrew，intel=/usr/local）不在部分
+        # CMake 版本的默认搜索路径里，显式补上
+        list(APPEND CMAKE_PREFIX_PATH /opt/homebrew /usr/local)
+    endif()
+
+    find_package(cJSON CONFIG QUIET)
+    if(TARGET cjson)
+        # brew / 发行版 CMake 配置包：shared 目标自带 include 目录（.../include/cjson）
+        set(CJSON_LINK cjson)
+    elseif(TARGET cjson-static)
+        set(CJSON_LINK cjson-static)
+    else()
+        # 无 CMake 配置包时的兜底（手工编译安装 / 散装头文件+库）
+        find_path(CJSON_INCLUDE_DIR NAMES cJSON.h PATH_SUFFIXES cjson)
+        find_library(CJSON_LIBRARY NAMES cjson)
+        if(NOT CJSON_INCLUDE_DIR OR NOT CJSON_LIBRARY)
+            message(FATAL_ERROR "cJSON not found (brew install cjson / apt install libcjson-dev)")
+        endif()
+        set(CJSON_LINK ${CJSON_LIBRARY})
+    endif()
+
+    find_package(Threads REQUIRED)
+
     add_executable(klipper_remote_desktop
+        ${DESKTOP_COMMON_SRCS}
+        ${SRC_ROOT}/core/printer_model.c
+        ${SRC_ROOT}/core/klipper_api.c
+        ${SRC_ROOT}/core/moonraker_client_posix.c
+    )
+    configure_desktop_target(klipper_remote_desktop)
+    if(CJSON_INCLUDE_DIR)
+        target_include_directories(klipper_remote_desktop PRIVATE ${CJSON_INCLUDE_DIR})
+    endif()
+    target_link_libraries(klipper_remote_desktop PRIVATE ${CJSON_LINK} Threads::Threads)
+
+    add_executable(klipper_remote_simulator
         ${DESKTOP_COMMON_SRCS}
         ${SRC_ROOT}/core/printer_mock.c
         ${SRC_ROOT}/core/moonraker_client_stub.c
     )
-    configure_desktop_target(klipper_remote_desktop)
-    target_compile_definitions(klipper_remote_desktop PRIVATE KLIPPER_DESKTOP_SIMULATOR=1)
+    configure_desktop_target(klipper_remote_simulator)
+    target_compile_definitions(klipper_remote_simulator PRIVATE KLIPPER_DESKTOP_SIMULATOR=1)
 endif()
