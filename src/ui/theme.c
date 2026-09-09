@@ -67,10 +67,10 @@ static void style_card(lv_obj_t *obj)
 
 void theme_focusable(lv_obj_t *obj)
 {
-    lv_obj_set_style_outline_color(obj, theme_col(THEME_COL_ACCENT), LV_STATE_FOCUS_KEY);
-    lv_obj_set_style_outline_width(obj, ui_px(2), LV_STATE_FOCUS_KEY);
-    lv_obj_set_style_outline_pad(obj, ui_px(1), LV_STATE_FOCUS_KEY);
-    lv_obj_set_style_outline_opa(obj, LV_OPA_COVER, LV_STATE_FOCUS_KEY);
+    /* 选中高亮 = 整块变色（背景填充强调色），不用描边线 */
+    lv_obj_set_style_bg_color(obj, theme_col(THEME_COL_ACCENT), LV_STATE_FOCUS_KEY);
+    lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, LV_STATE_FOCUS_KEY);
+    lv_obj_set_style_outline_width(obj, 0, LV_STATE_FOCUS_KEY);
     ui_nav_register_obj(obj);
 }
 
