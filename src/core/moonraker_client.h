@@ -1,6 +1,7 @@
 #pragma once
 /*
- * Moonraker WebSocket 客户端（esp32：esp_websocket_client；desktop：空桩）。
+ * Moonraker WebSocket 客户端（ESP32：esp_websocket_client；Windows：WinHTTP；
+ * macOS/Linux 桌面端：moonraker_client_posix.c 手写 POSIX sockets）。
  * 职责：连接 ws://host:port/websocket，完成握手
  *   identify → server.info(等 klippy_connected) → objects.list → objects.subscribe
  * 之后把订阅快照与 notify_status_update 增量转交 printer_model_apply_status()，
@@ -18,7 +19,7 @@ typedef enum {
     MOONRAKER_READY,         /* 订阅完成，数据在更新 */
 } moonraker_state_t;
 
-/* 读 moonraker.conf，有配置且 WiFi 已连时启动连接（可重复调用，幂等） */
+/* 读 moonraker.conf 并启动连接（ESP32 会等待 WiFi；可重复调用，幂等） */
 void moonraker_start(void);
 
 /* 配置变更后调用：断开并按新配置重连 */

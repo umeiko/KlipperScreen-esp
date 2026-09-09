@@ -436,7 +436,14 @@ CONFIG_PARTITION_TABLE_MD5=y
 # CONFIG_BOARD_CYD_2432S028R is not set
 CONFIG_BOARD_E32R35T=y
 # CONFIG_BOARD_JC8048W550 is not set
+# CONFIG_BOARD_EC11_KNOB_MINIMAL is not set
 # end of Board selection
+
+#
+# Optional input devices
+#
+# CONFIG_INPUT_ROTARY_ENCODER is not set
+# end of Optional input devices
 
 #
 # XPT2046

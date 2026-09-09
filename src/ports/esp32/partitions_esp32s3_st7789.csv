@@ -1,0 +1,7 @@
+# ESP32-S3 + ST7789 (16MB flash)：app 分区 9.94MB（含 LVGL 软键盘后固件 ~9.1MB），
+# storage(littlefs) 6MB 存配置
+# Name,    Type, SubType, Offset,   Size,      Flags
+nvs,       data, nvs,     0x9000,   0x6000,
+phy_init,  data, phy,     0xf000,   0x1000,
+factory,   app,  factory, 0x10000,  0x9F0000,
+storage,   data, littlefs, 0xA00000, 0x600000,

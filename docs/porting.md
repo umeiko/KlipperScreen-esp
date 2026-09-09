@@ -1,14 +1,23 @@
 # Porting to your own board (beginner's tutorial)
 
-This tutorial assumes **little to no ESP32 experience**. Goal: walk you through porting this firmware to a new board, step by step, until you have a flashable binary. We use the **CYD 2432S028R** (the classic cheap 2.8" resistive-touch board) and its BSP file `src/bsp/esp32/bsp_cyd_2432s028r.c` as the reference implementation, explaining one function at a time.
+This tutorial is for someone connecting an ESP32 display for the first time. The goal is to prove one layer at a time and finish with a board port that another person can understand and maintain.
 
-The whole process is five steps:
+Start from `templates/board/`. Its display section is a **common SPI + ST7789 example**, not a universal display implementation. A board using ILI9341, ST7796, I80 parallel, RGB parallel, QSPI, or MIPI needs the matching display path described below.
 
-1. Set up the development environment (ESP-IDF)
-2. Clone the repo and build an existing board to verify the environment
-3. Gather your board's hardware information
-4. Write the BSP file (the main body of this tutorial, function by function)
-5. Register the board + build the artifact + troubleshoot
+![Porting on a breadboard: the main UI running on a ZJY-1.54IPS 240×240 display](screenshots/porting_breadboard.png)
+
+The port now has seven stages, each with a clear pass condition:
+
+1. Set up the toolchain and build an existing board.
+2. Identify the hardware and classify the display interface.
+3. Create and register a clean board scaffold.
+4. **Bring up only the display** with a stable solid-colour test.
+5. Connect the proven display transport to the BSP and LVGL, then add input.
+6. Build and verify the release firmware.
+7. Diagnose failures by stage and prepare a contribution.
+
+!!! warning "Solve one layer at a time"
+    Do not add touch, WiFi, Moonraker, and the full UI during display bring-up. A lit backlight does not prove that the LCD works; the backlight LED and LCD pixels are usually separate circuits.
 
 ---
 
@@ -16,585 +25,649 @@ The whole process is five steps:
 
 ### 0.1 Install ESP-IDF v5.5.5
 
-ESP-IDF is Espressif's official framework. **The version must be 5.5.5** (this project is locked to it).
+This project is pinned to ESP-IDF v5.5.5.
 
-- **Windows**: download the [ESP-IDF online installer](https://dl.espressif.com/dl/esp-idf/) and pick v5.5.5. Afterwards you should have:
-    - IDF sources: `C:\esp\v5.5.5\esp-idf`
-    - Toolchains: `C:\Espressif\tools`
-- **Linux/macOS**: follow the [official guide](https://docs.espressif.com/projects/esp-idf/en/v5.5.5/esp32/get-started/) using `install.sh`.
+- Windows: install v5.5.5 with Espressif's installer. The usual locations are `C:\esp\v5.5.5\esp-idf` and `C:\Espressif\tools`.
+- Linux/macOS: use the `install.sh` included with that ESP-IDF version.
 
-The project ships environment wrapper scripts (`tools/idf.ps1` / `tools/idf-env.bat`); the build script calls them automatically, so you do **not** need to touch PATH yourself.
+The repository's `tools/idf.ps1`, `tools/idf-env.bat`, and build scripts activate the environment. You do not need to modify PATH permanently.
 
-### 0.2 Clone the repo
+### 0.2 Clone the project and verify the toolchain
 
 ```bash
 git clone https://github.com/umeiko/KlipperScreen-esp.git
 cd KlipperScreen-esp
-```
-
-### 0.3 Build an existing board first to verify the environment
-
-```bash
 bash tools/build-esp32.sh cyd_2432s028r
 ```
 
-The first build takes 3–10 minutes (it downloads dependency components). This output at the end means your environment is fine:
+The build must end with `Project build complete`, and the application must fit inside `Smallest app partition`. The first build downloads dependencies and is much slower than later incremental builds.
 
-```
-Project build complete. To flash, run:
- idf.py flash
-...
-klipper_remote_display.bin binary size 0x2d55a0 bytes. Smallest app partition is 0x320000 bytes. ...
-```
-
-Artifacts land in `src/ports/esp32/build/`: `bootloader/bootloader.bin`, `partition_table/partition-table.bin`, `klipper_remote_display.bin`.
-
-If you happen to own a CYD, flash it to verify the whole chain:
-
-```bash
-bash tools/build-esp32.sh cyd_2432s028r flash COM6   # replace COM6 with your port
-```
-
-!!! tip "Finding the serial port"
-    Windows: Device Manager → Ports (COM & LPT); Linux: usually `/dev/ttyUSB0`.
+**Pass condition**: an existing board builds before you change any source file. Fix the environment first if it does not.
 
 ---
 
-## Step 1: Gather your board's hardware info
+## Step 1: Collect complete hardware information
 
-Before writing any code, confirm every item below from the **vendor wiki / schematic** (don't start with anything missing):
+### 1.1 Make a board fact sheet
 
-| What to find | Example (CYD) | Where to look |
+Fill this table from the schematic, vendor example, flex-cable markings, and controller data sheet. A product title that only gives the screen size is not enough.
+
+| Item | What to record | Example |
 |---|---|---|
-| MCU model | ESP32 (dual-core 240MHz) | Board silkscreen / product page |
-| Flash size | 4MB | Product page / `esptool flash_id` |
-| Display driver IC | ILI9341 | Vendor wiki / flex-cable silkscreen |
-| Display interface | SPI | Same |
-| Display resolution | 240×320 (native portrait) | Same |
-| Touch IC | XPT2046 (resistive) | Same |
-| Touch interface | SPI (shared or dedicated bus?) | Pin table |
-| All pins | SCLK=14, MOSI=13, ... | Vendor pin allocation table |
-| Backlight pin + active level | GPIO21, active high | Schematic |
+| ESP chip | Exact model | ESP32, ESP32-S3, ESP32-P4 |
+| Flash / PSRAM | Size, mode, frequency | 16MB Flash, 8MB OPI PSRAM |
+| Display controller or timing IC | Full part number | ILI9341, ST7789, ST7796, ST7262 |
+| **Pixel interface** | SPI, I80, RGB, QSPI, MIPI DSI | SPI |
+| Native resolution | Width × height before rotation | 240×320 |
+| Display pins | Every signal name and GPIO | SCLK, MOSI, CS, DC, RST |
+| Display parameters | SPI mode/frequency or RGB timing | 40MHz, mode 0 |
+| Backlight | GPIO, active level, PWM support | GPIO21, active high |
+| Optional touch | Controller, interface, shared bus | XPT2046, separate SPI |
+| Optional rotary | A, B, push-button GPIOs | GPIO4/5/6 |
 
-Usual sources: vendor wikis (e.g. lcdwiki), schematic PDFs, and ready-made TFT_eSPI `User_Setup.h` files (they are literally pin definitions).
+A useful source order is: **a stable example for the exact board > schematic and panel data sheet > code for the same controller > product page > guesses**.
 
-!!! warning "SPI displays: pay attention"
-    Whether the touch panel **shares** the SPI pins with the display or has a **dedicated** bus decides how many SPI buses your BSP initializes. CYD uses a dedicated bus (sharing measured to return all-zero MISO); the E32R35T shares — this project has working examples of both.
+### 1.2 Classify the interface by its pin names
+
+"Parallel LCD" is not one implementation. I80 and RGB both have many data wires, but they work very differently.
+
+| Typical pins | Interface | How the image reaches the panel | Starting point in this project |
+|---|---|---|---|
+| `SCLK/MOSI/CS/DC/RST` | SPI command panel | MCU sends commands and pixels; panel GRAM retains the image | Board template, CYD, E32R35T |
+| `D0..D7/15 + WR/RD/CS/DC` | I80/8080 command parallel | Like SPI, but transfers 8/16 bits in parallel | ESP-IDF I80 example + matching panel driver |
+| `R0..B4 + PCLK/HSYNC/VSYNC/DE` | RGB/DOTCLK parallel | MCU continuously streams complete frames | ESP-IDF RGB panel example; JC8048 only as a special case |
+| `CLK + D0..D3 + CS` | QSPI | Four data lines carry controller-specific commands/pixels | Matching controller driver or vendor example |
+| `D0P/D0N, CLKP/CLKN` | MIPI DSI | High-speed differential link | ESP-IDF DSI example on a chip with DSI support |
+
+!!! tip "Controller and interface are separate facts"
+    The same ST7789 controller can be wired through SPI or I80. Select the bus code from the pins that the board actually exposes, not from the controller name alone.
+
+### 1.3 Check the memory budget
+
+RGB565 uses two bytes per pixel:
+
+```text
+frame bytes = width × height × 2
+320 × 240  = 153,600 bytes
+480 × 320  = 307,200 bytes
+800 × 480  = 768,000 bytes
+```
+
+SPI and I80 command panels usually need only a 20–40-line DMA buffer. RGB panels usually need at least one complete framebuffer; double buffering doubles that memory. A large RGB display generally needs PSRAM, and the display DMA may also compete with the CPU for PSRAM bandwidth.
+
+**Pass condition**: you can name the interface type and have every display pin and timing value on the fact sheet. Do not copy a BSP while the interface is still unknown.
 
 ---
 
-## Step 2: Write the BSP file (function-by-function tutorial)
+## Step 2: Create and register the board scaffold
 
-### 2.0 What a BSP is
-
-All hardware-specific code in this project is isolated in a layer called the BSP (Board Support Package). The upper-level UI only calls `bsp_xxx()` functions and knows nothing about your display or touch chip.
-
-So porting = writing **one C file** implementing the functions declared in `src/bsp/bsp.h`. Open it — the 11 functions there are the checklist we will now implement one by one.
-
-### 2.1 Create the file skeleton
-
-Copying the reference implementation is fastest:
+Copy the clean files first:
 
 ```bash
-cp src/bsp/esp32/bsp_cyd_2432s028r.c src/bsp/esp32/bsp_myboard.c
+cp templates/board/bsp_board_template.c src/bsp/esp32/bsp_myboard.c
+cp templates/board/sdkconfig.defaults.board_template src/ports/esp32/sdkconfig.defaults.myboard
 ```
 
-The first and last lines of the file are the **board switch** — you must change them:
+Replace `BOARD_TEMPLATE`, `board_template`, and every `TODO(board)`. At this stage the display block may still be the example ST7789 transport; Step 3 replaces it before hardware testing.
 
-```c
-#include "sdkconfig.h"
-#if CONFIG_BOARD_MYBOARD        // ← change to your board macro
+Update these locations:
 
-// ... the whole implementation ...
+| File | Change |
+|---|---|
+| `src/bsp/Kconfig.projbuild` | Add `CONFIG_BOARD_MYBOARD` to the board choice |
+| `src/bsp/CMakeLists.txt` | Add `bsp_myboard.c` and new display/touch component dependencies |
+| `src/ports/esp32/entry/idf_component.yml` | Add any new registry driver dependency |
+| `src/ports/esp32/sdkconfig.defaults.myboard` | Chip, Flash, PSRAM, board, and rotary defaults |
+| `src/ui/ui_layout.c` | Select the small/large font tier for the resolution |
+| `tools/build-esp32.sh` | Add target, build directory, and sdkconfig name |
 
-#endif /* CONFIG_BOARD_MYBOARD */
+Start board defaults from the template. Copy only chip/Flash/PSRAM settings from a board with the same ESP chip. Do not copy another board's display GPIOs or touch configuration.
+
+!!! warning "The sdkconfig trap"
+    A first build creates a complete `sdkconfig.myboard`. Later edits to `sdkconfig.defaults.myboard` do not update it. Either change both files or deliberately regenerate the old config. A `# CONFIG_XXX is not set` line can also override defaults.
+
+---
+
+## Step 3: Bring up only the display
+
+This chapter has one goal: keep stable red, green, blue, white, and black bands on the panel. Work only in the display-transport parts of the board file created in Step 2; LVGL and input come later.
+
+### 3.1 Separate the backlight from the pixels
+
+- Backlight on, solid white panel: this usually proves only that the backlight has power. The display controller may not be initialized.
+- Backlight off, normal serial logs: check the backlight GPIO, active level, and supply first. Pixels may already be changing but remain invisible.
+- Backlight on, stable colour bands: the bus, initialization, and basic pixel transfer are working.
+
+Keep the backlight at 100% during bring-up. Add brightness and screen-off after the display passes.
+
+### 3.2 Find a known-good minimal reference
+
+Prefer a vendor example for the exact board. Build and flash it unchanged, verify that it is stable, then extract:
+
+- display interface and pins;
+- reset, backlight, and display-enable levels;
+- SPI mode/frequency, or RGB PCLK and porch/pulse timing;
+- controller initialization commands;
+- RGB/BGR, inversion, rotation, and visible-area offset;
+- whether buffers live in internal RAM or PSRAM.
+
+If the vendor example also fails, solve the wiring, supply, or documentation error before involving this project.
+
+### 3.3 Every interface follows the same bring-up order
+
+1. Configure supply, backlight, and reset GPIOs.
+2. Initialize the pixel bus.
+3. Create the panel or timing driver.
+4. Reset the panel.
+5. Send its initialization sequence.
+6. Enable display output.
+7. Send the five-colour test.
+8. Leave it still for at least 30 seconds and watch for flicker, drift, and tearing.
+
+Only steps 2, 3, 5, and 7 change substantially between display types.
+
+### 3.4 Path A: SPI command panel
+
+This path covers ILI9341, ST7789, ST7796, and similar controllers wired through SPI. The board template implements this path.
+
+#### What to change first
+
+1. Replace the example pins with schematic values. A missing MISO is normal for a write-only display.
+2. Begin at 10–20MHz. Raise the clock only after a stable test.
+3. Copy `spi_mode` from a proven example instead of guessing through four modes.
+4. Replace `esp_lcd_new_panel_st7789()` with the factory for the real controller.
+5. Register a new driver in `idf_component.yml` and the BSP CMake dependencies when it is not already present.
+6. Apply only the required `swap_xy`, `mirror`, `invert_color`, and `set_gap` settings.
+
+The bus, panel IO, and controller driver are three separate layers:
+
+```text
+GPIO/SPI host
+    └─ esp_lcd_new_panel_io_spi()     decides how bytes are sent
+          └─ esp_lcd_new_panel_xxx()  decides which init commands are sent
+                └─ draw_bitmap()      writes a pixel rectangle into panel GRAM
 ```
 
-**Why the switch**: the build system compiles **every** board's BSP file together (CMake component registration happens before Kconfig loads, so sources cannot be filtered per board at the CMake level). Each file wraps itself in `#if`, and only the selected board compiles to real code. Macro naming: `CONFIG_BOARD_` + uppercased board name.
+Changing controller often means more than changing one include and one factory call. Initialization commands, pixel format, visible-area offsets, and sleep/wake commands can differ.
 
-### 2.2 Pin definitions
+#### LVGL mode for an SPI panel
 
-Macros at the top of the file; fill in the pin table from Step 1. CYD looks like:
+Start with `LV_DISPLAY_RENDER_MODE_PARTIAL` and two 20–40-line buffers allocated with `MALLOC_CAP_DMA`. The flush callback sends the dirty `area` through `esp_lcd_panel_draw_bitmap()`.
 
-```c
-#define PIN_LCD_SCLK   14    // SPI clock
-#define PIN_LCD_MOSI   13    // SPI master out
-#define PIN_LCD_MISO   12    // SPI master in
-#define PIN_LCD_CS     15    // display chip select
-#define PIN_LCD_DC     2     // data/command select
-#define PIN_LCD_RST    4     // display reset (-1 if none)
-#define PIN_LCD_BL     21    // backlight
+The DMA transfer is asynchronous. Call `lv_display_flush_ready()` only after the transfer has finished and LVGL may safely reuse the buffer. The template waits with `on_color_done` and a semaphore.
 
-#define PIN_TP_SCLK    25    // touch SPI (only for a dedicated bus)
-#define PIN_TP_MOSI    32
-#define PIN_TP_MISO    39
-#define PIN_TOUCH_CS   33    // touch chip select
-#define PIN_TOUCH_IRQ  36    // touch interrupt
+#### Common SPI-only failures
 
-#define LCD_H_RES      320   // logical width in landscape
-#define LCD_V_RES      240   // logical height in landscape
-#define LCD_SPI_HZ     (40 * 1000 * 1000)  // display SPI speed
-#define DRAW_BUF_LINES 40    // LVGL draw buffer lines
+- Solid white: wrong CS/DC/RST, wrong controller driver, or no initialization commands.
+- Whole image shifted or clipped: use `esp_lcd_panel_set_gap()`.
+- Red and blue exchanged: toggle RGB/BGR.
+- Photo-negative colours: toggle `esp_lcd_panel_invert_color()`.
+- Random colour noise: lower the SPI clock, then verify RGB565 byte order.
+- First frame correct, animation corrupt: the DMA buffer was freed or rewritten before transfer completion.
+
+### 3.5 Path B: I80/8080 command parallel
+
+An I80 panel exposes `WR`, `RD`, `CS`, `DC`, and 8 or 16 data lines. Although it is parallel, its model is still close to an SPI command panel: panel GRAM retains pixels after the MCU writes a rectangle.
+
+Compared with SPI, the main replacements are:
+
+```text
+esp_lcd_new_i80_bus()
+esp_lcd_new_panel_io_i80()
 ```
 
-Notes:
+The matching `esp_lcd_new_panel_xxx()`, `esp_lcd_panel_draw_bitmap()`, transfer-done callback, and LVGL PARTIAL-buffer design can usually remain. Data width, `WR` clock, data-line order, and maximum transfer size must come from the schematic or a proven example.
 
-- `LCD_H_RES/V_RES` are the **landscape** logical resolution (CYD is natively 240×320 portrait; landscape is 320×240).
-- `DRAW_BUF_LINES` is how many lines LVGL renders before pushing to the panel. Buffer size = `H_RES × lines × 2 bytes`; CYD uses 320×40×2 = 25KB, times two buffers. Internal RAM on ESP32 is tight — stay between 20 and 40 lines.
-- If RST is tied to ESP32's EN (like on the E32R35T), use `-1` and the driver falls back to a software reset.
+!!! warning "I80 is not RGB"
+    I80 has `WR/DC/CS`; RGB has `PCLK/HSYNC/VSYNC/DE`. Their drivers, buffers, and timing are not interchangeable.
 
-### 2.3 `bsp_lvgl_lock` / `bsp_lvgl_unlock` — the LVGL thread lock
+### 3.6 Path C: RGB/DOTCLK parallel
 
-**Purpose**: LVGL is not thread-safe. This project runs LVGL in its own task; any other task (network callbacks, serial CLI) must take the lock before touching the UI.
+An RGB panel exposes colour data lines plus `PCLK/HSYNC/VSYNC/DE`. The panel scans the incoming stream continuously. It generally cannot retain a static image in GRAM like an SPI command panel.
+
+#### Parameters that must come from a reliable source
+
+- GPIO for every R/G/B data bit, in the correct order;
+- PCLK frequency and active edge;
+- HSYNC/VSYNC pulse width, back porch, and front porch;
+- DE use and active level;
+- resolution and total line/frame timing;
+- framebuffer location/count and PSRAM configuration.
+
+Start from ESP-IDF v5.5.5 `examples/peripherals/lcd/rgb_panel` or a vendor example for the exact board. An ordinary RGB board should try the official `esp_lcd_new_rgb_panel()` first. Do not begin by copying the JC8048W550 `rgb44` path.
+
+#### LVGL mode for an RGB panel
+
+RGB output normally scans a complete framebuffer:
+
+| Design | Memory | Behaviour |
+|---|---:|---|
+| One full framebuffer | 1 frame | Saves memory, but writing while scanning may tear |
+| Two full framebuffers | 2 frames | Renders off-screen and swaps at VSYNC for a steadier image |
+| Bounce buffers | Full frame + small internal buffers | Can address some PSRAM/DMA limits, but is parameter-sensitive |
+
+The JC8048W550 uses `rgb44` with LVGL DIRECT double buffering. This is a measured workaround for that ESP32-S3/800×480 board. It also requires VSYNC swapping, waiting for the physical swap, and correct cache writeback when framebuffers in PSRAM are managed outside the standard driver. See the [JC8048W550 RGB display guide](jc8048w550-rgb-display-guide.md).
+
+Consider that special transport only when all three are true:
+
+1. The vendor's minimal example is stable.
+2. The official RGB panel minimal example shows a repeatable underrun, offset, or tear with the same hardware timing.
+3. Measurements place the failure in the transfer model instead of PCLK, timing, pins, or UI workload.
+
+#### Common RGB-only failures
+
+- Panel cycles through built-in test colours: PCLK or sync timing is not accepted.
+- Whole image rolls or shifts periodically: total line/frame timing is wrong.
+- Colour channels are scrambled: R/G/B data-line order or width is wrong.
+- Static image stable, scrolling jitters: PSRAM bandwidth, DMA underrun, or cache coherency.
+- Small updates stay stale while large updates sometimes appear: inspect cache writeback and page-swap synchronization for a self-managed framebuffer.
+
+Change one RGB parameter per experiment and record the vendor and current values side by side.
+
+### 3.7 Path D: QSPI, MIPI, or an unknown interface
+
+QSPI is not ordinary SPI with three extra MOSI wires. MIPI DSI cannot use RGB timing code. Confirm that the ESP chip supports the interface, then start from an example for the same ESP-IDF version or from the controller vendor driver.
+
+This repository does not currently provide a drop-in QSPI or MIPI board template. The BSP contract, UI, input, and configuration layers remain reusable, but the display transport is a new adapter. A contribution should include the data sheet, a known-good minimal example, and a colour-band result so the protocol is documented rather than guessed again.
+
+### 3.8 Use one five-colour acceptance test
+
+Implement `bsp_lcd_push(x, y, w, h, pixels)` first. Temporarily call this test after panel/framebuffer initialization and before `lv_init()`. It uses only a 20-line buffer:
 
 ```c
-static SemaphoreHandle_t lvgl_mux;
-
-void bsp_lvgl_lock(void)   { xSemaphoreTakeRecursive(lvgl_mux, portMAX_DELAY); }
-void bsp_lvgl_unlock(void) { xSemaphoreGiveRecursive(lvgl_mux); }
-```
-
-**Explanation**: just two wrappers around a FreeRTOS recursive mutex. `lvgl_mux` is created at the start of `bsp_init()`. **Copy verbatim, change nothing.**
-
-### 2.4 `bsp_get_display` / `bsp_delay_ms` / `bsp_restart` — three one-liners
-
-```c
-lv_display_t *bsp_get_display(void) { return lv_display_get_default(); }
-
-void bsp_delay_ms(uint32_t ms)
+static void display_smoke_test(void)
 {
-    vTaskDelay(pdMS_TO_TICKS(ms));
+    static const uint16_t colors[] = {
+        0xF800,  /* red   */
+        0x07E0,  /* green */
+        0x001F,  /* blue  */
+        0xFFFF,  /* white */
+        0x0000,  /* black */
+    };
+    const int lines = 20;
+    uint16_t *buf = heap_caps_malloc(LCD_H_RES * lines * 2, MALLOC_CAP_DMA);
+    ESP_ERROR_CHECK(buf ? ESP_OK : ESP_ERR_NO_MEM);
+
+    for (int band = 0; band < 5; band++) {
+        int y1 = band * LCD_V_RES / 5;
+        int y2 = (band + 1) * LCD_V_RES / 5;
+        for (int y = y1; y < y2; y += lines) {
+            int h = y + lines <= y2 ? lines : y2 - y;
+            for (int i = 0; i < LCD_H_RES * h; i++) buf[i] = colors[band];
+            bsp_lcd_push(0, y, LCD_H_RES, h, buf);
+        }
+    }
+    while (1) vTaskDelay(pdMS_TO_TICKS(1000));
 }
-
-void bsp_restart(void)
-{
-    lv_refr_now(NULL);                 // paint the "restarting" toast first
-    vTaskDelay(pdMS_TO_TICKS(800));    // give the user 800ms to see it
-    esp_restart();
-}
 ```
 
-**Explanation**:
+`bsp_lcd_push()` absorbs the transport differences. SPI/I80 writes panel GRAM and waits for DMA. RGB writes the test pixels into the active test framebuffer and ensures that the scanner can see them.
 
-- `bsp_get_display`: returns the LVGL default display (the one created in `bsp_init`). Upper layers use it to query the resolution.
-- `bsp_delay_ms`: plain delay for the boot animation.
-- `bsp_restart`: switching languages rebuilds the whole UI, implemented as a plain reboot. `lv_refr_now` forces one frame first, otherwise the toast never reaches the screen.
+Check all of the following:
 
-**Copy all three verbatim.**
+- all five bands have the correct order and colour;
+- bands cover the full visible area without a fixed offset;
+- orientation matches the product mounting;
+- no flicker, roll, or random lines for 30 seconds;
+- ten consecutive reboots all bring the panel up.
 
-### 2.5 `bsp_set_brightness` — backlight brightness
+Save a photo and serial log, remove the infinite loop, and continue.
 
-**Purpose**: called by the brightness slider in Settings. Uses LEDC (hardware PWM) on the backlight pin.
+### 3.9 Record the proven display baseline
+
+At the top of the BSP, record the source of the parameters, native resolution, interface, stable clock/timing, colour order, orientation, and every non-default initialization command. This becomes the baseline for future regressions.
+
+**Pass condition**: the panel shows stable colour bands without starting LVGL. Do not continue before it passes.
+
+---
+
+## Step 4: Connect the display to the BSP and LVGL
+
+### 4.1 Understand what stays and what changes
+
+Continue with the board file created in Step 2. Do not clone an existing BSP wholesale; it can contain another board's touch calibration, timing, memory policy, and hardware workaround.
+
+The template contains two kinds of code:
+
+- **Common lifecycle**: locking, storage, restart, LVGL task, and screen-activity contract. Usually keep this.
+- **Display transport**: bus, panel, `bsp_lcd_push`, `flush_cb`, buffers, and render mode. Replace this with the design proven in Step 3.
+
+For SPI/ST7789, modify the template item by item. For another SPI controller, replace the panel driver and initialization differences. For I80 or RGB, remove the SPI transport and add the matching implementation; do not retain both paths.
+
+### 4.2 Display boundary required by upper layers
+
+| BSP API | Upper-layer use | Board guarantee |
+|---|---|---|
+| `bsp_lcd_push()` | Boot animation before LVGL | Input buffer is safe to reuse when the call returns |
+| `bsp_get_display()` | UI queries the default display | Returns the display created by `lv_display_create()` |
+| `bsp_screen_power_init()` | Registers the backlight implementation | Receives the board's `backlight_apply(0..100)` and a millisecond clock |
+| `bsp_fade_out()` | Fade before restart | At least turns the backlight off safely; clear a frame when practical |
+| `bsp_disp_can_*()` | Shows optional invert/rotate settings | Returns false when hardware/transport cannot implement the feature |
+
+The return-time guarantee of `bsp_lcd_push()` matters because the boot animation reuses its pixel memory. Returning while asynchronous DMA is still reading it causes bands and random blocks.
+
+### 4.3 Select the LVGL buffer mode
+
+| Display transport | Recommended starting point | Buffer location | Flush responsibility |
+|---|---|---|---|
+| SPI command panel | PARTIAL, two 20–40-line buffers | Internal DMA RAM | Send dirty rectangle, wait, then `flush_ready` |
+| I80 command panel | PARTIAL, two local buffers | DMA-accessible memory | Same model as SPI on a different bus |
+| RGB parallel | Full-frame design recommended by driver | Often PSRAM | Maintain continuous scan, cache, and swap synchronization |
+| Self-managed double-frame RGB | DIRECT, two full frames | Chip-dependent | Request swap only on final flush; signal ready after physical swap |
+
+Do not select FULL or DIRECT because the name sounds faster. The LVGL render mode must match the physical transport and buffer ownership.
+
+### 4.4 Restore the complete UI in three passes
+
+1. **Basic LVGL test**: create only the display, a solid background, and one rectangle.
+2. **Project boot animation**: confirm repeated `bsp_lcd_push()` updates are stable.
+3. **Full `ui_app_create()`**: test page transitions, list scrolling, and large repaints.
+
+If pass 1 works and pass 2 fails, inspect `bsp_lcd_push` buffer lifetime. If the first two work and only full-UI scrolling fails, inspect refresh throughput, DMA/PSRAM bandwidth, and page swapping.
+
+### 4.5 Common BSP functions
+
+These functions normally do not depend on the display controller and can retain the template implementation:
+
+- `bsp_lvgl_lock()` / `bsp_lvgl_unlock()` protect LVGL;
+- `bsp_delay_ms()` / `bsp_restart()` provide delay and restart;
+- NVS and LittleFS initialization store network, Moonraker, and UI settings;
+- `lvgl_task()` runs `lv_timer_handler()` and `bsp_screen_power_poll()`;
+- `bsp_screen_activity()`, remembered brightness, timeout and wake state come from shared `bsp_screen_power`; do not copy those state variables into a new board.
+
+The board implements only `static void backlight_apply(int percent)`. It converts the shared state machine's 0–100 value to PWM, GPIO, or a backlight-IC command. Keep polarity and nonlinear response curves in this function; do not store user brightness or `screen_off` again in the board BSP.
 
 ```c
-static uint8_t bl_duty = 255;
-static int     bl_pct = 100;
-
-void bsp_set_brightness(int pct)
+static void backlight_apply(int percent)
 {
-    if (pct < 0) pct = 0;
-    if (pct > 100) pct = 100;
-    if (pct > 0 && pct < 5) pct = 5;     // floor: prevents getting stuck at a black screen
-    bl_pct = pct;
-    bl_duty = (uint8_t)(pct * 255 / 100);
-    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, bl_duty);
+    /* TODO(board): translate 0..100 into the real hardware signal here. */
+    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0,
+                  percent * 255 / 100);
     ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
 }
-```
 
-**Explanation**: converts a 0–100 percentage into an 8-bit PWM duty (0–255) for the LEDC channel. The LEDC timer/channel setup lives in `bsp_init` (see 2.11). **Copy verbatim**; if your backlight is **active low** (rare), invert the duty to `255 - bl_duty`.
-
-### 2.6 Auto screen-off trio — `bsp_set_screen_timeout` + two internal helpers
-
-**Purpose**: Settings can configure "turn the screen off after N idle seconds"; any touch wakes it.
-
-```c
-static uint32_t so_after_s;      // timeout in seconds, 0 = never
-static bool     screen_off;
-static int64_t  last_act_us;
-
-void bsp_set_screen_timeout(uint32_t sec)
+static uint64_t screen_now_ms(void)
 {
-    so_after_s = sec;
-    last_act_us = esp_timer_get_time();
-    if (screen_off) {                    // setting changed while off → wake first
-        screen_off = false;
-        bsp_set_brightness(bl_pct);
-    }
+    return (uint64_t)(esp_timer_get_time() / 1000);
 }
 
-static void screen_activity(void)        // called by the touch callback: stamp + wake
-{
-    last_act_us = esp_timer_get_time();
-    if (screen_off) {
-        screen_off = false;
-        bsp_set_brightness(bl_pct);
-    }
-}
-
-static void screen_off_check(void)       // called periodically from the LVGL task
-{
-    if (screen_off || !so_after_s) return;
-    if (esp_timer_get_time() - last_act_us > (int64_t)so_after_s * 1000000) {
-        screen_off = true;
-        ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);   // screen off = PWM to zero
-        ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
-    }
-}
+/* Call once after the backlight hardware is ready. */
+bsp_screen_power_init(backlight_apply, screen_now_ms);
 ```
 
-**Explanation**: a small state machine. `last_act_us` records the last touch; `screen_off_check` runs every 5ms. Screen-off only kills the backlight (LCD content stays), so wake is instant. **Copy verbatim.**
-
-### 2.7 `bsp_fade_out` — graceful fade to black
-
-**Purpose**: before the language-switch reboot, the backlight fades smoothly using hardware, then the whole screen is pushed black (otherwise the panel's GRAM keeps the old frame and flashes it briefly at next power-on).
-
-```c
-void bsp_fade_out(uint32_t ms)
-{
-    static bool fade_installed;
-    if (!fade_installed) {
-        ledc_fade_func_install(0);       // the LEDC fade feature needs its ISR installed once
-        fade_installed = true;
-    }
-    ledc_set_fade_with_time(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0, ms);
-    ledc_fade_start(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, LEDC_FADE_WAIT_DONE);
-    bl_duty = 0;
-
-    static uint16_t black[LCD_H_RES * 40];    // static zero-init = all black
-    for (int y = 0; y < LCD_V_RES; y += 40) {
-        xSemaphoreTake(lcd_trans_done, 0);
-        esp_lcd_panel_draw_bitmap(panel_handle, 0, y, LCD_H_RES, y + 40, black);
-        xSemaphoreTake(lcd_trans_done, pdMS_TO_TICKS(500));
-    }
-}
-```
-
-**Explanation**: the first half is the LEDC hardware fade; the second pushes 40-line black blocks until the screen is covered. The `lcd_trans_done` semaphore is explained next. **Copy verbatim** (the 40 here is just a chunk size, unrelated to `DRAW_BUF_LINES`).
-
-### 2.8 `on_color_trans_done` + `bsp_lcd_push` — DMA pushing
-
-**Purpose**: `bsp_lcd_push` is the low-level "push a raw RGB565 block to the screen" function, used by the boot animation (before LVGL is running).
-
-**First understand the pitfall**: `esp_lcd_panel_draw_bitmap()` is **asynchronous DMA** — when it returns, the data is still being transferred. Freeing or overwriting the pixel buffer immediately means the DMA reads garbage, visible as stripe tearing. So you register a "transfer done" callback and wait on a semaphore:
-
-```c
-static SemaphoreHandle_t lcd_trans_done;
-
-static bool on_color_trans_done(esp_lcd_panel_io_handle_t io,
-                                esp_lcd_panel_io_event_data_t *edata, void *user_ctx)
-{
-    LV_UNUSED(io); LV_UNUSED(edata); LV_UNUSED(user_ctx);
-    BaseType_t hp = pdFALSE;
-    xSemaphoreGiveFromISR(lcd_trans_done, &hp);   // DMA done, give the semaphore from ISR
-    return hp == pdTRUE;
-}
-
-void bsp_lcd_push(int x, int y, int w, int h, const uint16_t *px)
-{
-    /* SPI panels want the pixel high byte first; memory is little-endian → copy+swap */
-    size_t n = (size_t)w * h;
-    uint16_t *tmp = malloc(n * 2);
-    if (!tmp) return;
-    for (size_t i = 0; i < n; i++) tmp[i] = (uint16_t)((px[i] >> 8) | (px[i] << 8));
-    xSemaphoreTake(lcd_trans_done, 0);            // drain any stale signal
-    esp_lcd_panel_draw_bitmap(panel_handle, x, y, x + w, y + h, tmp);
-    xSemaphoreTake(lcd_trans_done, pdMS_TO_TICKS(500));  // wait for the DMA to finish
-    free(tmp);
-}
-```
-
-**Explanation**:
-
-- Byte swap: RGB565 in memory is low-byte-first; SPI panels expect high-byte-first. Here we copy because `px` belongs to the caller and must not be modified.
-- `xSemaphoreTake(lcd_trans_done, 0)` (zero timeout) "drains" the semaphore so a stale signal can't cause a false pass.
-- The callback is registered in `bsp_init`.
-
-**Copy verbatim**; RGB parallel displays (non-SPI) don't need the byte swap — see `bsp_jc8048w550.c`.
-
-### 2.9 `flush_cb` — the bridge between LVGL and the panel (the most important function in the file)
-
-**Purpose**: LVGL calls this every time it finishes rendering a region; your job is **to put those pixels on the screen**.
-
-```c
-static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
-{
-    /* swap byte order in place (do NOT use LV_COLOR_FORMAT_RGB565_SWAPPED — measured to produce noise) */
-    uint16_t *p = (uint16_t *)px_map;
-    int32_t n = (int32_t)(area->x2 - area->x1 + 1) * (area->y2 - area->y1 + 1);
-    for (int32_t i = 0; i < n; i++) p[i] = (uint16_t)((p[i] >> 8) | (p[i] << 8));
-    esp_lcd_panel_draw_bitmap(panel_handle, area->x1, area->y1,
-                              area->x2 + 1, area->y2 + 1, px_map);
-    lv_display_flush_ready(disp);    // tell LVGL "you may reuse this buffer"
-}
-```
-
-**Explanation**:
-
-- `area` is the dirty region, `px_map` the pixel data.
-- Here the swap is **in place** (LVGL's buffer gets redrawn next round anyway), while `bsp_lcd_push` copies — the difference is who owns the buffer.
-- `lv_display_flush_ready` is mandatory; LVGL's double buffering won't hand you the same buffer until its DMA has finished (handled inside esp_lcd via `on_color_trans_done`).
-
-**Copy verbatim.** (Universal for SPI panels. RGB parallel displays use DIRECT mode — completely different, see rgb44.)
-
-### 2.10 Touch — `tp_read_raw` / calibration / `touch_read_cb`
-
-**Purpose**: turn touch-chip raw readings into screen coordinates. Resistive panels (XPT2046) differ per unit due to mounting and wiring, so this project uses a **two-point linear calibration** persisted to LittleFS as `touch.json`.
-
-Core idea: **the driver layer performs no coordinate transformation at all** — it reads raw 12-bit ADC values (0–4095), and the calibration formula `screen = raw × slope + offset` absorbs every mirror/axis-swap.
-
-This whole block (`tp_read_raw`, `touch_cal_save`, `touch_cal_load`, `cal_pump`, `cal_sample`, `touch_cal_run`) is about 160 lines — **copy it verbatim**; you only need to understand two things:
-
-1. `tp_read_raw` swaps x/y:
-
-    ```c
-    *x = pt[0].y;   /* on the CYD in landscape the raw axes cross the screen axes;
-        *y = pt[0].x;      after swapping, *x is always the horizontal (long) axis */
-    ```
-
-    You don't need to care **how** your panel's axes cross — the two-point calibration's signed slopes absorb any orientation. Copy as-is.
-
-2. The behaviour of `touch_cal_load()` decides **whether first boot enters calibration**:
-    - CYD ships factory defaults measured on real hardware → when the file is missing it writes the defaults and skips calibration.
-    - Your new board has no factory values → make load `return false` when the file is missing, and `bsp_init` will automatically run the blocking calibration flow (copy the `bsp_e32r35t.c` version, where the end of `touch_cal_load` is `return false`).
-
-`touch_read_cb` is LVGL's touch-read callback; besides the calibration mapping it has two small tricks:
-
-```c
-} else if (pressing && esp_timer_get_time() - last_valid_us < 50 * 1000) {
-    rx = last_rx;   /* momentary sample loss mid-drag → bridge as still-pressed,
-    ry = last_ry;      otherwise LVGL splits a drag into a series of taps */
-}
-```
-
-And the tap that wakes a slept screen is "swallowed" (`wake_swallow`) so waking up doesn't also hit a button. **Copy verbatim.**
-
-!!! note "Capacitive panels (GT911 etc.)"
-    No calibration needed — the driver outputs screen coordinates directly and `touch_read_cb` is much simpler. See `bsp_jc8048w550.c`.
-
-### 2.11 `bsp_init` — the init assembly line (the longest function, in 7 blocks)
-
-This is the first function that runs after power-on. Following lines 401–532 of `bsp_cyd_2432s028r.c`, block by block:
-
-**① Mutex + NVS + LittleFS**
-
-```c
-lvgl_mux = xSemaphoreCreateRecursiveMutex();
-
-esp_err_t err = nvs_flash_init();
-if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-    nvs_flash_erase();
-    nvs_flash_init();
-}
-
-esp_vfs_littlefs_conf_t fs_conf = {
-    .base_path = "/littlefs",
-    .partition_label = "storage",
-    .format_if_mount_failed = true,
-    .dont_mount = false,
-};
-ESP_ERROR_CHECK(esp_vfs_littlefs_register(&fs_conf));
-```
-
-Creates the mutex from 2.3; NVS is the key-value store the WiFi module uses; LittleFS mounts the `storage` partition (already defined in `partitions.csv`) at `/littlefs` to hold `touch.json`, auto-formatting on first boot. **Copy verbatim.**
-
-**② Backlight LEDC setup**
-
-```c
-ledc_timer_config_t bl_timer = {
-    .speed_mode = LEDC_LOW_SPEED_MODE,
-    .duty_resolution = LEDC_TIMER_8_BIT,
-    .timer_num = LEDC_TIMER_0,
-    .freq_hz = 5000,
-    .clk_cfg = LEDC_AUTO_CLK,
-};
-ESP_ERROR_CHECK(ledc_timer_config(&bl_timer));
-ledc_channel_config_t bl_ch = {
-    .gpio_num = PIN_LCD_BL,                 // ← your backlight pin
-    .speed_mode = LEDC_LOW_SPEED_MODE,
-    .channel = LEDC_CHANNEL_0,
-    .timer_sel = LEDC_TIMER_0,
-    .duty = 255,                            // full brightness at boot
-    .hpoint = 0,
-};
-ESP_ERROR_CHECK(ledc_channel_config(&bl_ch));
-```
-
-**Only the pin changes.** 8-bit / 5kHz works everywhere.
-
-**③ SPI bus init (display)**
-
-```c
-spi_bus_config_t buscfg = {
-    .sclk_io_num = PIN_LCD_SCLK,
-    .mosi_io_num = PIN_LCD_MOSI,
-    .miso_io_num = PIN_LCD_MISO,
-    .quadwp_io_num = -1,
-    .quadhd_io_num = -1,
-    .max_transfer_sz = LCD_H_RES * DRAW_BUF_LINES * 2 + 8,  // max bytes per DMA transfer
-};
-ESP_ERROR_CHECK(spi_bus_initialize(SPI2_HOST, &buscfg, SPI_DMA_CH_AUTO));
-```
-
-**Change the pins.** `max_transfer_sz` must be ≥ one LVGL buffer in bytes — copy the formula.
-
-**④ Touch SPI bus (only for dedicated-bus boards)**
-
-```c
-spi_bus_config_t tp_buscfg = { ... PIN_TP_SCLK ... };
-ESP_ERROR_CHECK(spi_bus_initialize(SPI3_HOST, &tp_buscfg, SPI_DMA_DISABLED));
-```
-
-Touch is low-speed; no DMA needed. **If your touch shares the bus with the display, delete this block** (see `bsp_e32r35t.c`) and attach the touch to `SPI2_HOST` in block ⑥.
-
-**⑤ Display: IO handle + driver + orientation**
-
-```c
-esp_lcd_panel_io_handle_t io_handle;
-esp_lcd_panel_io_spi_config_t io_cfg = {
-    .dc_gpio_num = PIN_LCD_DC,
-    .cs_gpio_num = PIN_LCD_CS,
-    .pclk_hz = LCD_SPI_HZ,
-    .lcd_cmd_bits = 8,
-    .lcd_param_bits = 8,
-    .spi_mode = 0,
-    .trans_queue_depth = 10,
-};
-ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)SPI2_HOST, &io_cfg, &io_handle));
-
-/* transfer-done semaphore: bsp_lcd_push / fade_out wait on DMA with it */
-lcd_trans_done = xSemaphoreCreateBinary();
-esp_lcd_panel_io_callbacks_t io_cbs = { .on_color_trans_done = on_color_trans_done };
-ESP_ERROR_CHECK(esp_lcd_panel_io_register_event_callbacks(io_handle, &io_cbs, NULL));
-
-esp_lcd_panel_dev_config_t panel_cfg = {
-    .reset_gpio_num = PIN_LCD_RST,
-    .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_BGR,   // red/blue swapped? change to RGB
-    .bits_per_pixel = 16,
-};
-ESP_ERROR_CHECK(esp_lcd_new_panel_ili9341(io_handle, &panel_cfg, &panel_handle));  // ← your driver
-ESP_ERROR_CHECK(esp_lcd_panel_reset(panel_handle));
-ESP_ERROR_CHECK(esp_lcd_panel_init(panel_handle));
-/* landscape: swap_xy rotates 90°, mirror fixes the mirroring direction */
-ESP_ERROR_CHECK(esp_lcd_panel_swap_xy(panel_handle, true));
-ESP_ERROR_CHECK(esp_lcd_panel_mirror(panel_handle, true, true));
-ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_handle, true));
-```
-
-This is **the block you will most likely change**:
-
-- Swap the driver function for your display IC: `esp_lcd_new_panel_ili9341` / `esp_lcd_new_panel_st7796` / … (dozens exist in the component registry — search [components.espressif.com](https://components.espressif.com)). A new driver also needs dependency registration, see Step 3.
-- ST7796-class panels usually also need `esp_lcd_panel_invert_color(panel_handle, true)` (otherwise colours look like a photo negative).
-- `swap_xy(true)` + `mirror(true, true)` decide the landscape orientation. If the image is flipped horizontally/vertically, adjust the two mirror arguments (4 combinations; one rebuild+flash per try).
-- `rgb_ele_order`: red and blue swapped → toggle BGR ↔ RGB.
-
-**⑥ Touch init**
-
-```c
-esp_lcd_panel_io_handle_t tp_io;
-esp_lcd_panel_io_spi_config_t tp_io_cfg = ESP_LCD_TOUCH_IO_SPI_XPT2046_CONFIG(PIN_TOUCH_CS);
-ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)SPI3_HOST, &tp_io_cfg, &tp_io));
-//                                            shared-bus boards use SPI2_HOST ↑
-
-esp_lcd_touch_config_t tp_cfg = {
-    .x_max = 4096,   // raw 12-bit ADC, no driver-level mapping (left to the calibration)
-    .y_max = 4096,
-    .rst_gpio_num = GPIO_NUM_NC,
-    .int_gpio_num = PIN_TOUCH_IRQ,
-    .levels = {.reset = 0, .interrupt = 0},
-    .flags = {.swap_xy = false, .mirror_x = false, .mirror_y = false},
-};
-ESP_ERROR_CHECK(esp_lcd_touch_new_spi_xpt2046(tp_io, &tp_cfg, &touch_handle));
-```
-
-**Change the bus and pins.** `x_max/y_max = 4096` with all three flags false is deliberate: raw values go into the calibration.
-
-**⑦ LVGL init + task start**
-
-```c
-lv_init();
-lv_tick_set_cb(tick_cb);          // tell LVGL how to read a millisecond clock
-
-lv_display_t *disp = lv_display_create(LCD_H_RES, LCD_V_RES);
-size_t buf_sz = LCD_H_RES * DRAW_BUF_LINES * 2;
-void *buf1 = heap_caps_malloc(buf_sz, MALLOC_CAP_DMA);   // DMA can read internal RAM
-void *buf2 = heap_caps_malloc(buf_sz, MALLOC_CAP_DMA);
-ESP_ERROR_CHECK(buf1 && buf2 ? ESP_OK : ESP_ERR_NO_MEM);
-lv_display_set_buffers(disp, buf1, buf2, buf_sz, LV_DISPLAY_RENDER_MODE_PARTIAL);
-lv_display_set_flush_cb(disp, flush_cb);                 // hook up the bridge from 2.9
-
-lv_indev_t *indev = lv_indev_create();
-lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
-lv_indev_set_read_cb(indev, touch_read_cb);              // hook up the touch from 2.10
-
-/* no calibration data → run the two-point calibration (the LVGL task isn't
-   running yet; the calibration pumps frames itself) */
-if (!touch_cal_load()) {
-    touch_cal_run();
-}
-
-xTaskCreatePinnedToCore(lvgl_task, "lvgl", 12288, NULL, 4, NULL, 1);
-```
-
-Key points: double buffering (one buffer is being DMA'd while LVGL renders into the other); `MALLOC_CAP_DMA` is mandatory (SPI DMA cannot read PSRAM or the regular heap); `lvgl_task` is just a loop running `lv_timer_handler()` + `screen_off_check()` every 5ms (copy verbatim).
+**Pass condition**: the boot animation and complete UI remain stable during continuous page changes and scrolling.
 
 ---
 
-That's the whole BSP file. `bsp_time_sync_from_host` and config persistence (`bsp_conf_*`) have **shared board-agnostic implementations** — nothing for you to write.
+## Step 5: Add input last
 
-## Step 3: Register the board (5 files, a few lines each)
+Do not debug touch coordinates before the display passes Step 4.
 
-| File | Purpose | What to add |
-|---|---|---|
-| `src/bsp/Kconfig.projbuild` | Makes the `CONFIG_BOARD_MYBOARD` macro exist | `config BOARD_MYBOARD` + one description line inside `choice BOARD` |
-| `src/bsp/CMakeLists.txt` | Gets your new .c compiled | `"esp32/bsp_myboard.c"` in SRCS; the component name in REQUIRES if you use a new driver IC |
-| `src/ports/esp32/entry/idf_component.yml` | Declares third-party driver deps | With a new driver IC add a line, e.g. `espressif/esp_lcd_st7796: "^1.4.0"` |
-| `src/ports/esp32/sdkconfig.defaults.myboard` | Default config for the new board | New file: copy from a same-chip board, change `CONFIG_BOARD_XXX=y` to your macro |
-| `tools/build-esp32.sh` | Teaches the build script the new board | A case in `board_conf()`: `TARGET=esp32; BDIR=build-myboard; SDKCFG=sdkconfig.myboard; DEFS="sdkconfig.defaults;sdkconfig.defaults.myboard"` |
+### 5.1 First answer one question: does this product have touch?
 
-Complete sdkconfig.defaults content (copy this for classic ESP32):
+There are only two top-level routes. A rotary encoder is an optional input that can be added to either route; it does not change how the touch driver is written.
 
-```
-CONFIG_BOARD_MYBOARD=y
-CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
-CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
-CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y    # change if your flash isn't 4MB
-CONFIG_ESP32_DEFAULT_CPU_FREQ_240=y
+- **No touch**: create no LVGL pointer and include no touch initialization or calibration code. A rotary-only product enables only the rotary Kconfig in Section 5.6.
+- **Has touch**: create exactly one LVGL pointer, then choose either the resistive implementation or the capacitive implementation for the actual controller. Enable the optional rotary in Section 5.6 when the product has one; touch and rotary can coexist.
+
+```text
+No touch ──> no pointer ──> optional rotary
+
+Has touch ─> choose exactly one touch implementation ─> create pointer
+                                                   └──> optional rotary
+              ├─ resistive: raw coordinates ─> calibration/mapping ─┐
+              └─ capacitive: screen coordinates ───────────────────┴─> LVGL
 ```
 
-!!! warning "The sdkconfig pitfall"
-    After the first build a full `sdkconfig.myboard` exists, and editing `sdkconfig.defaults.myboard` **has no effect** — change both files (search the same config line in sdkconfig; note that `# CONFIG_XXX is not set` overrides defaults).
+Do not implement both examples below. They are alternative implementations of the same touch-adapter boundary.
 
-Also add a font tier in `src/ui/ui_layout.c` (chooses big vs small fonts, dead-stripped at compile time to save flash):
+### 5.2 Both touch types end as one LVGL pointer
+
+Regardless of controller type, the board BSP creates one touch adapter:
 
 ```c
-#elif defined(CONFIG_BOARD_MYBOARD)
-#define UI_FONT_BIG 0    // 320×240 / 480×320 → 0; 800×480 → 1
+#if BOARD_HAS_TOUCH
+ESP_ERROR_CHECK(board_touch_input_create(display, &touch_config));
+#endif
 ```
 
-## Step 4: Build, flash, verify
+`board_touch_input_create()` initializes the real controller, creates an `LV_INDEV_TYPE_POINTER`, and registers a read callback. Controller differences stay inside that adapter. The final LVGL-facing logic has the same shape in both cases:
+
+Names such as `board_touch_input_create()` and `touch_read_screen_point()` describe the adapter shape; they are not literal common APIs that every port must define. Concrete references are the resistive implementations in
+[`bsp_cyd_2432s028r.c`](../src/bsp/esp32/bsp_cyd_2432s028r.c) and
+[`bsp_e32r35t.c`](../src/bsp/esp32/bsp_e32r35t.c), and the capacitive implementations in
+[`bsp_jc8048w550.c`](../src/bsp/esp32/bsp_jc8048w550.c) and
+[`touch_input_board_template.c`](../templates/board/touch_input_board_template.c).
+
+```c
+static void touch_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
+{
+    static bool swallow_until_release;
+    uint16_t x, y;
+
+    if (!touch_read_screen_point(&x, &y)) {
+        swallow_until_release = false;
+        data->state = LV_INDEV_STATE_RELEASED;
+        return;
+    }
+
+    if (bsp_screen_activity())
+        swallow_until_release = true;   /* This press only woke the screen. */
+
+    if (swallow_until_release) {
+        data->state = LV_INDEV_STATE_RELEASED;
+        return;
+    }
+
+    data->point.x = x;
+    data->point.y = y;
+    data->state = LV_INDEV_STATE_PRESSED;
+}
+```
+
+`touch_read_screen_point()` is the part you choose: a resistive implementation reads raw ADC coordinates and applies calibration; a capacitive implementation normally reads screen coordinates directly.
+
+### 5.3 How do I choose resistive or capacitive?
+
+Use the touch-controller model and driver output, not the LCD model.
+
+| Typical controller | Driver normally returns | Project-side calibration |
+|---|---|---|
+| XPT2046, ADS7846 | Raw ADC coordinates | Usually required |
+| GT911, CST816S, FT5x06 | Screen coordinates | Usually unnecessary |
+
+The driver output is the final test. If the same physical point produces board-dependent raw values, store a calibration mapping. If the driver already returns stable `0..width-1` and `0..height-1` coordinates, do not add two-point calibration.
+
+### 5.4 Resistive implementation: map raw values to screen coordinates
+
+This is the core shape for an XPT2046-style controller. `xpt2046_read_raw()` talks only to hardware. `touch_cal` belongs to this resistive adapter, not to the common BSP:
+
+```c
+typedef struct {
+    float x_mul, x_add;
+    float y_mul, y_add;
+} touch_cal_t;
+
+static touch_cal_t touch_cal;
+
+static bool touch_read_screen_point(uint16_t *x, uint16_t *y)
+{
+    uint16_t raw_x, raw_y;
+    if (!xpt2046_read_raw(&raw_x, &raw_y))
+        return false;
+
+    int32_t sx = lroundf(raw_x * touch_cal.x_mul + touch_cal.x_add);
+    int32_t sy = lroundf(raw_y * touch_cal.y_mul + touch_cal.y_add);
+    *x = LV_CLAMP(0, sx, LCD_H_RES - 1);
+    *y = LV_CLAMP(0, sy, LCD_V_RES - 1);
+    return true;
+}
+```
+
+Touch may share the display SPI bus or use a separate bus. Confirm this from the schematic. Reuse an initialized SPI host on a shared-bus board; do not initialize the same host twice.
+
+#### 5.4.1 The resistive panel has reliable factory calibration
+
+A mapping is still required, but the user does not need a calibration page. Load measured defaults for this exact board when saved data is absent:
+
+```c
+xpt2046_init();
+
+if (!touch_cal_load(&touch_cal)) {
+    touch_cal = BOARD_FACTORY_TOUCH_CAL;  /* Measured on this board model. */
+    touch_cal_save(&touch_cal);
+}
+
+board_touch_register_pointer(display);
+```
+
+Do not copy defaults from another board. Panel size, mounting direction, and ADC range can make its values entirely different even when both boards use XPT2046.
+
+#### 5.4.2 The resistive panel needs user calibration
+
+First make the controller return raw coordinates. Show calibration points only when no saved mapping exists, calculate the mapping, and save it:
+
+```c
+xpt2046_init();
+
+if (!touch_cal_load(&touch_cal)) {
+    touch_cal_run(&touch_cal);   /* Show targets and sample raw_x/raw_y. */
+    touch_cal_save(&touch_cal);
+}
+
+board_touch_register_pointer(display);
+```
+
+`touch_cal_load/run/save()` are functions in the resistive adapter; they are not mandatory BSP APIs. Calibration consumes display output and raw touch samples, so keep it beside the resistive controller code.
+
+#### 5.4.3 What does code look like when calibration is unnecessary?
+
+Omit `touch_cal_*` and `touch.json` entirely:
+
+```c
+touch_controller_init();
+board_touch_register_pointer(display);
+```
+
+This is the normal capacitive route and also applies to an unusual controller whose driver already performs coordinate conversion. Do not add empty calibration functions merely to make the interface look complete.
+
+### 5.5 Capacitive implementation: read screen coordinates directly
+
+Controllers such as GT911, CST816S, and FT5x06 normally report screen coordinates. Initialize the controller, configure only the swap/mirror required by mounting, then send coordinates through the pointer callback from Section 5.2. Do not read `touch.json` or open a calibration page.
+
+The repository includes one complete CST816S implementation:
+
+- `templates/board/touch_input_board_template.h`: the small interface seen by the board BSP;
+- `templates/board/touch_input_board_template.c`: I2C setup, interrupt-gated CST816S reads, coordinate reporting, and screen wake.
+
+The template BSP uses this single path:
+
+```c
+board_template_touch_input_config_t touch_config = {
+    .h_res = LCD_H_RES,
+    .v_res = LCD_V_RES,
+    .reset_gpio = PIN_TOUCH_RST,
+    .interrupt_gpio = PIN_TOUCH_INT,
+    .swap_xy = false,
+    .mirror_x = false,
+    .mirror_y = false,
+};
+
+ESP_ERROR_CHECK(board_template_touch_input_create(
+    display, touch_i2c_bus, &touch_config));
+```
+
+To connect it to a new board:
+
+1. Copy `touch_input_board_template.c/.h`; rename the files and every `board_template` token.
+2. Add the `.c` file to `SRCS` in `src/bsp/CMakeLists.txt`.
+3. Add the matching controller component to `src/ports/esp32/entry/idf_component.yml`.
+4. Start with every swap/mirror flag false. Use a four-corner test and change only what physical mounting requires.
+
+CST816S responds to I2C for a short period after a touch event, so the example uses INT plus a semaphore and reads only after an interrupt. If a product page says **CST816T**, verify the marking and data sheet first; similar names do not guarantee compatible registers or interrupt behavior. For another `esp_lcd_touch` controller, normally replace the include, IO configuration macro, create function, and any required read policy. Keep the LVGL pointer shape from Section 5.2.
+
+After confirming that the chip really is CST816S, this option can help a module that stalls while reading its ID:
+
+```ini
+CONFIG_ESP_LCD_TOUCH_CST816S_DISABLE_READ_ID=y
+```
+
+### 5.6 Optional rotary encoder
+
+The encoder is independent of whether touch exists. Shared `bsp_input_init()` creates it from Kconfig. Do not put GPIO interrupts, PCNT, or focus traversal into the board BSP.
+
+```ini
+CONFIG_INPUT_ROTARY_ENCODER=y
+CONFIG_INPUT_ROTARY_GPIO_A=4
+CONFIG_INPUT_ROTARY_GPIO_B=5
+CONFIG_INPUT_ROTARY_GPIO_BUTTON=6
+CONFIG_INPUT_ROTARY_COUNTS_PER_DETENT=4
+CONFIG_INPUT_ROTARY_PHASE_PULLUPS=y
+CONFIG_INPUT_ROTARY_BUTTON_ACTIVE_LOW=y
+```
+
+A bare encoder's common pin normally goes to GND. Connect A/B and the button to their configured GPIOs. Disable phase pull-ups when a module already has external ones. Enable `CONFIG_INPUT_ROTARY_REVERSE` if direction is backwards. Reduce counts from 4 to 2 or 1 if one physical detent skips multiple controls.
+
+Rotary-only products get dedicated interactions: the Moonraker host uses four 0–255 octets, and temperature changes directly on its card. Arbitrary hostname or API-key text should be factory-provisioned, entered through a maintenance interface, or entered with touch; common same-LAN deployments may also use Moonraker `trusted_clients`.
+
+### 5.7 Screen wake is shared policy
+
+Touch and rotary call `bsp_screen_activity()`. It reports whether this action just woke the screen, and each adapter then swallows the current tap, turn, or press in the way appropriate for that device. A dedicated screen button calls `bsp_screen_toggle()` and is not an LVGL input.
+
+**Pass condition**: a no-touch board contains no pointer or calibration path; a touch board compiles exactly one implementation matching its controller; capacitive products never enter calibration; a resistive product either loads defaults measured for that board or completes one calibration; the optional rotary works with either route.
+
+---
+
+## Step 6: Build, flash, and verify by layer
 
 ```bash
-bash tools/build-esp32.sh myboard              # first run does set-target + full build
-bash tools/build-esp32.sh myboard flash COM6   # build + flash
+bash tools/build-esp32.sh myboard
+bash tools/build-esp32.sh myboard flash COM6
 ```
 
-**Success looks like**: the build ends with `Project build complete` and the `binary size` fits the `Smallest app partition`. After flashing, the backlight turns on, the boot animation plays, and the main UI appears.
+Verify in this order instead of stopping when the main screen appears:
 
-Serial logs (115200 8N1) show `BSP ready (...)` and touch-calibration loading — check the logs first when something's wrong.
+1. **Build**: the binary fits the application partition.
+2. **Repeated boot**: ten boots all light the panel; no intermittent white screen.
+3. **Static image**: no random line, flash, or colour jump for one minute.
+4. **Display load**: rapid page changes and list scrolling remain stable.
+5. **Input**: touch, rotary, or both match the declared hardware.
+6. **Network**: configure Moonraker, receive state, and issue one low-risk control.
+7. **Screen-off**: timeout turns it off and the first input only wakes it.
 
-## Step 5: Symptom cheat sheet
+Build at least one existing board afterward to verify that shared UI and BSP interfaces were not broken.
 
-| Symptom | Cause | Where to fix |
-|---|---|---|
-| All white/black, backlight on | wrong driver IC / SPI mode | change `esp_lcd_new_panel_xxx` |
-| Colours look like a negative | panel needs INVON | add/remove `esp_lcd_panel_invert_color(panel, true)` |
-| Red and blue swapped | RGB/BGR order | toggle `rgb_ele_order` BGR ↔ RGB |
-| Image flipped/mirrored | mounting orientation | the 4 combinations of `esp_lcd_panel_mirror` |
-| Snow/noise in colours | misused `RGB565_SWAPPED` format | go back to the in-place byte-swap flush_cb |
-| Touch totally dead | wrong bus / shared-vs-dedicated mix-up | re-check Step 1's pin table |
-| Touch positions scrambled | not calibrated | delete `touch.json` and reboot into calibration (serial CLI `rm /littlefs/touch.json`) |
-| Stripe tearing | DMA buffer reused too early | check the `on_color_trans_done` semaphore logic |
-| Build error: `esp_lcd_new_panel_xxx` undeclared | dependency not registered | Step 3: idf_component.yml + CMakeLists |
+---
 
-Once it works and you want to contribute the board back: [Contributing a new board (PR guide)](contributing-board.md).
+## Step 7: Diagnose by symptom
+
+### 7.1 Display quick table
+
+| Symptom | Check first |
+|---|---|
+| Backlight off | Backlight supply, GPIO, active level, PWM |
+| Backlight on but solid white/black | Reset, CS/DC, panel driver, initialization sequence |
+| Unstructured noise | Wiring, supply, excessive clock, byte order |
+| Fixed image offset | Native resolution and `set_gap` |
+| Red/blue exchanged | RGB/BGR or RGB data-line order |
+| Photo-negative colour | Invert setting |
+| Mirrored or rotated 90° | swap_xy and mirror; use a direction-marked test image |
+| First frame correct, animation corrupt | DMA buffer reused before transfer completion |
+| Whole RGB image rolls | PCLK, HSYNC/VSYNC, porch timing |
+| RGB static image stable, scrolling jitters | DMA underrun, PSRAM bandwidth, cache/swap synchronization |
+| Panel factory function missing at build | Driver dependency and header are not registered |
+
+### 7.2 Input quick table
+
+| Symptom | Check first |
+|---|---|
+| Resistive touch coordinates scrambled | Raw-axis mapping and two-point calibration |
+| Capacitive panel enters calibration | Resistive flow was copied by mistake |
+| Touch completely dead | Controller, bus, CS/IRQ, shared-bus design |
+| Rotary direction backwards | `CONFIG_INPUT_ROTARY_REVERSE` |
+| One detent skips items | `COUNTS_PER_DETENT` |
+| Wake also activates a control | Use the `bsp_screen_activity()` return value |
+
+If a problem remains, return to the latest passing stage and do a controlled A/B. Include the board fact sheet, colour-band photo, serial log, known-good vendor example, and one-variable experiment notes when asking for help.
+
+Read [Contributing a new board (PR guide)](contributing-board.md) before submitting the port.

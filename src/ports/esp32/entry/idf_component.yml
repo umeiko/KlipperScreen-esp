@@ -6,3 +6,4 @@ dependencies:
   espressif/esp_lcd_touch_gt911: "^1.1.0"
   joltwallet/littlefs: "^1.20.0"
   espressif/esp_websocket_client: "^1.5.0"
+  

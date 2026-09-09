@@ -64,6 +64,8 @@ static int big(void) { return scale_f >= 2.0f; }
 #define UI_FONT_BIG 0
 #elif defined(CONFIG_BOARD_E32R35T)
 #define UI_FONT_BIG 0
+#elif defined(CONFIG_BOARD_EC11_KNOB_MINIMAL)
+#define UI_FONT_BIG 0
 #elif defined(CONFIG_BOARD_JC8048W550)
 #define UI_FONT_BIG 1
 #define UI_FONT_MIN 1   /* 最小子集（排障：缩小 flash 字形表的 XIP 流量），置 0 回全表 */

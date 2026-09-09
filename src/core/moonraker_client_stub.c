@@ -1,5 +1,5 @@
 /*
- * moonraker_client 空桩（desktop）：桌面端不连真实上位机，数据走 printer_mock。
+ * moonraker_client 空桩（desktop simulator）：不连真实上位机，数据走 printer_mock。
  */
 #include "moonraker_client.h"
 

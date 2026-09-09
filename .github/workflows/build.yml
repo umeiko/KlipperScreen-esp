@@ -31,6 +31,14 @@ jobs:
             chip: esp32
             flash_size: 4MB
             bl_offset: 0x1000
+          - board: ec11_knob_minimal       # EC11 Knob Minimal System: ESP32-S3 + ST7789 + EC11
+            target: esp32s3
+            bdir: build-ec11-knob-minimal
+            sdkcfg: sdkconfig.ec11_knob_minimal
+            defs: sdkconfig.defaults;sdkconfig.defaults.ec11_knob_minimal
+            chip: esp32s3
+            flash_size: 16MB
+            bl_offset: 0x0
           - board: jc8048w550         # JC8048W550 5" ESP32-S3
             target: esp32s3
             bdir: build-jc8048w550
@@ -84,6 +92,8 @@ jobs:
             suffix: ""
           - board: e32r35t
             suffix: ""
+          - board: ec11_knob_minimal
+            suffix: ""
           - board: jc8048w550
             suffix: ""
     steps:
@@ -119,6 +129,12 @@ jobs:
         run: |
           cp tools/release/flash.bat tools/release/flash.sh dist/
           chmod +x dist/flash.sh
+          if [ "${{ matrix.board }}" = "ec11_knob_minimal" ]; then
+            cp tools/release/README-ec11_knob_minimal.md dist/README.md
+            cp docs/hardware/ec11_knob_minimal.fzz dist/
+            cp docs/screenshots/boards/ec11_knob_minimal_breadboard.zh.png dist/
+            cp docs/screenshots/boards/ec11_knob_minimal_breadboard.en.png dist/
+          fi
 
       # 直接把 dist 内容作为 artifact：GitHub 下载时会打一层 zip，
       # 解压后即是平铺的刷机文件，不再出现"zip 套 zip"
@@ -140,6 +156,7 @@ jobs:
             mingw-w64-ucrt-x86_64-cmake
             mingw-w64-ucrt-x86_64-ninja
             mingw-w64-ucrt-x86_64-SDL2
+            mingw-w64-ucrt-x86_64-cjson
             zip
 
       - name: Fetch LVGL v9.3.0 (third_party/lvgl is gitignored)
@@ -163,7 +180,8 @@ jobs:
         shell: msys2 {0}
         run: |
           mkdir -p dist-win
-          cp src/ports/desktop/build/klipper_remote_desktop.exe src/ports/desktop/build/SDL2.dll dist-win/
+          cp src/ports/desktop/build/klipper_remote_desktop.exe src/ports/desktop/build/klipper_remote_simulator.exe src/ports/desktop/build/SDL2.dll dist-win/
+          cp /ucrt64/share/licenses/cjson/LICENSE dist-win/cJSON-LICENSE.txt
           ls -la dist-win
 
       - uses: actions/upload-artifact@v4
@@ -171,9 +189,78 @@ jobs:
           name: klipper-remote-desktop-win-x86_64-${{ github.ref_name }}
           path: dist-win/
 
+  desktop-mac:
+    runs-on: macos-latest   # arm64 runner
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: brew install cmake ninja sdl2 cjson
+
+      - name: Fetch LVGL v9.3.0 (third_party/lvgl is gitignored)
+        run: |
+          curl -L -o /tmp/lvgl.tar.gz https://github.com/lvgl/lvgl/archive/refs/tags/v9.3.0.tar.gz
+          tar xzf /tmp/lvgl.tar.gz -C /tmp
+          mkdir -p third_party
+          mv /tmp/lvgl-9.3.0 third_party/lvgl
+
+      - name: Build macOS desktop (SDL2)
+        run: |
+          cd src/ports/desktop
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_PREFIX_PATH="$(brew --prefix)"
+          cmake --build build
+
+      - name: Package desktop app
+        # 把 SDL2 / cjson 的 dylib 拷到可执行文件旁边，引用改成 @executable_path 相对路径，
+        # 产物脱离 brew 也能跑。引用路径从 otool 实际记录读，不猜 brew 布局。
+        run: |
+          set -e
+          BUILD=src/ports/desktop/build
+          mkdir -p dist-mac
+          cp "$BUILD/klipper_remote_desktop" "$BUILD/klipper_remote_simulator" dist-mac/
+
+          SDL_REF=$(otool -L "$BUILD/klipper_remote_desktop" | awk '/libSDL2.*dylib/{print $1; exit}')
+          CJSON_REF=$(otool -L "$BUILD/klipper_remote_desktop" | awk '/libcjson.*dylib/{print $1; exit}')
+          if [ -z "$SDL_REF" ] || [ -z "$CJSON_REF" ]; then
+            echo "missing dylib refs:"; otool -L "$BUILD/klipper_remote_desktop"; exit 1
+          fi
+
+          SDL_DYLIB=$(basename "$SDL_REF")
+          CJSON_DYLIB=$(basename "$CJSON_REF")
+          cp "$SDL_REF" "$CJSON_REF" dist-mac/
+          chmod +w "dist-mac/$SDL_DYLIB" "dist-mac/$CJSON_DYLIB"
+          # dylib 自身的 id 也要改，否则其他 mach-o 链它时记下的仍是 brew 绝对路径
+          install_name_tool -id "@executable_path/$SDL_DYLIB" "dist-mac/$SDL_DYLIB"
+          install_name_tool -id "@executable_path/$CJSON_DYLIB" "dist-mac/$CJSON_DYLIB"
+          for exe in klipper_remote_desktop klipper_remote_simulator; do
+            install_name_tool -change "$SDL_REF" "@executable_path/$SDL_DYLIB" "dist-mac/$exe"
+          done
+          install_name_tool -change "$CJSON_REF" "@executable_path/$CJSON_DYLIB" \
+            dist-mac/klipper_remote_desktop
+
+          # install_name_tool 会弄坏 arm64 的 ad-hoc 签名，重签（无证书签名即可跑）
+          codesign --force --sign - dist-mac/klipper_remote_desktop \
+            dist-mac/klipper_remote_simulator "dist-mac/$SDL_DYLIB" "dist-mac/$CJSON_DYLIB"
+
+          # brew 不像 msys2 装 share/licenses，按所装版本从上游仓库取 cJSON LICENSE
+          CJSON_VER=$(brew list --versions cjson | awk '{print $2}')
+          curl -fL -o dist-mac/cJSON-LICENSE.txt \
+            "https://raw.githubusercontent.com/DaveGamble/cJSON/v${CJSON_VER}/LICENSE" || \
+          curl -fL -o dist-mac/cJSON-LICENSE.txt \
+            "https://raw.githubusercontent.com/DaveGamble/cJSON/master/LICENSE"
+
+          otool -L dist-mac/klipper_remote_desktop   # 验证引用已全部指向 @executable_path
+          ls -la dist-mac
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: klipper-remote-desktop-macos-arm64-${{ github.ref_name }}
+          path: dist-mac/
+
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [package, desktop-win]
+    needs: [package, desktop-win, desktop-mac]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -194,6 +281,8 @@ jobs:
             (cd "$d" && zip -r "$GITHUB_WORKSPACE/$b.zip" .)
           done
           (cd dl/klipper-remote-desktop-win-x86_64-* && zip -r "$GITHUB_WORKSPACE/klipper-remote-desktop-win-x86_64.zip" .)
+          # artifact 往返可能丢 unix 执行位，zip 前先补回（zip 会保存权限位）
+          (cd dl/klipper-remote-desktop-macos-arm64-* && chmod +x klipper_remote_desktop klipper_remote_simulator && zip -r "$GITHUB_WORKSPACE/klipper-remote-desktop-macos-arm64.zip" .)
           ls -la "$GITHUB_WORKSPACE"/*.zip
 
       - uses: softprops/action-gh-release@v2
@@ -201,6 +290,7 @@ jobs:
           files: |
             klipper-remote-esp32-*.zip
             klipper-remote-desktop-win-x86_64*.zip
+            klipper-remote-desktop-macos-arm64*.zip
           generate_release_notes: true
           # 标签含 wip（如 v0.2.0-wip.1）时标为预发布，不抢占 latest
           prerelease: ${{ contains(github.ref_name, 'wip') }}

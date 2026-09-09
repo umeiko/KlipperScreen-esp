@@ -15,6 +15,86 @@ menu "Board selection"
 
         config BOARD_JC8048W550
             bool "JC8048W550 (ESP32-S3, 800x480 ST7262 RGB + GT911)"
+
+        config BOARD_ESP32S3_ST7789
+            bool "ESP32-S3 ST7789 (ESP32-S3, 240x320 ST7789 SPI + GT911)"    
+        config BOARD_EC11_KNOB_MINIMAL
+            bool "EC11 Knob Minimal System / EC11 旋钮最小系统 (ESP32-S3 + ST7789)"
     endchoice
+
+endmenu
+
+menu "Optional input devices"
+
+    config INPUT_ROTARY_ENCODER
+        bool "Enable an external rotary encoder"
+        default n
+        help
+            Add a quadrature rotary encoder as a second LVGL input device.
+            It can be used together with a board's existing touch controller.
+
+    config INPUT_ROTARY_GPIO_A
+        int "Encoder A GPIO"
+        range 0 48
+        default 4
+        depends on INPUT_ROTARY_ENCODER
+
+    config INPUT_ROTARY_GPIO_B
+        int "Encoder B GPIO"
+        range 0 48
+        default 5
+        depends on INPUT_ROTARY_ENCODER
+
+    config INPUT_ROTARY_GPIO_BUTTON
+        int "Encoder push-button GPIO"
+        range 0 48
+        default 6
+        depends on INPUT_ROTARY_ENCODER
+
+    config INPUT_ROTARY_COUNTS_PER_DETENT
+        int "Quadrature counts per detent"
+        range 1 8
+        default 4
+        depends on INPUT_ROTARY_ENCODER
+        help
+            Most full-step EC11 encoders produce four PCNT counts per click.
+            Use 2 or 1 if one physical click skips multiple UI items.
+
+    config INPUT_ROTARY_PHASE_PULLUPS
+        bool "Enable internal pull-ups on encoder A/B"
+        default y
+        depends on INPUT_ROTARY_ENCODER
+        help
+            Keep this enabled for a bare mechanical encoder wired to GND.
+            Disable it when the encoder module already provides phase pull-ups
+            or when the selected GPIOs require external resistors.
+
+    config INPUT_ROTARY_REVERSE
+        bool "Reverse rotation direction"
+        default n
+        depends on INPUT_ROTARY_ENCODER
+
+    config INPUT_ROTARY_BUTTON_ACTIVE_LOW
+        bool "Push button is active-low"
+        default y
+        depends on INPUT_ROTARY_ENCODER
+        help
+            Active-low enables the GPIO's internal pull-up. Wire the button
+            between the configured GPIO and GND.
+
+    config INPUT_ROTARY_BUTTON_DEBOUNCE_MS
+        int "Push button debounce (ms)"
+        range 0 200
+        default 20
+        depends on INPUT_ROTARY_ENCODER
+
+    config INPUT_ROTARY_GLITCH_FILTER_NS
+        int "Quadrature glitch filter (ns)"
+        range 0 10000
+        default 1000
+        depends on INPUT_ROTARY_ENCODER
+        help
+            Pulses shorter than this are ignored by the PCNT peripheral.
+            Set to 0 to disable the hardware filter.
 
 endmenu

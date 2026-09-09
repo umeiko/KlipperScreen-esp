@@ -6,7 +6,7 @@ Klipper 远程显示屏：ESP32 固件（ESP-IDF 5.5.5）+ Windows 桌面端（M
 
 ## 构建/烧录
 
-- ESP32：`bash tools/build-esp32.sh <board> [flash COMx]`，board ∈ `cyd2432s028r` / `e32r35t` / `jc8048w550`。烧录前必须先断开串口占用（`mcp__serial-mcp__close_port`），烧后重连（115200）。
+- ESP32：`bash tools/build-esp32.sh <board> [flash COMx]`，board ∈ `cyd_2432s028r` / `e32r35t` / `ec11_knob_minimal` / `jc8048w550` / `all`。烧录前必须先断开串口占用（`mcp__serial-mcp__close_port`），烧后重连（115200）。
 - 桌面端：`bash tools/build-desktop.sh`。
 - **sdkconfig 大坑**：改 `sdkconfig.defaults.<board>` 对已生成的 `sdkconfig.<board>` 不生效——要改必须两个文件都改（sdkconfig 里翻 canonical 行，注意 `# CONFIG_XXX is not set` 会覆盖 defaults）。
 - IDF 源码在 `C:/esp/v5.5.5/esp-idf`。GitHub 走代理 `curl --proxy http://127.0.0.1:8635`。
@@ -22,6 +22,12 @@ Klipper 远程显示屏：ESP32 固件（ESP-IDF 5.5.5）+ Windows 桌面端（M
 ## 串口 CLI（JC8048 / esp32 端）
 
 `help|scan|wifi|wifioff|wifion|mr|mrstart|status|ps|printer|gc|ls|cd|pwd|cat|rm`，实现在 `src/ports/esp32/entry/debug_cli.c`。
+
+## 息屏/唤醒按钮（ESP32 端）
+
+- BSP 接口：`bsp_screen_off()` / `bsp_screen_wake()` / `bsp_screen_is_off()`（`src/bsp/bsp.h`），与自动超时息屏共享同一 `screen_off` 状态；desktop 端为空操作。
+- 通用驱动 `src/bsp/esp32/bsp_sleep_button.c`：多 GPIO 轮询消抖（10ms 轮询 / 30ms 消抖，最多 8 个），任意按钮按下即在息屏/唤醒间切换。各板在 `bsp_init` 里用 `bsp_sleep_button_init()` 注册自己的按钮表。
+- 现有按钮：CYD / E32R35T / JC8048 = 板载 BOOT 键（GPIO0，低电平有效）；EC11 旋钮最小系统 = BOOT（GPIO0）+ 外挂息屏按钮（GPIO39──按键──GND，内部上拉、低电平有效）。
 
 ---
 

@@ -56,6 +56,7 @@ static lv_obj_t *create(void)
     lv_obj_set_style_pad_all(slider, ui_px(4), LV_PART_KNOB);   /* 加粗把手方便点按 */
     lv_obj_add_event_cb(slider, on_slider_change, LV_EVENT_VALUE_CHANGED, NULL);
     lv_obj_add_event_cb(slider, on_slider_change, LV_EVENT_RELEASED, NULL);
+    theme_focusable(slider);
 
     return scr;
 }

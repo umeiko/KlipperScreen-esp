@@ -1,5 +1,5 @@
 /*
- * 真实打印机数据模型（esp32）：数据来自 Moonraker 订阅（moonraker_client.c），
+ * 真实打印机数据模型（ESP32/Windows）：数据来自平台 Moonraker 客户端，
  * 增量经 lv_async_call 投递到 LVGL 上下文后由 printer_model_apply_status_json 合入，
  * 因此模型读写都在 LVGL 任务里，无需互斥锁。
  *

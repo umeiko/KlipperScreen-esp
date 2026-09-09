@@ -6,6 +6,7 @@
 #include "../lang.h"
 #include "../ui_anim.h"
 #include "../panel_mgr.h"
+#include "../ui_nav.h"
 #include "../assets/icons.h"
 #include "bsp_wifi.h"
 #include "app_settings.h"
@@ -16,6 +17,8 @@ static lv_obj_t *list;              /* AP 列表容器 */
 static lv_obj_t *lbl_hint;          /* 扫描中/失败/空列表提示（挂在 scr 上，不被 list 清掉） */
 static lv_obj_t *pwd_overlay;       /* 密码输入弹层 */
 static lv_obj_t *conn_overlay;      /* 连接中转圈弹层 */
+static lv_group_t *pwd_nav_group;
+static lv_group_t *conn_nav_group;
 static lv_obj_t *ta_pwd;
 static char      sel_ssid[BSP_WIFI_SSID_MAX + 1];
 static char      pwd_buf[BSP_WIFI_PASS_MAX + 1];   /* windows 实现要求密码在连接期间保持有效 */
@@ -49,7 +52,13 @@ static void refresh_row_clicked(lv_event_t *e)
 
 static void conn_overlay_close(void)
 {
-    if (conn_overlay) { lv_obj_delete(conn_overlay); conn_overlay = NULL; }
+    if (conn_overlay) {
+        ui_nav_detach_scope(conn_overlay);
+        lv_obj_delete(conn_overlay);
+        conn_overlay = NULL;
+        ui_nav_modal_end(conn_nav_group);
+        conn_nav_group = NULL;
+    }
     connecting = 0;
 }
 
@@ -62,8 +71,10 @@ static void start_connect(const char *ssid, const char *pwd)
     bsp_wifi_connect(sel_ssid, pwd_buf);
     connecting = 1;
     connect_ticks = 0;
+    conn_nav_group = ui_nav_modal_begin();
 
     conn_overlay = lv_obj_create(lv_layer_top());
+    ui_nav_attach_scope(conn_overlay, conn_nav_group);
     lv_obj_remove_style_all(conn_overlay);
     lv_obj_set_size(conn_overlay, ui_scr_w(), ui_scr_h());
     lv_obj_set_style_bg_color(conn_overlay, lv_color_hex(0x000000), 0);
@@ -89,7 +100,13 @@ static void start_connect(const char *ssid, const char *pwd)
 
 static void pwd_overlay_close(void)
 {
-    if (pwd_overlay) { lv_obj_delete(pwd_overlay); pwd_overlay = NULL; }
+    if (pwd_overlay) {
+        ui_nav_detach_scope(pwd_overlay);
+        lv_obj_delete(pwd_overlay);
+        pwd_overlay = NULL;
+        ui_nav_modal_end(pwd_nav_group);
+        pwd_nav_group = NULL;
+    }
 }
 
 static void on_kb_ready(lv_event_t *e)
@@ -116,8 +133,10 @@ static void open_password_dialog(const char *ssid)
 {
     strncpy(sel_ssid, ssid, sizeof(sel_ssid) - 1);
     sel_ssid[sizeof(sel_ssid) - 1] = 0;
+    pwd_nav_group = ui_nav_modal_begin();
 
     pwd_overlay = lv_obj_create(lv_layer_top());
+    ui_nav_attach_scope(pwd_overlay, pwd_nav_group);
     lv_obj_remove_style_all(pwd_overlay);
     lv_obj_set_size(pwd_overlay, ui_scr_w(), ui_scr_h());
     lv_obj_set_style_bg_color(pwd_overlay, theme_col(THEME_COL_BG), 0);
@@ -145,6 +164,11 @@ static void open_password_dialog(const char *ssid)
     lv_keyboard_set_textarea(kb, ta_pwd);
     lv_obj_add_event_cb(kb, on_kb_ready, LV_EVENT_READY, NULL);
     lv_obj_add_event_cb(kb, on_kb_cancel, LV_EVENT_CANCEL, NULL);
+    /* The encoder edits the keyboard; the textarea only displays its text. */
+    lv_group_remove_obj(ta_pwd);
+    theme_focusable(kb);
+    lv_group_focus_obj(kb);
+    lv_group_set_editing(pwd_nav_group, true);
 }
 
 /* ---------- AP 列表 ---------- */
@@ -160,10 +184,9 @@ static void add_ap_row(int idx)
 {
     const bsp_wifi_ap_t *ap = &aps[idx];
 
-    lv_obj_t *row = theme_card(list);
+    lv_obj_t *row = theme_action_card(list);
     lv_obj_set_width(row, LV_PCT(100));
     lv_obj_set_height(row, ui_px(44));
-    lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(row, on_ap_clicked, LV_EVENT_CLICKED, (void *)ap);
 
     lv_obj_t *ssid = theme_label(row, ap->ssid, THEME_FONT_M, THEME_COL_TEXT);

@@ -1,5 +1,5 @@
 /*
- * Klipper 控制面薄封装（esp32）：组装 JSON-RPC params，经 moonraker_send_rpc 发送。
+ * Klipper 控制面薄封装（ESP32/Windows）：组装 JSON-RPC params，经 moonraker_send_rpc 发送。
  * gcode 模板对齐 KlipperScreen ks_includes/KlippyGcodes.py。
  */
 #include "klipper_api.h"

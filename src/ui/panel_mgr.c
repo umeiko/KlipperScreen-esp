@@ -2,6 +2,7 @@
 #include "ui_anim.h"
 #include "titlebar.h"
 #include "theme.h"
+#include "ui_nav.h"
 #include "printer.h"
 #include <string.h>
 
@@ -42,6 +43,15 @@ static panel_def_t *registry[] = {
 static panel_def_t *nav_stack[NAV_DEPTH_MAX];
 static int nav_top = -1;
 
+static void ensure_created(panel_def_t *p)
+{
+    if (p->scr || !p->create) return;
+    p->nav_group = ui_nav_group_create();
+    ui_nav_prepare_group(p->nav_group);
+    p->scr = p->create();
+    ui_nav_attach_scope(p->scr, p->nav_group);
+}
+
 static panel_def_t *find(const char *name)
 {
     for (unsigned i = 0; i < REG_COUNT; i++)
@@ -51,12 +61,13 @@ static panel_def_t *find(const char *name)
 
 static void show(panel_def_t *p, int push)
 {
-    if (p->scr == NULL && p->create)
-        p->scr = p->create();   /* 懒加载，之后复用 */
+    ensure_created(p);          /* 懒加载，之后复用 */
     if (push) ui_screen_push(p->scr);
     else      ui_screen_pop(p->scr);
     titlebar_set(p->title, nav_top > 0);
     titlebar_show_temps(!p->hide_temps);
+    ui_nav_activate(p->nav_group);
+    ui_nav_set_global_obj(titlebar_back_button(), nav_top > 0);
     if (p->on_show) p->on_show();
 }
 
@@ -64,10 +75,11 @@ void panel_mgr_init(void)
 {
     nav_top = 0;
     nav_stack[0] = find("main");
-    if (nav_stack[0]->scr == NULL)
-        nav_stack[0]->scr = nav_stack[0]->create();
+    ensure_created(nav_stack[0]);
     lv_screen_load(nav_stack[0]->scr);
     titlebar_set(nav_stack[0]->title, 0);
+    ui_nav_activate(nav_stack[0]->nav_group);
+    ui_nav_set_global_obj(titlebar_back_button(), false);
     if (nav_stack[0]->on_show) nav_stack[0]->on_show();
 }
 
@@ -111,4 +123,10 @@ void panel_mgr_tick(void)
     if (nav_top >= 0 && nav_stack[nav_top]->on_tick)
         nav_stack[nav_top]->on_tick();
     titlebar_tick();
+}
+
+/* 兼容接口（上游 ui_nav 显式注册）：动态行创建经 theme_focusable 自动入组、
+   删除自动出组，无需重建焦点组，保持空实现以兼容旧面板调用 */
+void panel_mgr_nav_refresh(void)
+{
 }

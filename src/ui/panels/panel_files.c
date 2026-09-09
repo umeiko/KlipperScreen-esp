@@ -24,6 +24,7 @@ static void show_status(const char *text)
     lv_obj_t *l = theme_label(list, text, THEME_FONT_S, THEME_COL_TEXT_DIM);
     lv_obj_set_width(l, ui_content_w());
     lv_obj_set_style_text_align(l, LV_TEXT_ALIGN_CENTER, 0);
+    panel_mgr_nav_refresh();
 }
 
 static void on_row(lv_event_t *e);
@@ -38,9 +39,8 @@ static void rebuild_rows(void)
     lv_obj_clean(list);
     int row_w = ui_content_w();   /* 行撑满列表宽（list 无内边距），大屏不右侧留白 */
     for (int i = 0; i < file_count; i++) {
-        lv_obj_t *row = theme_card(list);
+        lv_obj_t *row = theme_action_card(list);
         lv_obj_set_size(row, row_w, ui_px(40));
-        lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_add_event_cb(row, on_row, LV_EVENT_CLICKED, (void *)(intptr_t)i);
 
         lv_obj_t *ic = theme_label(row, LV_SYMBOL_FILE, THEME_FONT_ICON, THEME_COL_ACCENT);
@@ -61,6 +61,7 @@ static void rebuild_rows(void)
         lv_obj_t *size = theme_label(row, sz, THEME_FONT_S, THEME_COL_TEXT_DIM);
         lv_obj_align(size, LV_ALIGN_RIGHT_MID, -ui_px(4), 0);
     }
+    panel_mgr_nav_refresh();   /* 行集合变化：重建焦点组，清掉被 clean 销毁的旧行 */
 }
 
 static void on_files(printer_file_t *f, int count, void *ud)
@@ -112,6 +113,7 @@ static lv_obj_t *create(void)
     lv_obj_set_flex_flow(list, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(list, THEME_GAP, 0);
     lv_obj_set_scrollbar_mode(list, LV_SCROLLBAR_MODE_AUTO);
+    lv_obj_set_scroll_dir(list, LV_DIR_VER);
 
     return scr;
 }

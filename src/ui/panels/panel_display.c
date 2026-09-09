@@ -71,26 +71,26 @@ static lv_obj_t *create(void)
 {
     lv_obj_t *scr = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(scr, theme_col(THEME_COL_BG), 0);
-    lv_obj_set_scroll_dir(scr, LV_DIR_VER);   /* 行数可能超出屏高，允许上下滚动 */
 
-    int y = THEME_TITLEBAR_H + ui_px(4);
-    const int step = ui_px(39);
+    /* 列表容器（效仿设置/WiFi 页面）：flex 纵向排布，内容超高时随焦点滚动 */
+    lv_obj_t *list = lv_obj_create(scr);
+    lv_obj_remove_style_all(list);
+    lv_obj_set_size(list, ui_content_w(), ui_scr_h() - THEME_TITLEBAR_H - ui_px(10));
+    lv_obj_align(list, LV_ALIGN_TOP_MID, 0, THEME_TITLEBAR_H + ui_px(4));
+    lv_obj_set_flex_flow(list, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(list, ui_px(6), 0);
+    lv_obj_set_scroll_dir(list, LV_DIR_VER);
 
     /* 反色 / 180° 旋转：仅硬件支持的板型显示（SPI 屏；RGB 屏与桌面端隐藏） */
-    if (bsp_disp_can_invert()) {
-        theme_row_switch(scr, "反色", y, settings_load_display_invert(), on_invert_toggle);
-        y += step;
-    }
-    if (bsp_disp_can_rotate180()) {
-        theme_row_switch(scr, "旋转 180°", y, settings_load_display_rotate(), on_rotate_toggle);
-        y += step;
-    }
+    if (bsp_disp_can_invert())
+        theme_row_switch(list, "反色", 0, settings_load_display_invert(), on_invert_toggle);
+    if (bsp_disp_can_rotate180())
+        theme_row_switch(list, "旋转 180°", 0, settings_load_display_rotate(), on_rotate_toggle);
 
     /* 背光：行内显示当前亮度，点击进滑杆调节 */
     char br[8];
     snprintf(br, sizeof(br), "%d%%", settings_load_brightness());
-    theme_row_link(scr, "背光", br, y, open_brightness);
-    y += step;
+    theme_row_link(list, "背光", br, 0, open_brightness);
 
     /* 自动息屏：下拉选择超时（立即生效） */
     static char so_opts[96];   /* 按当前语言拼接选项 */
@@ -101,8 +101,7 @@ static lv_obj_t *create(void)
                            i ? "\n" : "", TR(so_labels[i]));
         if ((uint32_t)cur_off == so_values[i]) so_sel = (int)i;
     }
-    theme_row_dropdown(scr, "自动息屏", so_opts, y, so_sel, on_screen_off_select, NULL);
-    y += step;
+    theme_row_dropdown(list, "自动息屏", so_opts, 0, so_sel, on_screen_off_select, NULL);
 
     /* 主题：下拉选择深/浅色，切换后渐暗重启生效 */
     static char th_opts[32];
@@ -114,7 +113,7 @@ static lv_obj_t *create(void)
                            i ? "\n" : "", TR(i ? "浅色" : "深色"));
         if (strcmp(cur_theme, theme_codes[i]) == 0) th_sel = (int)i;
     }
-    theme_row_dropdown(scr, "主题", th_opts, y, th_sel, on_theme_select, NULL);
+    theme_row_dropdown(list, "主题", th_opts, 0, th_sel, on_theme_select, NULL);
 
     return scr;
 }

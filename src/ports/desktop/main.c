@@ -1,17 +1,58 @@
 /*
  * desktop 后端入口：bsp_init + 共享 UI + 主循环，与 ESP32 后端的 app_main.c 对称。
  * 用法:
- *   klipper_remote_desktop[.exe]                  交互窗口（2x 缩放）
- *   klipper_remote_desktop[.exe] <毫秒> <out.bmp> 运行指定毫秒后截图保存并退出
+ *   klipper_remote_desktop[.exe]                  真实 Moonraker 控制端
+ *   klipper_remote_simulator[.exe]                开发/布局模拟器
+ *   klipper_remote_simulator[.exe] <毫秒> <out.bmp> 运行指定毫秒后截图保存并退出
  */
 #include "bsp.h"
+#include "bsp_screen_power.h"
 #include "ui_app.h"
 #include "printer.h"
 #include "boot_anim.h"
+#include "app_settings.h"
 #include <SDL.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#ifdef KLIPPER_DESKTOP_SIMULATOR
+static void demo_encoder_turn(int diff)
+{
+    SDL_Event event;
+    SDL_zero(event);
+    event.type = SDL_MOUSEWHEEL;
+    event.wheel.y = -diff;   /* LVGL's SDL encoder maps wheel.y to -enc_diff. */
+    SDL_PushEvent(&event);
+}
+
+static void demo_encoder_press(void)
+{
+    SDL_Event event;
+    SDL_zero(event);
+    event.type = SDL_MOUSEBUTTONDOWN;
+    event.button.button = SDL_BUTTON_MIDDLE;
+    SDL_PushEvent(&event);
+    event.type = SDL_MOUSEBUTTONUP;
+    SDL_PushEvent(&event);
+}
+
+static void queue_encoder_ip_demo(int save)
+{
+    demo_encoder_turn(1);    /* Moonraker page: printer switch -> host. */
+    demo_encoder_press();    /* Open the encoder-only IPv4 editor. */
+    if (save) {
+        for (int i = 0; i < 5; i++) demo_encoder_press();
+    } else {
+        /* Three quick detents exercise 1/2/5 acceleration: 192 -> 200. */
+        demo_encoder_turn(1);
+        demo_encoder_turn(1);
+        demo_encoder_turn(1);
+        demo_encoder_press();
+        demo_encoder_turn(-1);  /* Leave the second octet in edit mode. */
+    }
+}
+#endif
 
 /* 把 RGB565 快照存成 24bit BMP（合成 layer_top：标题栏/toast 常驻顶层） */
 static int save_bmp(const char *path)
@@ -87,8 +128,11 @@ static int save_bmp(const char *path)
 int main(int argc, char **argv)
 {
     bsp_init();
+    bsp_input_init();       /* 鼠标滚轮 + 中键模拟旋转编码器 */
     boot_anim_play(bsp_lcd_push, bsp_delay_ms);   /* 「Umeko」开机动画（~2.5s） */
     ui_app_create();
+    bsp_set_brightness(settings_load_brightness());
+    bsp_set_screen_timeout(settings_load_screen_off());
 
     /* 截图模式: <毫秒> <out.bmp> [面板名] */
     int shot_at = 0;
@@ -98,6 +142,7 @@ int main(int argc, char **argv)
         shot_path = argv[2];
         if (argc >= 4)
             ui_app_open(argv[3]);   /* 直接打开指定面板再截图 */
+#ifdef KLIPPER_DESKTOP_SIMULATOR
         if (argc >= 5 && strcmp(argv[4], "printing") == 0) {
             printer_print_start("3dbenchy.gcode");   /* 演示打印中状态 */
             ui_app_open("job_status");
@@ -110,14 +155,25 @@ int main(int argc, char **argv)
             extern void printer_mock_set_state(printer_state_t);
             printer_mock_set_state(PRINTER_STATE_ERROR);         /* 演示 Klipper 异常红卡 */
         }
+        if (argc >= 5 && strcmp(argv[4], "encoder-ip") == 0)
+            queue_encoder_ip_demo(0);
+        if (argc >= 5 && strcmp(argv[4], "encoder-ip-save") == 0)
+            queue_encoder_ip_demo(1);
+#endif
 
     }
 
     uint32_t start = lv_tick_get();
     while (1) {
+        bsp_lvgl_lock();
         lv_timer_handler();
-        if (shot_path && (int)(lv_tick_elaps(start)) >= shot_at)
-            return save_bmp(shot_path);
+        bsp_screen_power_poll();
+        if (shot_path && (int)(lv_tick_elaps(start)) >= shot_at) {
+            int result = save_bmp(shot_path);
+            bsp_lvgl_unlock();
+            return result;
+        }
+        bsp_lvgl_unlock();
         SDL_Delay(5);
     }
 }
