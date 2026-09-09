@@ -5,12 +5,15 @@
  * The pinout follows the hardware validated in contributor PR #6. This BSP
  * owns only the display. The EC11 is created by shared bsp_input_init() from
  * this board's sdkconfig, so the navigation policy stays board-independent.
- * There is deliberately no touch controller and no separate power button.
+ * There is deliberately no touch controller. Screen-off/wake buttons: the
+ * DevKitC BOOT key (GPIO0) plus a dedicated button on GPIO39 (to GND,
+ * internal pull-up, active-low).
  */
 #include "sdkconfig.h"
 #if CONFIG_BOARD_EC11_KNOB_MINIMAL
 
 #include "bsp.h"
+#include "bsp_sleep_button.h"
 
 #include "driver/ledc.h"
 #include "driver/spi_master.h"
@@ -35,6 +38,11 @@
 #define PIN_LCD_DC         40
 #define PIN_LCD_RST        45
 #define PIN_LCD_BL         42
+
+/* 息屏/唤醒按钮：DevKitC 板载 BOOT 键 + 外挂独立按钮（GPIO39 ── 按键 ── GND，
+   内部上拉、低电平有效）。两个按钮等效，任意一个都可息屏/唤醒。 */
+#define PIN_BTN_BOOT        0
+#define PIN_BTN_SLEEP      39
 
 #define LCD_H_RES         320
 #define LCD_V_RES         240
@@ -140,13 +148,21 @@ void bsp_set_screen_timeout(uint32_t sec)
     bsp_screen_activity();
 }
 
+void bsp_screen_off(void)                        /* 外部触发息屏（息屏按钮） */
+{
+    screen_off = true;
+    backlight_apply(0);
+}
+
+void bsp_screen_wake(void) { bsp_screen_activity(); }
+bool bsp_screen_is_off(void) { return screen_off; }
+
 static void screen_off_check(void)
 {
     if (!screen_off && screen_timeout_s &&
         esp_timer_get_time() - last_activity_us >
             (int64_t)screen_timeout_s * 1000000) {
-        screen_off = true;
-        backlight_apply(0);
+        bsp_screen_off();
     }
 }
 
@@ -310,6 +326,15 @@ void bsp_init(void)
 
     /* No pointer input: this official wiring is controlled entirely by EC11. */
     last_activity_us = esp_timer_get_time();
+
+    /* 息屏/唤醒按钮（BOOT + GPIO39 外挂按钮，低电平有效） */
+    const bsp_sleep_button_cfg_t sleep_btns[] = {
+        { PIN_BTN_BOOT, true },
+        { PIN_BTN_SLEEP, true },
+    };
+    ESP_ERROR_CHECK(bsp_sleep_button_init(sleep_btns,
+                                          sizeof(sleep_btns) / sizeof(sleep_btns[0])));
+
     BaseType_t task_ok = xTaskCreatePinnedToCore(
         lvgl_task, "lvgl", 12288, NULL, 4, NULL, 1);
     ESP_ERROR_CHECK(task_ok == pdPASS ? ESP_OK : ESP_ERR_NO_MEM);

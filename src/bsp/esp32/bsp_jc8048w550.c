@@ -10,6 +10,7 @@
 #if CONFIG_BOARD_JC8048W550
 
 #include "bsp.h"
+#include "bsp_sleep_button.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -48,6 +49,7 @@
 #define PIN_TP_SDA     19
 #define PIN_TP_SCL     20
 #define PIN_TP_RST     38
+#define PIN_BTN_BOOT    0   /* 板载 BOOT 键：按下息屏，再按唤醒 */
 
 #define LCD_H_RES      800
 #define LCD_V_RES      480
@@ -139,6 +141,16 @@ bool bsp_screen_activity(void)                  /* 任意输入打点 + 唤醒 *
     }
     return woke;
 }
+
+void bsp_screen_off(void)                       /* 外部触发息屏（息屏按钮） */
+{
+    screen_off = true;
+    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
+    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
+}
+
+void bsp_screen_wake(void) { bsp_screen_activity(); }
+bool bsp_screen_is_off(void) { return screen_off; }
 
 static void screen_off_check(void)              /* lvgl 任务里周期检查 */
 {
@@ -367,6 +379,10 @@ void bsp_init(void)
     lv_indev_set_read_cb(indev, touch_read_cb);
 
     xTaskCreatePinnedToCore(lvgl_task, "lvgl", 12288, NULL, 4, NULL, 1);
+
+    /* BOOT 键 = 息屏/唤醒按钮（低电平有效，内部上拉） */
+    const bsp_sleep_button_cfg_t sleep_btns[] = {{ PIN_BTN_BOOT, true }};
+    ESP_ERROR_CHECK(bsp_sleep_button_init(sleep_btns, 1));
 
     ESP_LOGI(TAG, "BSP ready (JC8048W550, %dx%d, rgb44 DIRECT double-fb)", LCD_H_RES, LCD_V_RES);
 }

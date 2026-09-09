@@ -39,6 +39,7 @@ Logical resolution **320×240 landscape**.
 | LCD backlight | 21 | LEDC PWM |
 | Touch SCLK / MOSI / MISO | 25 / 32 / 39 | SPI3, separate from LCD |
 | Touch CS / IRQ | 33 / 36 | |
+| BOOT button | 0 | Screen off / wake |
 
 ## E32R35T
 
@@ -64,7 +65,7 @@ Logical resolution **480×320 landscape**.
 | MicroSD CS / MOSI / SCLK / MISO | 5 / 23 / 18 / 19 | separate SPI group (unused by firmware) |
 | Audio enable / DAC out | 4 / 26 | speaker connector (unused by firmware) |
 | Battery voltage ADC | 34 | input |
-| BOOT button | 0 | |
+| BOOT button | 0 | Screen off / wake |
 
 ## EC11 Knob Minimal System
 
@@ -89,8 +90,11 @@ Download and edit the [Fritzing source (.fzz)](hardware/ec11_knob_minimal.fzz), 
 | EC11 SW / KEY | GPIO46 | Encoder press |
 | EC11 + / VCC | 3V3 | Module power |
 | EC11 GND | GND | Ground |
+| Screen-off button (add-on) | GPIO39 → button → GND | One-key screen off / wake; internal pull-up, active-low |
 
 Power the DevKit from USB-C. Many SPI display boards label clock and data as `SCL` and `SDA`; here they still mean **SPI SCLK and MOSI**, not I2C. Rotation and press provide all navigation, and either action wakes the display after its timeout. This target has no touch layer and never enters touch calibration.
+
+**Screen-off / wake buttons.** Wire a momentary button between GPIO39 and GND (the firmware enables the internal pull-up; the press pulls the pin low, release returns high). Press once to blank the screen, press again to wake. The DevKit's on-board BOOT key (GPIO0) works the same way — both buttons are active in parallel, and either one toggles the screen.
 
 ## JC8048W550
 
@@ -113,3 +117,4 @@ Logical resolution **800×480**. The full RGB-parallel tearing/underflow investi
 | LCD R0..R4 | 45, 48, 47, 21, 14 |
 | LCD backlight | 2 |
 | Touch SDA / SCL / RST | 19 / 20 / 38 |
+| BOOT button (screen off / wake) | 0 |

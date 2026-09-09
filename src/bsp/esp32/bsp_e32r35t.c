@@ -15,6 +15,7 @@
 #if CONFIG_BOARD_E32R35T
 
 #include "bsp.h"
+#include "bsp_sleep_button.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -49,6 +50,7 @@
 #define PIN_LCD_BL     27
 #define PIN_TOUCH_CS   33
 #define PIN_TOUCH_IRQ  36
+#define PIN_BTN_BOOT    0   /* 板载 BOOT 键：按下息屏，再按唤醒 */
 
 #define LCD_H_RES      480   /* 横屏逻辑分辨率 */
 #define LCD_V_RES      320
@@ -332,6 +334,16 @@ bool bsp_screen_activity(void)                  /* 任意输入打点 + 唤醒 *
     return woke;
 }
 
+void bsp_screen_off(void)                       /* 外部触发息屏（息屏按钮） */
+{
+    screen_off = true;
+    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
+    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
+}
+
+void bsp_screen_wake(void) { bsp_screen_activity(); }
+bool bsp_screen_is_off(void) { return screen_off; }
+
 static void screen_off_check(void)              /* lvgl 任务里周期检查 */
 {
     if (screen_off || !so_after_s) return;
@@ -557,6 +569,10 @@ void bsp_init(void)
     }
 
     xTaskCreatePinnedToCore(lvgl_task, "lvgl", 12288, NULL, 4, NULL, 1);
+
+    /* BOOT 键 = 息屏/唤醒按钮（低电平有效，内部上拉） */
+    const bsp_sleep_button_cfg_t sleep_btns[] = {{ PIN_BTN_BOOT, true }};
+    ESP_ERROR_CHECK(bsp_sleep_button_init(sleep_btns, 1));
 
     ESP_LOGI(TAG, "BSP ready (E32R35T, %dx%d)", LCD_H_RES, LCD_V_RES);
 }

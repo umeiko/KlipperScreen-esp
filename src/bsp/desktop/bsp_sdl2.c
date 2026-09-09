@@ -128,6 +128,11 @@ void bsp_set_screen_timeout(uint32_t sec)
 
 bool bsp_screen_activity(void) { return false; }
 
+/* 桌面端无背光硬件：息屏按钮三件套均为空调试输出 */
+void bsp_screen_off(void) { printf("bsp_screen_off\n"); }
+void bsp_screen_wake(void) { printf("bsp_screen_wake\n"); }
+bool bsp_screen_is_off(void) { return false; }
+
 void bsp_time_sync_from_host(const char *host, uint16_t port)
 {
     /* 桌面端直接用本机时间，无需兜底 */

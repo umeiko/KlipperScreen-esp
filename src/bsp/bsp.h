@@ -39,6 +39,13 @@ void bsp_set_screen_timeout(uint32_t sec);
 /* 记录任意输入活动并在需要时唤醒背光；返回 true 表示本次输入刚唤醒屏幕。 */
 bool bsp_screen_activity(void);
 
+/* 外部触发的息屏/唤醒（息屏按钮等硬开关用，与自动超时息屏共享同一状态）：
+   off = 立即灭背光；wake = 恢复亮度并刷新活动计时；is_off 查询当前是否息屏。
+   desktop 为空操作。 */
+void bsp_screen_off(void);
+void bsp_screen_wake(void);
+bool bsp_screen_is_off(void);
+
 /* 反色 / 180° 旋转：运行时立即生效（设置项落盘 klipperscreen.conf，
    开机由 app 层读回并调用 setter 应用）。
    can_* 返回本板是否支持，UI 据此隐藏不支持的开关：
