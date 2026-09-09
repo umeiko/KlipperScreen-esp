@@ -25,6 +25,8 @@
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_panel_st7789.h"
 #include "esp_lcd_touch_gt911.h"
+#include "esp_adc/adc_oneshot.h"
+#include "esp_adc/adc_cali.h"
 #include "esp_littlefs.h"
 #include "esp_log.h"
 #include "esp_system.h"
@@ -65,6 +67,9 @@
 static const char *TAG = "bsp";
 
 static SemaphoreHandle_t lvgl_mux;
+static adc_oneshot_unit_handle_t bat_adc;   /* 电池 ADC（IO17 = ADC2_CH6） */
+static adc_cali_handle_t bat_cali;   /* eFuse 校准（可为 NULL） */
+static int bat_last_mv = -1;           /* 上次有效电压缓存（WiFi 抢 ADC2 时兜底） */
 static esp_lcd_panel_handle_t panel_handle;
 static esp_lcd_touch_handle_t touch_handle;
 static lv_indev_t *enc_indev;              /* 编码器 LVGL 输入设备 */
@@ -465,6 +470,23 @@ ESP_ERROR_CHECK(esp_lcd_panel_set_gap(panel_handle, 0, 0));
 
     xTaskCreatePinnedToCore(lvgl_task, "lvgl", 12288, NULL, 4, NULL, 1);
 
+    /* 电池 ADC：IO17 = ADC2_CH6，100k:100k 分压；11dB 衰减满量程约 3100mV */
+    adc_oneshot_unit_init_cfg_t bat_cfg = { .unit_id = ADC_UNIT_2 };
+    ESP_ERROR_CHECK(adc_oneshot_new_unit(&bat_cfg, &bat_adc));
+    adc_oneshot_chan_cfg_t bat_chan = { .atten = ADC_ATTEN_DB_11, .bitwidth = ADC_BITWIDTH_12 };
+    ESP_ERROR_CHECK(adc_oneshot_config_channel(bat_adc, ADC_CHANNEL_6, &bat_chan));
+    /* eFuse 曲线校准（失败则回退 3100mV 线性） */
+    adc_cali_scheme_ver_t cali_mask = 0;
+    if (adc_cali_check_scheme(&cali_mask) == ESP_OK && (cali_mask & ADC_CALI_SCHEME_VER_CURVE_FITTING)) {
+        adc_cali_curve_fitting_config_t ccfg = {
+            .unit_id = ADC_UNIT_2, .chan = ADC_CHANNEL_6,
+            .atten = ADC_ATTEN_DB_11, .bitwidth = ADC_BITWIDTH_12,
+        };
+        if (adc_cali_create_scheme_curve_fitting(&ccfg, &bat_cali) != ESP_OK) bat_cali = NULL;
+    } else {
+        bat_cali = NULL;
+    }
+
     ESP_LOGI(TAG, "BSP ready (ESP32-S3 ST7789+GT911, %dx%d)", LCD_H_RES, LCD_V_RES);
 }
 
@@ -490,5 +512,36 @@ void bsp_disp_set_rotate180(bool en)
     else    esp_lcd_panel_mirror(panel_handle, true, false);
 }
 
+
+/* ---------- 电池检测 ---------- */
+int bsp_battery_mv(void)
+{
+    int raw = 0;
+    /* ADC2 与 WiFi 共用硬件互斥：WiFi 活跃时读取可能超时 → 用上次缓存（避免跳 0） */
+    if (adc_oneshot_read(bat_adc, ADC_CHANNEL_6, &raw) != ESP_OK) return bat_last_mv;
+    /* 100k 高阻抗源采样不足：连续读几次取最大，接近真值 */
+    for (int i = 0; i < 3; i++) {
+        int r = 0;
+        if (adc_oneshot_read(bat_adc, ADC_CHANNEL_6, &r) == ESP_OK && r > raw) raw = r;
+    }
+    int mv;
+    if (bat_cali && adc_cali_raw_to_voltage(bat_cali, raw, &mv) == ESP_OK) {
+        mv = mv * 2;   /* 100k:100k 分压 → 电池电压 = ADC 电压 x2 */
+    } else {
+        mv = (int)((int64_t)raw * 3100 * 2 / 4095);   /* 回退：11dB 满量程约 3100mV，x2 分压 */
+    }
+    bat_last_mv = mv;
+    return mv;
+}
+
+int bsp_battery_percent(void)
+{
+    int mv = bsp_battery_mv();
+    if (mv < 0) return -1;
+    int pct = (mv - 3300) * 100 / 900;   /* 3.3V=0% 4.2V=100% 线性近似 */
+    if (pct < 0) pct = 0;
+    if (pct > 100) pct = 100;
+    return pct;
+}
 
 #endif /* CONFIG_BOARD_ESP32S3_ST7789 */

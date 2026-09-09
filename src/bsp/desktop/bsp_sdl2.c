@@ -116,3 +116,7 @@ void bsp_time_sync_from_host(const char *host, uint16_t port)
     /* 桌面端直接用本机时间，无需兜底 */
     (void)host; (void)port;
 }
+
+/* 电池（桌面模拟固定值供调试） */
+int bsp_battery_mv(void) { return 3800; }
+int bsp_battery_percent(void) { return 85; }

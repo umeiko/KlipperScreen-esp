@@ -57,6 +57,7 @@ static bool is_nav_target(lv_obj_t *obj)
     if (c == &lv_button_class)  return true;   /* theme_button / 菜单按钮 / 急停重启 / 弹层按钮 */
     if (c == &lv_dropdown_class) return true;  /* 设置页语言/息屏下拉 */
     if (c == &lv_slider_class)  return true;   /* 背光滑块 */
+    if (c == &lv_switch_class)  return true;   /* 开关（显示设置反色/旋转） */
     if (lv_obj_has_flag(obj, LV_OBJ_FLAG_USER_1)) return true;   /* 显式标记的操作行（wifi/温度/文件等） */
     return false;
 }
@@ -226,17 +227,22 @@ static void nav_scroll_to(lv_obj_t *o)
     lv_obj_update_layout(o);
     lv_obj_t *p = lv_obj_get_parent(o);
     while (p) {
-        if (lv_obj_has_flag(p, LV_OBJ_FLAG_SCROLLABLE)) {
-            /* 对象相对滚动容器的内容坐标（沿父链累加，再减去滚动偏移） */
-            int32_t oy = 0;
+        if (lv_obj_has_flag(p, LV_OBJ_FLAG_SCROLLABLE) &&
+            (lv_obj_get_scroll_dir(p) & LV_DIR_VER)) {
+            /* lv_obj_get_y 返回内容坐标（父滚动被 LVGL 加回 coords 差值）；
+             * lv_obj_get_scroll_y(p) 返回正数=已滚量，相减得对象相对 p 视口的 y */
+            int32_t cy = 0;
             lv_obj_t *cur = o;
-            while (cur && cur != p) { oy += lv_obj_get_y(cur); cur = lv_obj_get_parent(cur); }
-            oy -= lv_obj_get_scroll_y(p);
+            while (cur && cur != p) { cy += lv_obj_get_y(cur); cur = lv_obj_get_parent(cur); }
             int32_t oh = lv_obj_get_height(o);
             int32_t ph = lv_obj_get_height(p);
-            if (oy < 0)               lv_obj_scroll_by_bounded(p, 0, oy, LV_ANIM_OFF);
-            else if (oy + oh > ph)    lv_obj_scroll_by_bounded(p, 0, oy + oh - ph, LV_ANIM_OFF);
-            break;
+            int32_t oy = cy - lv_obj_get_scroll_y(p);
+            /* 容器顶部若被状态栏覆盖（scr 类容器 y=0），滚动目标留出状态栏高度 */
+            int32_t top_vis = lv_obj_get_y(p);
+            if (top_vis < 0) top_vis = 0;
+            int32_t top_margin = (top_vis < THEME_TITLEBAR_H) ? (THEME_TITLEBAR_H - top_vis) : 0;
+            if (oy < top_margin)            lv_obj_scroll_to_y(p, cy - top_margin, LV_ANIM_OFF);
+            else if (oy + oh > ph)          lv_obj_scroll_to_y(p, cy + oh - ph, LV_ANIM_OFF);
         }
         p = lv_obj_get_parent(p);
     }

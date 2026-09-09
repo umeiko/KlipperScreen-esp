@@ -562,4 +562,9 @@ void bsp_restart(void)
     esp_restart();
 }
 
+
+/* 电池检测：本板未接电池/未实现（UI 显示占位） */
+int bsp_battery_mv(void) { return -1; }
+int bsp_battery_percent(void) { return -1; }
+
 #endif /* CONFIG_BOARD_CYD_2432S028R */

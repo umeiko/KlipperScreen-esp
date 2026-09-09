@@ -114,6 +114,7 @@ static lv_obj_t *create(void)
     lv_obj_set_flex_flow(list, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(list, THEME_GAP, 0);
     lv_obj_set_scrollbar_mode(list, LV_SCROLLBAR_MODE_AUTO);
+    lv_obj_set_scroll_dir(list, LV_DIR_VER);
 
     return scr;
 }

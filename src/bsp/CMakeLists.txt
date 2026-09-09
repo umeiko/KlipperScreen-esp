@@ -14,6 +14,6 @@ idf_component_register(SRCS "esp32/bsp_cyd_2432s028r.c"
                        REQUIRES lvgl esp_lcd
                                 esp_lcd_ili9341 esp_lcd_st7796 esp_lcd_touch_xpt2046
                                 espressif__esp_lcd_touch_gt911
-                                esp_timer driver esp_common esp_wifi esp_event esp_netif nvs_flash
+                                esp_timer driver esp_adc esp_common esp_wifi esp_event esp_netif nvs_flash
                                 esp_http_client littlefs json
                                 hal soc esp_mm esp_psram esp_hw_support esp_driver_gpio)

@@ -5,6 +5,7 @@
 #include "panel_mgr.h"
 #include "printer.h"
 #include "bsp_wifi.h"
+#include "bsp.h"
 #include <time.h>
 
 static lv_obj_t *bar;
@@ -16,6 +17,9 @@ static lv_obj_t *lbl_bed;
 static lv_obj_t *ic_ext;
 static lv_obj_t *ic_bed;
 static int show_clock;   /* 主面板（无返回键且无标题）→ 标题位显示时钟 */
+static lv_obj_t *lbl_bat;
+static lv_obj_t *bat_body, *bat_fill;
+static int32_t last_bat_tick;
 static int show_temps = 1;   /* 标题长的面板（Moonraker 设置等）可关掉温度显示 */
 
 static void back_cb(lv_event_t *e)
@@ -53,11 +57,38 @@ void titlebar_init(void)
     lbl_bed = theme_label(bar, "", THEME_FONT_S, THEME_COL_BED);
     lv_obj_align(lbl_bed, LV_ALIGN_RIGHT_MID, -ui_px(2), 0);
     ic_bed = theme_img(bar, ui_icon(&img_bed_16, &img_bed_32), THEME_COL_BED);
-    lv_obj_align(ic_bed, LV_ALIGN_RIGHT_MID, -ui_px(34), 0);
+    lv_obj_align(ic_bed, LV_ALIGN_RIGHT_MID, -ui_px(30), 0);
     lbl_ext = theme_label(bar, "", THEME_FONT_S, THEME_COL_EXTRUDER);
-    lv_obj_align(lbl_ext, LV_ALIGN_RIGHT_MID, -ui_px(70), 0);
+    lv_obj_align(lbl_ext, LV_ALIGN_RIGHT_MID, -ui_px(58), 0);
     ic_ext = theme_img(bar, ui_icon(&img_nozzle_16, &img_nozzle_32), THEME_COL_EXTRUDER);
-    lv_obj_align(ic_ext, LV_ALIGN_RIGHT_MID, -ui_px(102), 0);
+    lv_obj_align(ic_ext, LV_ALIGN_RIGHT_MID, -ui_px(86), 0);
+
+    /* 电量：几何电池框 + 内部填充 + 百分比（温度左侧，整体偏左） */
+    bat_body = lv_obj_create(bar);
+    lv_obj_remove_style_all(bat_body);
+    lv_obj_set_size(bat_body, ui_px(14), ui_px(7));
+    lv_obj_set_style_border_width(bat_body, 1, 0);
+    lv_obj_set_style_border_color(bat_body, theme_col(THEME_COL_TEXT_DIM), 0);
+    lv_obj_set_style_border_opa(bat_body, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(bat_body, 1, 0);
+    lv_obj_align(bat_body, LV_ALIGN_RIGHT_MID, -ui_px(114), 0);
+
+    lv_obj_t *bat_tip = lv_obj_create(bar);   /* 正极凸起 */
+    lv_obj_remove_style_all(bat_tip);
+    lv_obj_set_size(bat_tip, ui_px(3), ui_px(4));
+    lv_obj_set_style_bg_color(bat_tip, theme_col(THEME_COL_TEXT_DIM), 0);
+    lv_obj_set_style_bg_opa(bat_tip, LV_OPA_COVER, 0);
+    lv_obj_align(bat_tip, LV_ALIGN_RIGHT_MID, -ui_px(110), 0);
+
+    bat_fill = lv_obj_create(bat_body);
+    lv_obj_remove_style_all(bat_fill);
+    lv_obj_set_size(bat_fill, ui_px(12), ui_px(5));
+    lv_obj_set_style_bg_color(bat_fill, theme_col(THEME_COL_OK), 0);
+    lv_obj_set_style_bg_opa(bat_fill, LV_OPA_COVER, 0);
+    lv_obj_align(bat_fill, LV_ALIGN_LEFT_MID, 1, 0);
+
+    lbl_bat = theme_label(bar, "--%", THEME_FONT_S, THEME_COL_OK);
+    lv_obj_align(lbl_bat, LV_ALIGN_RIGHT_MID, -ui_px(134), 0);
 
     titlebar_tick();
 }
@@ -104,4 +135,20 @@ void titlebar_tick(void)
     if (bsp_wifi_status() == BSP_WIFI_CONNECTING) col = THEME_COL_WARN;
     else if (bsp_wifi_connected())                col = THEME_COL_OK;
     lv_obj_set_style_text_color(lbl_wifi, theme_col(col), 0);
+
+    /* 电量 10 秒刷一次（ADC2 与 WiFi 互斥，频繁读会等锁） */
+    if (lv_tick_get() - last_bat_tick > 10000) {
+        last_bat_tick = lv_tick_get();
+        int pct = bsp_battery_percent();
+        if (pct < 0) {
+            lv_label_set_text(lbl_bat, "--%");
+            lv_obj_set_size(bat_fill, 0, ui_px(5));   /* 未知电量：清空填充 */
+        } else {
+            lv_label_set_text_fmt(lbl_bat, "%d%%", pct);
+            uint32_t c = pct > 50 ? THEME_COL_OK : (pct > 20 ? THEME_COL_WARN : THEME_COL_ERROR);
+            lv_obj_set_style_text_color(lbl_bat, theme_col(c), 0);
+            lv_obj_set_style_bg_color(bat_fill, theme_col(c), 0);
+            lv_obj_set_size(bat_fill, ui_px(12) * pct / 100, ui_px(5));
+        }
+    }
 }

@@ -51,6 +51,12 @@ void bsp_disp_set_rotate180(bool en);
    SNTP 已同步则跳过；异步执行不阻塞调用方（desktop 空操作）。 */
 void bsp_time_sync_from_host(const char *host, uint16_t port);
 
+/* 电池电压（mV）与电量百分比（0-100）；未接电池/读取失败返回 -1（UI 显示占位）。
+   esp32s3_st7789：IO17=ADC2_CH6，100k:100k 分压（电池电压 = ADC 读数 x2），3.3V=0% / 4.2V=100% 线性；
+   其余 esp32 板：未接电池返回 -1；desktop：模拟固定值供调试。 */
+int bsp_battery_mv(void);
+int bsp_battery_percent(void);
+
 #ifdef __cplusplus
 }
 #endif
