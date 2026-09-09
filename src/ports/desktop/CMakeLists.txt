@@ -15,6 +15,10 @@ target_include_directories(lvgl PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 find_package(SDL2 REQUIRED)
 
+# LVGL 的 SDL 驱动源直接 include <SDL2/SDL.h>；brew 前缀不在 clang 默认搜索路径，
+# 头文件目录要显式给 lvgl 目标（MSYS2 能过是因为 /ucrt64/include 是编译器默认路径）
+target_include_directories(lvgl PRIVATE ${SDL2_INCLUDE_DIRS})
+
 file(GLOB UI_SRCS
     ${SRC_ROOT}/ui/*.c
     ${SRC_ROOT}/ui/panels/*.c
@@ -52,6 +56,9 @@ function(configure_desktop_target target)
     if(WIN32)
         target_link_libraries(${target} PRIVATE mingw32 SDL2::SDL2main)
         set_target_properties(${target} PROPERTIES WIN32_EXECUTABLE FALSE)
+    elseif(APPLE AND TARGET SDL2::SDL2main)
+        # SDL 官方建议 macOS 也链 SDL2main（Cocoa 启动/事件循环初始化）
+        target_link_libraries(${target} PRIVATE SDL2::SDL2main)
     endif()
 endfunction()
 
