@@ -64,11 +64,10 @@ static lv_obj_t *create(void)
 
     for (int i = 0; i < PRINTER_SLOTS; i++) {
         int col = i % 2, row = i / 2;
-        lv_obj_t *card = theme_card(scr);
+        lv_obj_t *card = theme_action_card(scr);
         lv_obj_set_size(card, slot_w, ui_px(SLOT_H));
         lv_obj_set_pos(card, x0 + col * (slot_w + gap),
                        THEME_TITLEBAR_H + ui_px(6) + row * (ui_px(SLOT_H) + gap));
-        lv_obj_add_flag(card, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_USER_1);
         lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_add_event_cb(card, on_slot_click, LV_EVENT_CLICKED,
                             (void *)(intptr_t)i);

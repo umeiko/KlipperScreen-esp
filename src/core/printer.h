@@ -2,8 +2,8 @@
 /*
  * 打印机数据层接口（原 mock_printer.h 改名扩展）。
  * 两个实现：
- *   printer_mock.c  —— desktop/截图演示用，本地模拟
- *   printer_model.c —— esp32 真实实现，数据来自 Moonraker WebSocket
+ *   printer_mock.c  —— desktop simulator/截图演示用，本地模拟
+ *   printer_model.c —— ESP32 与 Windows 真实实现，数据来自 Moonraker WebSocket
  * 面板只通过这里的访问器取数，不感知数据来源。
  */
 #include <stdint.h>

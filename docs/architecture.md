@@ -12,7 +12,7 @@
 
 - 在 ESP32 CYD 系列开发板上运行一块"远程 KlipperScreen"：显示打印状态、温度、进度，支持点动、预热、挤出、宏、文件管理等核心操作。
 - 通过 **Moonraker 的 WebSocket JSON-RPC API**（端口 7125）与打印机通信，不直连 klippy。
-- **多后端**：同一套 UI/业务代码可在不同型号 CYD（不同屏幕尺寸/驱动/触摸芯片）以及 **Linux 模拟器（SDL2）** 上构建运行，便于开发与调试。
+- **多后端**：同一套 UI/业务代码用于不同 ESP32 板型、可实际连接打印机的 Windows 控制端，以及明确分离的 SDL2 开发模拟器。
 - **高级感**：引入非线性（缓动）动画——页面转场、数值补间、进度环、按压反馈等，超越 KlipperScreen 原作（原作基本没有过渡动画）。
 
 ### 1.2 非目标（v1 不做）
@@ -55,7 +55,7 @@
 - UI 库：**LVGL v9**（官方 esp_lvgl_port 或直接移植；LVGL 也支持 SDL2 后端，天然适配 Linux 模拟器）。
 - 网络：`esp_websocket_client`（ESP-IDF 内置）做 WebSocket；HTTP 仅用于拉缩略图等少量 REST 请求。
 - JSON：**cJSON**（内存可控，ESP-IDF 内置）。
-- Linux 后端：纯 CMake + SDL2 + 系统 libwebsockets（或自写轻量 ws 客户端），用于开发期快速迭代 UI。
+- Desktop 后端：纯 CMake + SDL2；Windows 真实控制端使用系统 WinHTTP WebSocket，simulator 使用本地 mock 数据。
 
 ---
 
@@ -70,7 +70,7 @@
 │          files / macros / console / settings / ...          │
 ├─────────────────────────────────────────────────────────────┤
 │                       UI 框架层 (ui/)                        │
-│  PanelManager · Widgets · Theme · Animation · Toast/Dialog  │
+│ PanelManager · Focus scopes · Widgets · Theme · Dialog      │
 │                    （全部基于 LVGL，不感知业务）               │
 ├─────────────────────────────────────────────────────────────┤
 │                       Core 层 (core/)                        │
@@ -81,7 +81,7 @@
 │  net(WS/HTTP) · time · log · storage · task/queue 抽象       │
 ├─────────────────────────────────────────────────────────────┤
 │                      BSP 层 (bsp/)                           │
-│  display · touch · backlight · 电源键 · 蜂鸣器               │
+│  display · primary pointer · optional inputs · backlight     │
 │  ┌──────────────┬──────────────┬──────────────┐             │
 │  │ bsp_2432s028r│ bsp_3248s035 │  bsp_linux   │  ……         │
 │  └──────────────┴──────────────┴──────────────┘             │
@@ -130,11 +130,19 @@
 
 ```c
 void          bsp_init(void);            // 初始化显示+触摸+LVGL 节拍/任务
+void          bsp_input_init(void);      // 初始化共享可选输入（旋钮/桌面模拟器）
 lv_display_t *bsp_get_display(void);
 void          bsp_lvgl_lock(void);       // LVGL 互斥锁（单线程后端为空操作）
 void          bsp_lvgl_unlock(void);
-// 规划：bsp_backlight_set(percent)、bsp_backlight_off()
+void          bsp_set_brightness(int);   // 公共状态机保存用户亮度
+bool          bsp_screen_activity(void); // 活动打点；返回本次是否刚唤醒
+void          bsp_screen_toggle(void);   // 独立息屏键使用
 ```
+
+亮度、自动息屏时间、当前开关状态和最后活动时间由
+`src/bsp/bsp_screen_power.c` 统一保存。板型只向它注册
+`backlight_apply(0..100)`，负责把有效亮度换算成 PWM、GPIO 或背光 IC
+命令；板型不再各自保存 `screen_off` 和用户亮度。
 
 WiFi 也是 BSP 级抽象（`src/bsp/bsp_wifi.h`，全非阻塞轮询模型，UI 节拍里 poll）：
 
@@ -150,23 +158,49 @@ bool             bsp_wifi_connected(void);               // 真实连接状态�
 
 - **选择机制**：构建时通过 `CONFIG_BOARD_XXX`（Kconfig）或 `sdkconfig.defaults.<board>` 选中一个 BSP 实现目录参与编译；CMake 里 `if(CONFIG_BOARD_...) set(BSP_DIR ...)`。
 - **显示驱动**：ILI9341/ST7789/ST7796 用 `esp_lcd`；Linux 后端用 LVGL SDL2 driver，窗口尺寸模拟目标分辨率。
-- **触摸**：XPT2046 走 SPI 共享总线；GT911 走 I²C。均注册为 LVGL indev。
+- **触摸（可选）**：XPT2046 走 SPI 并需要原始坐标校准；GT911 走 I²C 并直接报告屏幕坐标。纯旋钮板不创建 pointer indev。
 - **屏幕旋转**：240×320 竖屏原生，UI 以横屏 320×240 设计 → 在 BSP 里统一 `lv_disp_set_rotation()`，UI 层永远按横屏逻辑分辨率布局。
 
-### 4.2 Platform 抽象（ESP32 / Linux 双实现）
+### 4.2 输入与焦点域
 
-UI 和 Core 代码不允许直接调用 `esp_*` / `xTask*` API，统一走：
+输入分成三个彼此独立的通道：
 
-| 接口 | ESP32 实现 | Linux 实现 |
-|---|---|---|
-| `plat_task_create` / `plat_queue_*` / `plat_mutex_*` | FreeRTOS | pthread + 简单阻塞队列 |
-| `plat_time_ms` | `esp_timer_get_time()` | `clock_gettime` |
-| `plat_log` | `ESP_LOGx` | `printf` |
-| `plat_ws_client_*` | `esp_websocket_client` | libwebsockets |
-| `plat_http_get(url, cb)`（仅缩略图等） | `esp_http_client` | libcurl |
-| `plat_storage_*`（设置持久化） | NVS | 本地 INI 文件 |
+```
+touch / mouse pointer ───────────────▶ LVGL pointer hit-test
 
-> 这一层是"Linux 后端能跑起来"的关键：所有业务代码 100% 可编译到 Linux，UI 开发不必每次烧录。
+EC11 PCNT / SDL mousewheel ─▶ encoder indev ─▶ ui_nav ─▶ 当前焦点域
+keyboard ───────────────────▶ keypad indev  ──┘            │
+                                                           ├─ page group
+                                                           └─ modal group
+
+dedicated screen GPIO ──────▶ debounce ─▶ screen_power.toggle
+```
+
+- 板型 BSP 只创建板载 pointer（如果有）；`bsp_input_init()` 根据 Kconfig 创建共享 PCNT 旋钮。pointer 可以不存在，因此触摸、触摸 + 旋钮和纯旋钮都是完整配置。desktop 同时创建 SDL mouse 与 mousewheel，可验证输入并存。
+- `ui_nav` 枚举所有 `ENCODER` / `KEYPAD` indev 并绑定当前 LVGL group，不保存某块板的私有 indev。新增输入后端不需要修改页面管理器。
+- 每个缓存面板拥有独立 group，切换页面时恢复它自己的焦点；返回键作为跨页面控件加入当前 group。
+- 弹窗压入临时 group，关闭时恢复原 group。旋钮不会穿透遮罩触发底层页面。
+- 可操作卡片使用 `theme_action_card()`（真实 `lv_button`），普通 `theme_card()` 只作容器。原生 slider/dropdown/switch 用 `theme_focusable()` 登记，避免靠对象树和点击标志猜测可操作性。
+- `bsp_screen_activity()` 是触摸和旋钮共用的唤醒契约。它返回“本次是否刚唤醒”，让驱动吞掉唤醒动作，防止同时触发控件。
+- 独立息屏键不是 LVGL 按键。它在 LVGL 所在任务中轮询消抖，并直接调用
+  `bsp_screen_toggle()`；因此不会参与焦点，也不会跨任务读写屏幕状态。
+- 同一控件可以按输入来源提供更合适的交互：Moonraker 主机行的 pointer 点击打开可输入域名的完整键盘，encoder 点击打开四个 0–255 段的 IPv4 编辑器；温度卡也分别使用触摸数字键盘与旋钮就地调节。输入差异留在控件语义层，不渗入 BSP。
+
+旋钮 GPIO、方向、每刻度计数与按键消抖属于 `Optional input devices` Kconfig。板型默认配置可以启用它，现有板型默认关闭；因此给 CYD 外接旋钮不需要派生新的 BSP。
+
+### 4.3 后端边界（ESP32 / Windows / simulator）
+
+UI 只依赖 `printer.h`、`moonraker_client.h` 和 BSP 公共接口。同一份 UI 在构建时选择后端实现：
+
+| 能力 | ESP32 | Windows 控制端 | desktop simulator |
+|---|---|---|---|
+| 显示与输入 | 板型 BSP + LVGL | SDL2 mouse + mousewheel | SDL2 mouse + mousewheel |
+| 打印机状态模型 | `printer_model.c` | `printer_model.c` | `printer_mock.c` |
+| Moonraker WebSocket | `moonraker_client.c` / esp_websocket_client | `moonraker_client_winhttp.c` / WinHTTP | `moonraker_client_stub.c` |
+| 控制指令 | 共享 `klipper_api.c` | 共享 `klipper_api.c` | mock 本地状态变化 |
+| 配置 | LittleFS | `%APPDATA%\KlipperRemote` | 工作目录 |
+
+Windows 网络线程只负责收发和 JSON-RPC 路由；状态更新经 `lv_async_call` 投回持锁的 LVGL 主线程。发行程序和模拟器是两个构建目标，因此 mock 状态不会进入实际控制链路。
 
 ---
 
@@ -373,7 +407,7 @@ lvgl_task: 按钮回调 → ui_confirm("预热到 210/60?") → 确认
 - **构建系统**：ESP-IDF 标准 CMake；Linux 后端提供顶层 `CMakeLists.host.txt`（或 `idf.py` 之外的 `cmake -B build-host`），通过 `PLATFORM=linux` 切换 platform/ 实现与 bsp_linux。
 - **板级选择**：`idf.py -DSDKCONFIG_DEFAULTS=sdkconfig.defaults.2432s028r ...` 或 `export BOARD=2432s028r` 由顶层 CMake 拼接。
 - **Kconfig 关键项**：`CONFIG_BOARD_*`、`CONFIG_UI_ANIMATION_LEVEL`、`CONFIG_UI_LANGUAGE`（板型 Kconfig 待加；Moonraker 地址不走 Kconfig，运行时配置文件管理）。
-- **配置持久化**（已落地）：LittleFS `storage` 分区（`/littlefs/`），`bsp_conf_read/write` 按文件名读写：WiFi 凭据 `network.conf`、Moonraker 连接 `moonraker.conf`（host/port/api_key）、触摸校准 `touch.json`。desktop 端同名文件落在工作目录（`bsp_conf_file.c`），仅供调试 UI。
+- **配置持久化**（已落地）：ESP32 的 LittleFS `storage` 分区保存 WiFi、Moonraker、界面偏好，以及仅电阻触摸需要的 `touch.json`。Windows 真实控制端使用 `%APPDATA%\KlipperRemote`；desktop simulator 使用工作目录，避免模拟配置覆盖实际控制端。
 - **资源**：图标/字体编译期转 C 数组放 rodata；大资源（中文字库）放 LittleFS 分区，OTA 时不覆盖。
 
 ---
@@ -411,7 +445,7 @@ UI 配合原则：动画尽量作用于小脏区（数值补间、进度环、to
 ## 10. 开发路线图
 
 1. **里程碑 0 — 地基**：platform 抽象 + bsp_linux（SDL2 跑通 LVGL demo）+ bsp_2432s028r（真机点亮）。
-2. **里程碑 1 — 通信**：MoonrakerClient + PrinterModel，Linux 模拟器上连通真实打印机，cli 打印状态。
+2. **里程碑 1 — 通信**：MoonrakerClient + PrinterModel；Windows 控制端已接入真实 Moonraker，simulator 保持本地 mock。
 3. **里程碑 2 — UI 骨架**：PanelManager + theme + titlebar + toast/dialog + 动画模块；main_menu 静态版。
 4. **里程碑 3 — MVP**：main_menu / job_status / temperature / move / files 五面板可用，真机联调。
 5. **里程碑 4 — 完善**：动画打磨、extrude/settings、错误处理与断线重连 UX、v2 面板。

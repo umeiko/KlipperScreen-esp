@@ -6,6 +6,7 @@
 #include "../lang.h"
 #include "../ui_anim.h"
 #include "../panel_mgr.h"
+#include "../ui_nav.h"
 #include "../assets/icons.h"
 #include "bsp_wifi.h"
 #include "app_settings.h"
@@ -16,11 +17,12 @@ static lv_obj_t *list;              /* AP 列表容器 */
 static lv_obj_t *lbl_hint;          /* 扫描中/失败/空列表提示（挂在 scr 上，不被 list 清掉） */
 static lv_obj_t *pwd_overlay;       /* 密码输入弹层 */
 static lv_obj_t *conn_overlay;      /* 连接中转圈弹层 */
+static lv_group_t *pwd_nav_group;
+static lv_group_t *conn_nav_group;
 static lv_obj_t *ta_pwd;
 static char      sel_ssid[BSP_WIFI_SSID_MAX + 1];
 static char      pwd_buf[BSP_WIFI_PASS_MAX + 1];   /* windows 实现要求密码在连接期间保持有效 */
 static int       scanning;          /* 等待扫描结果中 */
-static int       scan_ticks;         /* 扫描超时兜底：8s 无结果视为失败 */
 static int       connecting;        /* 处于连接流程，tick 里轮询状态 */
 static int       connect_ticks;     /* 连接超时兜底：30s 无结果视为失败 */
 
@@ -36,7 +38,6 @@ static void start_scan(void)
 {
     bsp_wifi_scan_start();
     scanning = 1;
-    scan_ticks = 0;
     lv_obj_clean(list);
     show_hint("扫描中…");
 }
@@ -51,7 +52,13 @@ static void refresh_row_clicked(lv_event_t *e)
 
 static void conn_overlay_close(void)
 {
-    if (conn_overlay) { lv_obj_delete(conn_overlay); conn_overlay = NULL; }
+    if (conn_overlay) {
+        ui_nav_detach_scope(conn_overlay);
+        lv_obj_delete(conn_overlay);
+        conn_overlay = NULL;
+        ui_nav_modal_end(conn_nav_group);
+        conn_nav_group = NULL;
+    }
     connecting = 0;
 }
 
@@ -64,8 +71,10 @@ static void start_connect(const char *ssid, const char *pwd)
     bsp_wifi_connect(sel_ssid, pwd_buf);
     connecting = 1;
     connect_ticks = 0;
+    conn_nav_group = ui_nav_modal_begin();
 
     conn_overlay = lv_obj_create(lv_layer_top());
+    ui_nav_attach_scope(conn_overlay, conn_nav_group);
     lv_obj_remove_style_all(conn_overlay);
     lv_obj_set_size(conn_overlay, ui_scr_w(), ui_scr_h());
     lv_obj_set_style_bg_color(conn_overlay, lv_color_hex(0x000000), 0);
@@ -91,7 +100,13 @@ static void start_connect(const char *ssid, const char *pwd)
 
 static void pwd_overlay_close(void)
 {
-    if (pwd_overlay) { lv_obj_delete(pwd_overlay); pwd_overlay = NULL; }
+    if (pwd_overlay) {
+        ui_nav_detach_scope(pwd_overlay);
+        lv_obj_delete(pwd_overlay);
+        pwd_overlay = NULL;
+        ui_nav_modal_end(pwd_nav_group);
+        pwd_nav_group = NULL;
+    }
 }
 
 static void on_kb_ready(lv_event_t *e)
@@ -118,8 +133,10 @@ static void open_password_dialog(const char *ssid)
 {
     strncpy(sel_ssid, ssid, sizeof(sel_ssid) - 1);
     sel_ssid[sizeof(sel_ssid) - 1] = 0;
+    pwd_nav_group = ui_nav_modal_begin();
 
     pwd_overlay = lv_obj_create(lv_layer_top());
+    ui_nav_attach_scope(pwd_overlay, pwd_nav_group);
     lv_obj_remove_style_all(pwd_overlay);
     lv_obj_set_size(pwd_overlay, ui_scr_w(), ui_scr_h());
     lv_obj_set_style_bg_color(pwd_overlay, theme_col(THEME_COL_BG), 0);
@@ -136,27 +153,22 @@ static void open_password_dialog(const char *ssid)
     /* 不回显掩码：电阻屏点按本来就难，明文便于确认输没输对 */
     lv_textarea_set_placeholder_text(ta_pwd, TR("密码"));
     lv_obj_set_width(ta_pwd, ui_px(300));
-    lv_obj_align(ta_pwd, LV_ALIGN_TOP_MID, 0, ui_px(30));
+    lv_obj_align(ta_pwd, LV_ALIGN_TOP_MID, 0, ui_px(34));
 
-    /* 软件键盘（LVGL 自带）：编码器可聚焦按键逐个输入字符，回车=确认，
-       shift 切大写、?123 切数字符号；只在输入弹层内出现，不影响列表页切换 */
     lv_obj_t *kb = lv_keyboard_create(pwd_overlay);
+    lv_obj_set_size(kb, ui_scr_w(), ui_px(150));
+    lv_obj_align(kb, LV_ALIGN_BOTTOM_MID, 0, 0);
+    /* 按键字符随屏幕档位放大：用 montserrat 图标档（16→32），
+       不能用 font_cjk —— 键盘的 确定/退格 等是 LV_SYMBOL 字形，CJK 字体不含会变方框 */
+    lv_obj_set_style_text_font(kb, ui_font_icon(), LV_PART_ITEMS);
     lv_keyboard_set_textarea(kb, ta_pwd);
-    lv_obj_set_size(kb, ui_scr_w(), ui_px(118));
-    lv_obj_align(kb, LV_ALIGN_TOP_MID, 0, ui_px(68));
     lv_obj_add_event_cb(kb, on_kb_ready, LV_EVENT_READY, NULL);
-    lv_obj_add_flag(kb, LV_OBJ_FLAG_USER_1);   /* buttonmatrix 非 button：显式标记进焦点组 */
-
-    /* 确定/取消 */
-    lv_obj_t *btn_ok = theme_button(pwd_overlay, LV_SYMBOL_OK, TR("确定"), 1);
-    lv_obj_align(btn_ok, LV_ALIGN_BOTTOM_RIGHT, ui_px(-8), ui_px(-8));
-    lv_obj_add_event_cb(btn_ok, on_kb_ready, LV_EVENT_CLICKED, NULL);
-
-    lv_obj_t *btn_cx = theme_button(pwd_overlay, LV_SYMBOL_CLOSE, TR("取消"), 0);
-    lv_obj_align(btn_cx, LV_ALIGN_BOTTOM_LEFT, ui_px(8), ui_px(-8));
-    lv_obj_add_event_cb(btn_cx, on_kb_cancel, LV_EVENT_CLICKED, NULL);
-
-    panel_mgr_nav_refresh();   /* 弹层新对象（键盘键/按钮）进焦点组 */
+    lv_obj_add_event_cb(kb, on_kb_cancel, LV_EVENT_CANCEL, NULL);
+    /* The encoder edits the keyboard; the textarea only displays its text. */
+    lv_group_remove_obj(ta_pwd);
+    theme_focusable(kb);
+    lv_group_focus_obj(kb);
+    lv_group_set_editing(pwd_nav_group, true);
 }
 
 /* ---------- AP 列表 ---------- */
@@ -172,10 +184,9 @@ static void add_ap_row(int idx)
 {
     const bsp_wifi_ap_t *ap = &aps[idx];
 
-    lv_obj_t *row = theme_card(list);
+    lv_obj_t *row = theme_action_card(list);
     lv_obj_set_width(row, LV_PCT(100));
     lv_obj_set_height(row, ui_px(44));
-    lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_USER_1);
     lv_obj_add_event_cb(row, on_ap_clicked, LV_EVENT_CLICKED, (void *)ap);
 
     lv_obj_t *ssid = theme_label(row, ap->ssid, THEME_FONT_M, THEME_COL_TEXT);
@@ -209,7 +220,6 @@ static void build_list_from(int n)
     }
     lv_obj_add_flag(lbl_hint, LV_OBJ_FLAG_HIDDEN);
     for (int i = 0; i < n; i++) add_ap_row(i);
-    panel_mgr_nav_refresh();   /* 列表重建：重建焦点组 */
 }
 
 static void tick(void)
@@ -245,11 +255,6 @@ static void tick(void)
         return;
     }
     if (scanning) {
-        if (++scan_ticks > 240) {        /* 8s 超时兜底：驱动事件丢失时不再永远'扫描中' */
-            scanning = 0;
-            show_hint("扫描失败，点列表上方重试");
-            return;
-        }
         int n = bsp_wifi_scan_poll(aps, 16);
         if (n == BSP_WIFI_SCAN_RUNNING) return;
         scanning = 0;

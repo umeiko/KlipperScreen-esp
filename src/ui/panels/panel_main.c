@@ -102,7 +102,7 @@ static lv_obj_t *create(void)
     lv_obj_set_style_bg_color(scr, theme_col(THEME_COL_BG), 0);
 
     /* 状态卡片 */
-    card_status = theme_card(scr);
+    card_status = theme_action_card(scr);
     lv_obj_set_size(card_status, ui_content_w(), ui_px(40));
     lv_obj_align(card_status, LV_ALIGN_TOP_MID, 0, THEME_TITLEBAR_H + ui_px(4));
     /* 状态卡是纯展示（空闲时点击无操作），不参与编码器选中 */

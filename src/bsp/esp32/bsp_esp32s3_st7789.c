@@ -28,6 +28,8 @@
 #include "esp_adc/adc_oneshot.h"
 #include "esp_adc/adc_cali.h"
 #include "esp_littlefs.h"
+#include "bsp_screen_power.h"
+#include "bsp_sleep_button.h"
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_timer.h"
@@ -82,9 +84,6 @@ static int enc_key_raw = 1;                /* 按键原始电平（1=释放，0=
 static int enc_key_state = 1;              /* 去抖后的稳定状态 */
 static int64_t enc_key_debounce_ms;        /* 电平变化时间戳（去抖） */
 
-/* IO39 息屏键状态机：0=释放 1=按下去抖中 2=已触发待释放 */
-static int pwr_key_state = 0;
-static int64_t pwr_key_debounce_ms;
 
 void bsp_lvgl_lock(void)   { xSemaphoreTakeRecursive(lvgl_mux, portMAX_DELAY); }
 void bsp_lvgl_unlock(void) { xSemaphoreGiveRecursive(lvgl_mux); }
@@ -118,77 +117,19 @@ void bsp_lcd_push(int x, int y, int w, int h, const uint16_t *px)
 
 void bsp_delay_ms(uint32_t ms) { vTaskDelay(pdMS_TO_TICKS(ms)); }
 
-/* ---------- 背光亮度 ---------- */
-static uint8_t bl_duty = 255;
-static int     bl_pct = 100;
-
-void bsp_set_brightness(int pct)
+/* ---------- 背光 + 屏幕电源（上游 bsp_screen_power） ---------- */
+/* 硬件背光映射回调：0-100 → LEDC 占空比 */
+static void backlight_apply(int pct)
 {
     if (pct < 0) pct = 0;
     if (pct > 100) pct = 100;
-    if (pct > 0 && pct < 5) pct = 5;
-    bl_pct = pct;
-    bl_duty = (uint8_t)(pct * 255 / 100);
-    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, bl_duty);
+    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, (uint32_t)pct * 255 / 100);
     ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
 }
 
-/* ---------- 自动息屏 ---------- */
-static uint32_t so_after_s;
-static bool     screen_off;
-static int64_t  last_act_us;
-
-void bsp_set_screen_timeout(uint32_t sec)
+static uint64_t screen_now_ms(void)
 {
-    so_after_s = sec;
-    last_act_us = esp_timer_get_time();
-    if (screen_off) { screen_off = false; bsp_set_brightness(bl_pct); }
-}
-
-static void screen_activity(void)
-{
-    last_act_us = esp_timer_get_time();
-    if (screen_off) { screen_off = false; bsp_set_brightness(bl_pct); }
-}
-
-static void screen_off_check(void)
-{
-    if (screen_off || !so_after_s) return;
-    if (esp_timer_get_time() - last_act_us > (int64_t)so_after_s * 1000000) {
-        screen_off = true;
-        ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
-        ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
-    }
-}
-
-/* 息屏/唤醒（EC11 minimal 合并）：BOOT(GPIO0) + GPIO39 双键，低电平有效，
-   任一稳定按下 50ms 触发一次；释放后再按可再触发 */
-static void pwr_key_check(void)
-{
-    int64_t now = esp_timer_get_time() / 1000;
-    int cur = gpio_get_level(PIN_BTN_BOOT) & gpio_get_level(PIN_PWR_KEY);
-    /* 两键任一为 0（按下）→ cur=0；全释放 → cur=1 */
-    switch (pwr_key_state) {
-    case 0:
-        if (cur == 0) { pwr_key_state = 1; pwr_key_debounce_ms = now; }
-        break;
-    case 1:
-        if (cur != 0) { pwr_key_state = 0; break; }   /* 抖动弹回 */
-        if (now - pwr_key_debounce_ms >= 50) {
-            if (screen_off) {
-                screen_activity();   /* 唤醒 + 重置活动计时（否则自动息屏超时立即再灭） */
-            } else {
-                screen_off = true;   /* 息屏：背光灭 */
-                ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
-                ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
-            }
-            pwr_key_state = 2;   /* 已触发，等释放 */
-        }
-        break;
-    case 2:
-        if (cur != 0) pwr_key_state = 0;
-        break;
-    }
+    return (uint64_t)(esp_timer_get_time() / 1000);
 }
 
 void bsp_fade_out(uint32_t ms)
@@ -197,7 +138,6 @@ void bsp_fade_out(uint32_t ms)
     if (!fade_installed) { ledc_fade_func_install(0); fade_installed = true; }
     ledc_set_fade_with_time(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0, ms);
     ledc_fade_start(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, LEDC_FADE_WAIT_DONE);
-    bl_duty = 0;
 
     /* 渐暗后把 GRAM 整屏推黑：否则面板寄存器残留旧帧，下次上电瞬间会闪一下旧画面 */
     static uint16_t black[LCD_H_RES * 40];
@@ -251,7 +191,7 @@ static void encoder_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
     }
     /* 只有实际旋转（step!=0）或按住按键才算活动：否则轮询本身会立即唤醒手动息屏 */
     if (step != 0 || (enc_key_state == 0 && cur == 0))
-        screen_activity();
+        bsp_screen_activity();
 }
 static void touch_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
 {
@@ -261,8 +201,8 @@ static void touch_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
     uint8_t count = 0;
     esp_lcd_touch_read_data(touch_handle);
     if (esp_lcd_touch_get_data(touch_handle, pt, &count, 1) == ESP_OK && count > 0) {
-        if (screen_off) wake_swallow = true;
-        screen_activity();
+        if (bsp_screen_is_off()) wake_swallow = true;
+        bsp_screen_activity();
         if (wake_swallow) {
             data->state = LV_INDEV_STATE_RELEASED;
             return;
@@ -283,8 +223,8 @@ static void lvgl_task(void *arg)
         bsp_lvgl_lock();
         lv_timer_handler();
         bsp_lvgl_unlock();
-        screen_off_check();
-        pwr_key_check();
+        bsp_screen_power_poll();
+        bsp_sleep_button_poll();
         vTaskDelay(pdMS_TO_TICKS(5));
     }
 }
@@ -327,6 +267,7 @@ void bsp_init(void)
         .duty = 255, .hpoint = 0,
     };
     ESP_ERROR_CHECK(ledc_channel_config(&bl_ch));
+    bsp_screen_power_init(backlight_apply, screen_now_ms);
 
     /* SPI 总线（LCD） */
     spi_bus_config_t buscfg = {
@@ -437,17 +378,14 @@ ESP_ERROR_CHECK(esp_lcd_panel_set_gap(panel_handle, 0, 0));
     ESP_ERROR_CHECK(pcnt_unit_enable(enc_pcnt));
     ESP_ERROR_CHECK(pcnt_unit_clear_count(enc_pcnt));
     ESP_ERROR_CHECK(pcnt_unit_start(enc_pcnt));
-    /* 一键息屏/唤醒按键 IO39 */
-    gpio_config_t pwr_io_cfg = {
-        .pin_bit_mask = (1ULL << PIN_BTN_BOOT) | (1ULL << PIN_PWR_KEY),
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_ENABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
-    };
-    ESP_ERROR_CHECK(gpio_config(&pwr_io_cfg));
     ESP_LOGI(TAG, "Encoder ready (A=GPIO%d B=GPIO%d KEY=GPIO%d PWRKEY=GPIO%d)",
              PIN_ENC_A, PIN_ENC_B, PIN_ENC_KEY, PIN_PWR_KEY);
+    /* 息屏/唤醒按钮（上游 bsp_sleep_button）：BOOT(GPIO0) + GPIO39 双键，低电平有效 */
+    const bsp_sleep_button_cfg_t sleep_btns[] = {
+        { PIN_BTN_BOOT, true },
+        { PIN_PWR_KEY, true },
+    };
+    ESP_ERROR_CHECK(bsp_sleep_button_init(sleep_btns, 2));
 
     /* LVGL */
     lv_init();

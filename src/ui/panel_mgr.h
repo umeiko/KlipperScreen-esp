@@ -14,6 +14,7 @@ typedef struct {
     const char *name;                 /* "main" / "job_status" / ... */
     const char *title;                /* 标题栏文字 */
     lv_obj_t *scr;                    /* 缓存的屏幕对象（懒加载） */
+    lv_group_t *nav_group;            /* 本面板的编码器/键盘焦点组 */
     lv_obj_t *(*create)(void);        /* 首次构建，返回 screen 根对象 */
     void (*on_show)(void);            /* 每次显示时调用（全量刷新数据） */
     void (*on_tick)(void);            /* 数据节拍（仅栈顶面板收到） */

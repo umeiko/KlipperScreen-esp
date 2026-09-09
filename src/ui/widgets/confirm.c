@@ -1,15 +1,22 @@
 #include "confirm.h"
 #include "../theme.h"
+#include "../ui_nav.h"
 
 static lv_obj_t *overlay;
+static lv_group_t *nav_group;
 static confirm_cb_t cb;
 static void *ud;
 
 static void close(int ok)
 {
-    if (ok && cb) cb(ud);
+    confirm_cb_t done = cb;
+    void *done_ud = ud;
+    ui_nav_detach_scope(overlay);
     lv_obj_delete(overlay);
     overlay = NULL;
+    ui_nav_modal_end(nav_group);
+    nav_group = NULL;
+    if (ok && done) done(done_ud);
 }
 
 static void on_ok(lv_event_t *e)     { LV_UNUSED(e); close(1); }
@@ -25,8 +32,10 @@ void confirm_open(const char *text, const char *ok_text, confirm_cb_t callback, 
     if (overlay) return;   /* 已打开 */
     cb = callback;
     ud = user_data;
+    nav_group = ui_nav_modal_begin();
 
     overlay = lv_obj_create(lv_layer_top());
+    ui_nav_attach_scope(overlay, nav_group);
     lv_obj_remove_style_all(overlay);
     lv_obj_set_size(overlay, ui_scr_w(), ui_scr_h());
     lv_obj_set_style_bg_color(overlay, lv_color_hex(0x000000), 0);

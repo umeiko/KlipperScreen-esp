@@ -10,6 +10,8 @@
 #if CONFIG_BOARD_JC8048W550
 
 #include "bsp.h"
+#include "bsp_screen_power.h"
+#include "bsp_sleep_button.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -48,6 +50,7 @@
 #define PIN_TP_SDA     19
 #define PIN_TP_SCL     20
 #define PIN_TP_RST     38
+#define PIN_BTN_BOOT    0   /* 板载 BOOT 键：按下息屏，再按唤醒 */
 
 #define LCD_H_RES      800
 #define LCD_V_RES      480
@@ -96,16 +99,14 @@ void bsp_disp_set_rotate180(bool en) { LV_UNUSED(en); }
 
 /* 背光亮度：滑杆 0-100，经 bsp_set_brightness 分段映射到占空比 */
 static uint8_t bl_duty = 255;
-static int     bl_pct = 100;
 
 /* 本板背光硬件曲线特殊：占空比 80% 以下几乎不可见，可见亮度全挤在 80~100%。
    反向补偿：滑杆 5% → 占空比 80%，滑杆 100% → 100%，分段线性；
    滑杆 0 仍为全灭（息屏逻辑另行处理，不经此函数） */
-void bsp_set_brightness(int pct)
+static void backlight_apply(int pct)
 {
     if (pct < 0) pct = 0;
     if (pct > 100) pct = 100;
-    bl_pct = pct;
     int duty_pct;
     if (pct <= 5) duty_pct = pct * 16;                 /* 0..5   → 0..80 */
     else          duty_pct = 80 + (pct - 5) * 20 / 95; /* 5..100 → 80..100 */
@@ -114,38 +115,9 @@ void bsp_set_brightness(int pct)
     ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
 }
 
-/* ---------- 自动息屏：超时灭背光，触摸唤醒 ---------- */
-static uint32_t so_after_s;                     /* 0 = 永不 */
-static bool     screen_off;
-static int64_t  last_act_us;
-
-void bsp_set_screen_timeout(uint32_t sec)
+static uint64_t screen_now_ms(void)
 {
-    so_after_s = sec;
-    last_act_us = esp_timer_get_time();
-    if (screen_off) {                           /* 改设置时若正息屏，先唤醒 */
-        screen_off = false;
-        bsp_set_brightness(bl_pct);
-    }
-}
-
-static void screen_activity(void)               /* 触摸回调里打点 + 唤醒 */
-{
-    last_act_us = esp_timer_get_time();
-    if (screen_off) {
-        screen_off = false;
-        bsp_set_brightness(bl_pct);
-    }
-}
-
-static void screen_off_check(void)              /* lvgl 任务里周期检查 */
-{
-    if (screen_off || !so_after_s) return;
-    if (esp_timer_get_time() - last_act_us > (int64_t)so_after_s * 1000000) {
-        screen_off = true;
-        ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
-        ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
-    }
+    return (uint64_t)(esp_timer_get_time() / 1000);
 }
 
 /* LEDC 硬件渐变到灭（阻塞至完成）。语言切换重启前调用，避免生硬跳变 */
@@ -206,8 +178,7 @@ static void touch_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
     uint8_t count = 0;
     esp_lcd_touch_read_data(touch_handle);
     if (esp_lcd_touch_get_data(touch_handle, pt, &count, 1) == ESP_OK && count > 0) {
-        if (screen_off) wake_swallow = true;    /* 息屏时的按下只为唤醒 */
-        screen_activity();          /* 息屏唤醒 + 重置超时计时 */
+        if (bsp_screen_activity()) wake_swallow = true; /* 息屏时的按下只为唤醒 */
         if (wake_swallow) {                     /* 唤醒点击不触发任何元素 */
             data->state = LV_INDEV_STATE_RELEASED;
             return;
@@ -236,6 +207,8 @@ static void lvgl_task(void *arg)
         int64_t t0 = esp_timer_get_time();
         lv_timer_handler();
         uint32_t dt = (uint32_t)(esp_timer_get_time() - t0);
+        bsp_screen_power_poll();
+        bsp_sleep_button_poll();
         bsp_lvgl_unlock();
         uint32_t sw = swap_total_us - prev_swap_total;
         prev_swap_total = swap_total_us;
@@ -246,7 +219,6 @@ static void lvgl_task(void *arg)
         if (dt > render_max_us) render_max_us = dt;
         work_total_us += work;
         if (work > work_max_us) work_max_us = work;
-        screen_off_check();
         vTaskDelay(pdMS_TO_TICKS(5));
     }
 }
@@ -291,6 +263,7 @@ void bsp_init(void)
         .hpoint = 0,
     };
     ESP_ERROR_CHECK(ledc_channel_config(&bl_ch));
+    bsp_screen_power_init(backlight_apply, screen_now_ms);
 
     /* RGB LCD（ST7262 800x480）：自研 rgb44 驱动（IDF 4.4 传输模型：
        auto_next_frame=false + 一次性 DMA 链 + vsync 全量重启，欠载帧下帧
@@ -364,6 +337,10 @@ void bsp_init(void)
     lv_indev_t *indev = lv_indev_create();
     lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
     lv_indev_set_read_cb(indev, touch_read_cb);
+
+    /* BOOT 键 = 息屏/唤醒按钮（低电平有效，内部上拉） */
+    const bsp_sleep_button_cfg_t sleep_btns[] = {{ PIN_BTN_BOOT, true }};
+    ESP_ERROR_CHECK(bsp_sleep_button_init(sleep_btns, 1));
 
     xTaskCreatePinnedToCore(lvgl_task, "lvgl", 12288, NULL, 4, NULL, 1);
 

@@ -1,10 +1,12 @@
 #include "keypad.h"
 #include "../theme.h"
+#include "../ui_nav.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
 
 static lv_obj_t *overlay;
+static lv_group_t *nav_group;
 static lv_obj_t *lbl_value;
 static keypad_cb_t cb;
 static void *ud;
@@ -13,9 +15,15 @@ static lv_obj_t *card;
 
 static void keypad_close(int ok)
 {
-    if (cb) cb((float)atof(buf), ok, ud);
+    keypad_cb_t done = cb;
+    void *done_ud = ud;
+    float value = (float)atof(buf);
+    ui_nav_detach_scope(overlay);
     lv_obj_delete(overlay);
     overlay = NULL;
+    ui_nav_modal_end(nav_group);
+    nav_group = NULL;
+    if (done) done(value, ok, done_ud);
 }
 
 static void on_key(lv_event_t *e)
@@ -49,8 +57,10 @@ void keypad_open(const char *title, float initial, keypad_cb_t callback, void *u
     cb = callback;
     ud = user_data;
     snprintf(buf, sizeof(buf), "%d", (int)(initial + 0.5f));
+    nav_group = ui_nav_modal_begin();
 
     overlay = lv_obj_create(lv_layer_top());
+    ui_nav_attach_scope(overlay, nav_group);
     lv_obj_remove_style_all(overlay);
     lv_obj_set_size(overlay, ui_scr_w(), ui_scr_h());
     lv_obj_set_style_bg_color(overlay, lv_color_hex(0x000000), 0);

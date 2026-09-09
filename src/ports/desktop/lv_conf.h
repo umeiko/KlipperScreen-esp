@@ -11,6 +11,7 @@
 
 /* SDL2 后端 */
 #define LV_USE_SDL 1
+#define LV_SDL_MOUSEWHEEL_MODE 0   /* encoder: wheel turns, middle button presses */
 
 /* 字号 */
 #define LV_FONT_MONTSERRAT_14 1

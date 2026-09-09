@@ -1,5 +1,6 @@
 /*
- * 温度控制：设备行（点击弹 keypad 设目标温） + 预热预设（对标 KlipperScreen temperature）
+ * 温度控制：触摸点击仍可用 keypad；旋钮按下后在设备卡内就地调温。
+ * 连续快速旋转会把步长从 1°C 逐步放大到 10°C，停顿后恢复精调。
  */
 #include "../theme.h"
 #include "../ui_anim.h"
@@ -12,6 +13,13 @@
 static lv_obj_t *lbl_ext_cur, *lbl_ext_tgt;
 static lv_obj_t *lbl_bed_cur, *lbl_bed_tgt;
 static int ext_shown10 = -1, bed_shown10 = -1;   /* 0.1 度单位的显示值 */
+static lv_obj_t *row_ext_obj, *row_bed_obj;
+static lv_obj_t *editing_row, *editing_cur, *editing_tgt;
+static lv_timer_t *commit_timer;
+static int editing_value, sent_value, speed_score, step_size = 1;
+static uint32_t last_step_at;
+
+static void update_temps(void);
 
 static void temp_anim_cb(void *obj, int32_t v10)
 {
@@ -31,8 +39,131 @@ static void set_bed_cb(float v, int ok, void *ud)
     if (ok) { printer_set_target_bed(v); ui_toast(v > 0 ? "热床加热中" : "热床已关闭", THEME_COL_BED); }
 }
 
-static void on_row_ext(lv_event_t *e) { LV_UNUSED(e); keypad_open("喷嘴目标温度", printer_target_ext(), set_ext_cb, NULL); }
-static void on_row_bed(lv_event_t *e) { LV_UNUSED(e); keypad_open("热床目标温度", printer_target_bed(), set_bed_cb, NULL); }
+static int editing_is_ext(void) { return editing_row == row_ext_obj; }
+
+static void render_edit_value(void)
+{
+    if (!editing_cur || !editing_tgt) return;
+    lv_label_set_text_fmt(editing_cur, "%d" "\xC2\xB0", editing_value);
+    lv_label_set_text_fmt(editing_tgt, "STEP %d", step_size);
+    lv_obj_set_style_text_color(editing_cur,
+        theme_col(editing_is_ext() ? THEME_COL_EXTRUDER : THEME_COL_BED), 0);
+    lv_obj_set_style_text_color(editing_tgt,
+        theme_col(editing_is_ext() ? THEME_COL_EXTRUDER : THEME_COL_BED), 0);
+}
+
+static void send_edit_value(void)
+{
+    if (!editing_row || editing_value == sent_value) return;
+    if (editing_is_ext()) printer_set_target_ext((float)editing_value);
+    else                  printer_set_target_bed((float)editing_value);
+    sent_value = editing_value;
+}
+
+static void commit_timer_cb(lv_timer_t *timer)
+{
+    LV_UNUSED(timer);
+    commit_timer = NULL;
+    send_edit_value();
+}
+
+static void schedule_commit(void)
+{
+    if (commit_timer) lv_timer_delete(commit_timer);
+    commit_timer = lv_timer_create(commit_timer_cb, 300, NULL);
+    lv_timer_set_repeat_count(commit_timer, 1);
+}
+
+static void begin_edit(lv_obj_t *row)
+{
+    if (editing_row == row) return;
+    editing_row = row;
+    editing_cur = row == row_ext_obj ? lbl_ext_cur : lbl_bed_cur;
+    editing_tgt = row == row_ext_obj ? lbl_ext_tgt : lbl_bed_tgt;
+    float target = row == row_ext_obj ? printer_target_ext() : printer_target_bed();
+    editing_value = (int)(target + 0.5f);
+    if (editing_value < 0) editing_value = 0;
+    if (editing_value > 320) editing_value = 320;
+    sent_value = editing_value;
+    speed_score = 0;
+    step_size = 1;
+    last_step_at = 0;
+    render_edit_value();
+}
+
+static void finish_edit(void)
+{
+    if (!editing_row) return;
+    int was_ext = editing_is_ext();
+    if (commit_timer) {
+        lv_timer_delete(commit_timer);
+        commit_timer = NULL;
+    }
+    send_edit_value();
+    temp_anim_cb(editing_cur, (int)((was_ext ? printer_temp_ext() : printer_temp_bed()) * 10));
+    lv_obj_set_style_text_color(editing_cur,
+        theme_col(was_ext ? THEME_COL_EXTRUDER : THEME_COL_BED), 0);
+    lv_obj_set_style_text_color(editing_tgt, theme_col(THEME_COL_TEXT_DIM), 0);
+    editing_row = NULL;
+    editing_cur = NULL;
+    editing_tgt = NULL;
+    update_temps();
+}
+
+static int accelerated_step(uint32_t now)
+{
+    uint32_t dt = last_step_at ? lv_tick_elaps(last_step_at) : 1000;
+    last_step_at = now;
+    if (dt <= 90) speed_score += 3;
+    else if (dt <= 170) speed_score += 2;
+    else if (dt <= 280) speed_score += 1;
+    else speed_score = 0;
+    if (speed_score > 10) speed_score = 10;
+    return speed_score >= 8 ? 10 : speed_score >= 5 ? 5 : speed_score >= 3 ? 2 : 1;
+}
+
+static void on_temp_row(lv_event_t *e)
+{
+    lv_obj_t *row = lv_event_get_target_obj(e);
+    lv_event_code_t code = lv_event_get_code(e);
+
+    if (code == LV_EVENT_FOCUSED) {
+        lv_group_t *group = lv_obj_get_group(row);
+        if (group && lv_group_get_editing(group)) begin_edit(row);
+    } else if (code == LV_EVENT_KEY && editing_row == row) {
+        uint32_t key = lv_event_get_key(e);
+        if (key == LV_KEY_LEFT || key == LV_KEY_RIGHT) {
+            step_size = accelerated_step(lv_tick_get());
+            editing_value += key == LV_KEY_RIGHT ? step_size : -step_size;
+            if (editing_value < 0) editing_value = 0;
+            if (editing_value > 320) editing_value = 320;
+            render_edit_value();
+            schedule_commit();
+        } else if (key == LV_KEY_ENTER) {
+            finish_edit();
+            lv_group_set_editing(lv_obj_get_group(row), false);
+        }
+    } else if (code == LV_EVENT_DEFOCUSED && editing_row == row) {
+        finish_edit();
+    } else if (code == LV_EVENT_CLICKED) {
+        lv_indev_t *indev = lv_event_get_indev(e);
+        if (indev && lv_indev_get_type(indev) == LV_INDEV_TYPE_ENCODER) {
+            lv_group_t *group = lv_obj_get_group(row);
+            if (editing_row == row) {
+                finish_edit();
+                lv_group_set_editing(group, false);
+            } else {
+                begin_edit(row);
+                lv_group_set_editing(group, true);
+            }
+        } else if (indev && lv_indev_get_type(indev) == LV_INDEV_TYPE_POINTER) {
+            if (row == row_ext_obj)
+                keypad_open("喷嘴目标温度", printer_target_ext(), set_ext_cb, NULL);
+            else
+                keypad_open("热床目标温度", printer_target_bed(), set_bed_cb, NULL);
+        }
+    }
+}
 
 static void on_preset(lv_event_t *e)
 {
@@ -47,12 +178,15 @@ static void on_preset(lv_event_t *e)
 
 static lv_obj_t *make_row(lv_obj_t *parent, const char *name, uint32_t col,
                           const lv_image_dsc_t *icon, int h,
-                          lv_obj_t **cur_out, lv_obj_t **tgt_out, lv_event_cb_t cb)
+                          lv_obj_t **cur_out, lv_obj_t **tgt_out)
 {
-    lv_obj_t *row = theme_card(parent);
+    lv_obj_t *row = theme_action_card(parent);
     lv_obj_set_size(row, ui_content_w(), h);
-    lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_USER_1);
-    lv_obj_add_event_cb(row, cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_set_style_bg_color(row, theme_col(col), LV_STATE_FOCUS_KEY | LV_STATE_EDITED);
+    lv_obj_set_style_bg_opa(row, LV_OPA_30, LV_STATE_FOCUS_KEY | LV_STATE_EDITED);
+    lv_obj_set_style_outline_color(row, theme_col(col), LV_STATE_FOCUS_KEY | LV_STATE_EDITED);
+    lv_obj_set_style_outline_width(row, ui_px(3), LV_STATE_FOCUS_KEY | LV_STATE_EDITED);
+    lv_obj_add_event_cb(row, on_temp_row, LV_EVENT_ALL, NULL);
 
     lv_obj_t *ic = theme_img(row, icon, col);
     lv_obj_align(ic, LV_ALIGN_LEFT_MID, ui_px(4), 0);
@@ -77,16 +211,18 @@ static void update_temps(void)
     int b10 = (int)(printer_temp_bed() * 10);
     if (ext_shown10 < 0) ext_shown10 = e10;   /* 首次直接到位 */
     if (bed_shown10 < 0) bed_shown10 = b10;
-    if (e10 != ext_shown10) {
+    if (e10 != ext_shown10 && editing_row != row_ext_obj) {
         ui_anim_to(lbl_ext_cur, temp_anim_cb, ext_shown10, e10, UI_ANIM_SLOW, lv_anim_path_ease_out);
-        ext_shown10 = e10;
     }
-    if (b10 != bed_shown10) {
+    if (b10 != bed_shown10 && editing_row != row_bed_obj) {
         ui_anim_to(lbl_bed_cur, temp_anim_cb, bed_shown10, b10, UI_ANIM_SLOW, lv_anim_path_ease_out);
-        bed_shown10 = b10;
     }
-    lv_label_set_text_fmt(lbl_ext_tgt, "/%d" "\xC2\xB0", (int)(printer_target_ext() + 0.5f));
-    lv_label_set_text_fmt(lbl_bed_tgt, "/%d" "\xC2\xB0", (int)(printer_target_bed() + 0.5f));
+    ext_shown10 = e10;
+    bed_shown10 = b10;
+    if (editing_tgt != lbl_ext_tgt)
+        lv_label_set_text_fmt(lbl_ext_tgt, "/%d" "\xC2\xB0", (int)(printer_target_ext() + 0.5f));
+    if (editing_tgt != lbl_bed_tgt)
+        lv_label_set_text_fmt(lbl_bed_tgt, "/%d" "\xC2\xB0", (int)(printer_target_bed() + 0.5f));
 }
 
 static lv_obj_t *create(void)
@@ -100,13 +236,13 @@ static lv_obj_t *create(void)
     int reserve_bottom = ui_px(36) + ui_px(12) + gap;   /* 预设行高 + 底边距 + 间隔 */
     int card_h = (ui_scr_h() - y0 - reserve_bottom - gap) / 2;
 
-    lv_obj_t *row_ext = make_row(scr, "Extruder", THEME_COL_EXTRUDER, &img_nozzle_32, card_h,
-                                 &lbl_ext_cur, &lbl_ext_tgt, on_row_ext);
-    lv_obj_align(row_ext, LV_ALIGN_TOP_MID, 0, y0);
+    row_ext_obj = make_row(scr, "Extruder", THEME_COL_EXTRUDER, &img_nozzle_32, card_h,
+                           &lbl_ext_cur, &lbl_ext_tgt);
+    lv_obj_align(row_ext_obj, LV_ALIGN_TOP_MID, 0, y0);
 
-    lv_obj_t *row_bed = make_row(scr, "Heatbed", THEME_COL_BED, &img_bed_32, card_h,
-                                 &lbl_bed_cur, &lbl_bed_tgt, on_row_bed);
-    lv_obj_align(row_bed, LV_ALIGN_TOP_MID, 0, y0 + card_h + gap);
+    row_bed_obj = make_row(scr, "Heatbed", THEME_COL_BED, &img_bed_32, card_h,
+                           &lbl_bed_cur, &lbl_bed_tgt);
+    lv_obj_align(row_bed_obj, LV_ALIGN_TOP_MID, 0, y0 + card_h + gap);
 
     /* 预设行 */
     static const char *names[] = {"PLA", "PETG", "ABS", "冷却"};
