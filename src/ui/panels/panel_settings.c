@@ -1,5 +1,5 @@
 /*
- * 设置：网络 / Moonraker / 语言 / 显示设置 + 版本
+ * 设置：网络 / 打印机连接 / 语言 / 显示设置 + 版本
  * 背光、自动息屏、主题、反色、旋转收进"显示设置"二级菜单（panel_display）。
  */
 #include "../theme.h"
@@ -55,7 +55,7 @@ static lv_obj_t *create(void)
 
     theme_row_link(scr, "无线网络", "", y, open_wifi);
     y += step;
-    theme_row_link(scr, "Moonraker 连接", "", y, open_moonraker);
+    theme_row_link(scr, "打印机连接设置", "", y, open_moonraker);
     y += step;
 
     /* 语言：下拉选项按注册表动态生成（各语言母语名），切换后渐暗重启生效 */

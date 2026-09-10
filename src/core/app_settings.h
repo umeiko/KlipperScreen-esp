@@ -3,7 +3,7 @@
  * 应用配置：WiFi 凭据 + Moonraker 连接参数。
  * 文件格式为简单 key=value 行（# 注释），两端通用，不引 JSON 库：
  *   network.conf  : ssid=... / pass=...
- *   moonraker.conf: host=... / port=7125 / api_key=...（可空，trusted_clients 免鉴权）
+ *   moonraker.conf: 每个打印机槽位的模式、主机、端口和 API Key
  * 存储介质由 bsp_conf 决定（esp32=LittleFS，desktop=本地文件）。
  */
 #include <stdbool.h>
@@ -27,9 +27,15 @@ typedef struct {
     bool     valid;
 } moonraker_conf_t;
 
+/* 打印机通信生态选择。Bambu 目前只保存 UI 选择，通信仍沿用现有 Klipper 路径。 */
+typedef enum {
+    MACHINE_MODE_KLIPPER = 0,
+    MACHINE_MODE_BAMBU,
+} machine_mode_t;
+
 /* 多打印机：最多 6 槽。moonraker.conf 新格式：
  *   active=N
- *   host_0=... / port_0=7125 / api_key_0=...
+ *   machine_mode_0=klipper|bambu / host_0=... / port_0=7125 / api_key_0=...
  *   ...（host_1..host_5 同理）
  * 旧格式（host=/port=/api_key=）读取时自动迁移为槽 0。
  * settings_load/save_moonraker 操作"当前槽"，调用方无感。 */
@@ -54,6 +60,10 @@ int  settings_load_brightness(void);
 bool settings_save_brightness(int pct);
 int  settings_load_screen_off(void);      /* 自动息屏秒数，0=永不 */
 bool settings_save_screen_off(int sec);
+machine_mode_t settings_load_machine_mode(void);             /* 当前槽，缺省 Klipper */
+bool settings_save_machine_mode(machine_mode_t mode);         /* 当前槽 */
+machine_mode_t settings_load_machine_mode_slot(int slot);
+bool settings_save_machine_mode_slot(int slot, machine_mode_t mode);
 
 /* 显示偏好（同存 klipperscreen.conf）：
  * display_invert=0/1（反色）；display_rotate=0/1（180° 旋转）；theme=dark|light（缺省 dark） */

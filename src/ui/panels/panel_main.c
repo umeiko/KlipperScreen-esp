@@ -73,6 +73,7 @@ static void update_state(void)
     default:                         card_col = THEME_COL_OK;    icon = ui_icon(&img_link, &img_link_32);                 break;
     }
     lv_obj_set_style_bg_color(card_status, theme_col(card_col), 0);
+    theme_focus_bg(card_status, card_col, LV_OPA_COVER);
     lv_image_set_src(img_state, icon);
     lv_obj_set_style_image_recolor(img_state, theme_col(THEME_COL_BG), 0);
     lv_obj_set_style_text_color(lbl_state, theme_col(THEME_COL_BG), 0);
@@ -159,6 +160,7 @@ static lv_obj_t *create(void)
     int bw2 = (ui_content_w() - gap) / 2;
     lv_obj_t *b_estop = theme_button(scr, LV_SYMBOL_WARNING, "急停", 0);
     lv_obj_set_style_bg_color(b_estop, theme_col(THEME_COL_ERROR), 0);
+    theme_focus_bg(b_estop, THEME_COL_ERROR, LV_OPA_COVER);
     lv_obj_set_size(b_estop, bw2, ui_px(28));
     lv_obj_align(b_estop, LV_ALIGN_BOTTOM_LEFT, ui_px(8), -ui_px(4));
     lv_obj_add_event_cb(b_estop, on_estop, LV_EVENT_CLICKED, NULL);

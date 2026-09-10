@@ -65,6 +65,7 @@ void confirm_open(const char *text, const char *ok_text, confirm_cb_t callback, 
 
     lv_obj_t *b_ok = theme_button(row, LV_SYMBOL_OK, ok_text ? ok_text : "确认", 0);
     lv_obj_set_style_bg_color(b_ok, theme_col(THEME_COL_ERROR), 0);
+    theme_focus_bg(b_ok, THEME_COL_ERROR, LV_OPA_COVER);
     lv_obj_set_size(b_ok, ui_px(110), ui_px(34));
     lv_obj_add_event_cb(b_ok, on_ok, LV_EVENT_CLICKED, NULL);
 }

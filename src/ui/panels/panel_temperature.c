@@ -10,11 +10,14 @@
 #include "../assets/icons.h"
 #include <stdio.h>
 
+#define EXTRUDER_MAX_TEMP 320
+#define BED_MAX_TEMP      150
+
 static lv_obj_t *lbl_ext_cur, *lbl_ext_tgt;
 static lv_obj_t *lbl_bed_cur, *lbl_bed_tgt;
 static int ext_shown10 = -1, bed_shown10 = -1;   /* 0.1 度单位的显示值 */
 static lv_obj_t *row_ext_obj, *row_bed_obj;
-static lv_obj_t *editing_row, *editing_cur, *editing_tgt;
+static lv_obj_t *editing_row, *editing_tgt;
 static lv_timer_t *commit_timer;
 static int editing_value, sent_value, speed_score, step_size = 1;
 static uint32_t last_step_at;
@@ -30,26 +33,31 @@ static void temp_anim_cb(void *obj, int32_t v10)
 static void set_ext_cb(float v, int ok, void *ud)
 {
     LV_UNUSED(ud);
-    if (ok) { printer_set_target_ext(v); ui_toast(v > 0 ? "喷嘴加热中" : "喷嘴已关闭", THEME_COL_EXTRUDER); }
+    if (ok) {
+        v = LV_CLAMP(0, v, EXTRUDER_MAX_TEMP);
+        printer_set_target_ext(v);
+        ui_toast(v > 0 ? "喷嘴加热中" : "喷嘴已关闭", THEME_COL_EXTRUDER);
+    }
 }
 
 static void set_bed_cb(float v, int ok, void *ud)
 {
     LV_UNUSED(ud);
-    if (ok) { printer_set_target_bed(v); ui_toast(v > 0 ? "热床加热中" : "热床已关闭", THEME_COL_BED); }
+    if (ok) {
+        v = LV_CLAMP(0, v, BED_MAX_TEMP);
+        printer_set_target_bed(v);
+        ui_toast(v > 0 ? "热床加热中" : "热床已关闭", THEME_COL_BED);
+    }
 }
 
 static int editing_is_ext(void) { return editing_row == row_ext_obj; }
+static int editing_max_temp(void) { return editing_is_ext() ? EXTRUDER_MAX_TEMP : BED_MAX_TEMP; }
 
 static void render_edit_value(void)
 {
-    if (!editing_cur || !editing_tgt) return;
-    lv_label_set_text_fmt(editing_cur, "%d" "\xC2\xB0", editing_value);
-    lv_label_set_text_fmt(editing_tgt, "STEP %d", step_size);
-    lv_obj_set_style_text_color(editing_cur,
-        theme_col(editing_is_ext() ? THEME_COL_EXTRUDER : THEME_COL_BED), 0);
-    lv_obj_set_style_text_color(editing_tgt,
-        theme_col(editing_is_ext() ? THEME_COL_EXTRUDER : THEME_COL_BED), 0);
+    if (!editing_tgt) return;
+    lv_label_set_text_fmt(editing_tgt, "/%d" "\xC2\xB0", editing_value);
+    lv_obj_set_style_text_color(editing_tgt, theme_col(THEME_COL_ERROR), 0);
 }
 
 static void send_edit_value(void)
@@ -78,12 +86,11 @@ static void begin_edit(lv_obj_t *row)
 {
     if (editing_row == row) return;
     editing_row = row;
-    editing_cur = row == row_ext_obj ? lbl_ext_cur : lbl_bed_cur;
     editing_tgt = row == row_ext_obj ? lbl_ext_tgt : lbl_bed_tgt;
     float target = row == row_ext_obj ? printer_target_ext() : printer_target_bed();
     editing_value = (int)(target + 0.5f);
     if (editing_value < 0) editing_value = 0;
-    if (editing_value > 320) editing_value = 320;
+    if (editing_value > editing_max_temp()) editing_value = editing_max_temp();
     sent_value = editing_value;
     speed_score = 0;
     step_size = 1;
@@ -94,18 +101,13 @@ static void begin_edit(lv_obj_t *row)
 static void finish_edit(void)
 {
     if (!editing_row) return;
-    int was_ext = editing_is_ext();
     if (commit_timer) {
         lv_timer_delete(commit_timer);
         commit_timer = NULL;
     }
     send_edit_value();
-    temp_anim_cb(editing_cur, (int)((was_ext ? printer_temp_ext() : printer_temp_bed()) * 10));
-    lv_obj_set_style_text_color(editing_cur,
-        theme_col(was_ext ? THEME_COL_EXTRUDER : THEME_COL_BED), 0);
     lv_obj_set_style_text_color(editing_tgt, theme_col(THEME_COL_TEXT_DIM), 0);
     editing_row = NULL;
-    editing_cur = NULL;
     editing_tgt = NULL;
     update_temps();
 }
@@ -136,7 +138,7 @@ static void on_temp_row(lv_event_t *e)
             step_size = accelerated_step(lv_tick_get());
             editing_value += key == LV_KEY_RIGHT ? step_size : -step_size;
             if (editing_value < 0) editing_value = 0;
-            if (editing_value > 320) editing_value = 320;
+            if (editing_value > editing_max_temp()) editing_value = editing_max_temp();
             render_edit_value();
             schedule_commit();
         } else if (key == LV_KEY_ENTER) {
@@ -182,9 +184,11 @@ static lv_obj_t *make_row(lv_obj_t *parent, const char *name, uint32_t col,
 {
     lv_obj_t *row = theme_action_card(parent);
     lv_obj_set_size(row, ui_content_w(), h);
-    lv_obj_set_style_bg_color(row, theme_col(col), LV_STATE_FOCUS_KEY | LV_STATE_EDITED);
+    lv_obj_set_style_bg_color(row, theme_col(THEME_COL_ERROR),
+                              LV_STATE_FOCUS_KEY | LV_STATE_EDITED);
     lv_obj_set_style_bg_opa(row, LV_OPA_30, LV_STATE_FOCUS_KEY | LV_STATE_EDITED);
-    lv_obj_set_style_outline_color(row, theme_col(col), LV_STATE_FOCUS_KEY | LV_STATE_EDITED);
+    lv_obj_set_style_outline_color(row, theme_col(THEME_COL_ERROR),
+                                   LV_STATE_FOCUS_KEY | LV_STATE_EDITED);
     lv_obj_set_style_outline_width(row, ui_px(3), LV_STATE_FOCUS_KEY | LV_STATE_EDITED);
     lv_obj_add_event_cb(row, on_temp_row, LV_EVENT_ALL, NULL);
 
@@ -211,10 +215,10 @@ static void update_temps(void)
     int b10 = (int)(printer_temp_bed() * 10);
     if (ext_shown10 < 0) ext_shown10 = e10;   /* 首次直接到位 */
     if (bed_shown10 < 0) bed_shown10 = b10;
-    if (e10 != ext_shown10 && editing_row != row_ext_obj) {
+    if (e10 != ext_shown10) {
         ui_anim_to(lbl_ext_cur, temp_anim_cb, ext_shown10, e10, UI_ANIM_SLOW, lv_anim_path_ease_out);
     }
-    if (b10 != bed_shown10 && editing_row != row_bed_obj) {
+    if (b10 != bed_shown10) {
         ui_anim_to(lbl_bed_cur, temp_anim_cb, bed_shown10, b10, UI_ANIM_SLOW, lv_anim_path_ease_out);
     }
     ext_shown10 = e10;

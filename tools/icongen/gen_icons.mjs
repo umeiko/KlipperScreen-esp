@@ -1,5 +1,5 @@
-// SVG 图标 → LVGL A8 C 数组（白底透明通道，UI 侧用 image_recolor 着色）
-// 用法：node tools/icongen/gen_icons.mjs
+// SVG 图标 → LVGL C 数组。普通图标用 A8 供主题重染，品牌标志可保留真彩色。
+// 用法：node tools/icongen/gen_icons.mjs [可选的输出名...]
 // 新增图标：把 SVG 放进 src/ui/assets/svg/，在下面 ICONS 里加一行，重跑本脚本。
 import { Resvg } from '@resvg/resvg-js';
 import { readFileSync, writeFileSync, mkdirSync } from 'fs';
@@ -15,7 +15,7 @@ const LVGLIMG = join(ROOT, 'third_party/lvgl/scripts/LVGLImage.py');
 // LVGLImage.py 需要 pypng，装在 tools/icongen/.venv 里
 const PY = join(ROOT, 'tools/icongen/.venv/Scripts/python.exe');
 
-// [svg 名, 输出尺寸(px), C 变量名后缀]
+// [svg 名, 输出尺寸(px), C 变量名后缀, 可选 LVGL 色彩格式]
 const ICONS = [
   ['heater',         28, 'heater'],        // 主菜单"温度"、温度面板
   ['heater',         56, 'heater_56'],     // 大屏(800x480)主菜单 2x 变体
@@ -47,20 +47,26 @@ const ICONS = [
   ['web',            32, 'globe_32'],     // 大屏 2x 变体
   ['toolchanger',    16, 'swap_16'],      // Moonraker-切换打印机行：双向箭头
   ['toolchanger',    32, 'swap_32'],      // 大屏 2x 变体
+  ['klipper_logo',   56, 'klipper_logo_56',  'RGB565A8'], // 官方红灰双色
+  ['klipper_logo',  112, 'klipper_logo_112', 'RGB565A8'], // 大屏 2x 变体
+  ['bambu_logo',     56, 'bambu_logo_56'],    // 机器模式；槽位页缩至约 32px
+  ['bambu_logo',    112, 'bambu_logo_112'],   // 大屏 2x 变体
 ];
 
 mkdirSync(OUT_PNG, { recursive: true });
+const requested = new Set(process.argv.slice(2));
 
-for (const [svg, size, name] of ICONS) {
+for (const [svg, size, name, colorFormat = 'A8'] of ICONS) {
+  if (requested.size && !requested.has(name)) continue;
   const r = new Resvg(readFileSync(join(SVG_DIR, `${svg}.svg`)), {
     fitTo: { mode: 'width', value: size },
-    // 透明背景；图标本身是白色，A8 只取 alpha 通道
+    // 透明背景；A8 图标只取 alpha，真彩品牌标志保留 SVG 颜色。
   });
   const png = join(OUT_PNG, `img_${name}.png`);
   writeFileSync(png, r.render().asPng());
 
   // 注意：LVGLImage.py 的 -o 是输出目录，文件名取输入 PNG 名
-  execFileSync(PY, [LVGLIMG, '--ofmt', 'C', '--cf', 'A8', '-o', OUT_C, png],
+  execFileSync(PY, [LVGLIMG, '--ofmt', 'C', '--cf', colorFormat, '-o', OUT_C, png],
                { cwd: ROOT, stdio: 'inherit' });
 
   // 生成的 include 条件块在 ESP-IDF(Kconfig 配置 LVGL) 下会落到 "lvgl/lvgl.h"，
@@ -68,7 +74,7 @@ for (const [svg, size, name] of ICONS) {
   const cFile = join(OUT_C, `img_${name}.c`);
   const src = readFileSync(cFile, 'utf8').replace(
     /#if defined\(LV_LVGL_H_INCLUDE_SIMPLE\)[\s\S]*?#endif/,
-    '#include "lvgl.h"');
+    '#include "lvgl.h"').replace(/\s+$/, '\n');
   writeFileSync(cFile, src);
   console.log(`img_${name}.c  (${size}px)`);
 }

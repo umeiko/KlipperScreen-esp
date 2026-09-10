@@ -124,20 +124,72 @@ bool settings_load_moonraker(moonraker_conf_t *out)
     return settings_load_moonraker_slot(settings_load_active_printer(), out);
 }
 
+machine_mode_t settings_load_machine_mode_slot(int slot)
+{
+    if (slot < 0 || slot >= PRINTER_SLOTS) return MACHINE_MODE_KLIPPER;
+
+    char key[24], val[12];
+    snprintf(key, sizeof(key), "machine_mode_%d", slot);
+    char *buf = conf_load("moonraker.conf");
+    bool got = buf && kv_get(buf, key, val, sizeof(val));
+    free(buf);
+    if (got)
+        return strcmp(val, "bambu") == 0 ? MACHINE_MODE_BAMBU : MACHINE_MODE_KLIPPER;
+
+    /* 兼容早期 WIP 的全局 machine_mode：只有非默认 Bambu 值需要迁移，
+       并把它归属到迁移时的活动槽位，避免之后随活动槽漂移。 */
+    if (slot == settings_load_active_printer()) {
+        buf = conf_load("klipperscreen.conf");
+        got = buf && kv_get(buf, "machine_mode", val, sizeof(val));
+        free(buf);
+        if (got && strcmp(val, "bambu") == 0) {
+            conf_update_key("moonraker.conf", key, "bambu");
+            conf_update_key("klipperscreen.conf", "machine_mode", "klipper");
+            return MACHINE_MODE_BAMBU;
+        }
+    }
+    return MACHINE_MODE_KLIPPER;
+}
+
+bool settings_save_machine_mode_slot(int slot, machine_mode_t mode)
+{
+    if (slot < 0 || slot >= PRINTER_SLOTS ||
+        (mode != MACHINE_MODE_KLIPPER && mode != MACHINE_MODE_BAMBU)) return false;
+    char key[24];
+    snprintf(key, sizeof(key), "machine_mode_%d", slot);
+    return conf_update_key("moonraker.conf", key,
+                           mode == MACHINE_MODE_BAMBU ? "bambu" : "klipper");
+}
+
+machine_mode_t settings_load_machine_mode(void)
+{
+    return settings_load_machine_mode_slot(settings_load_active_printer());
+}
+
+bool settings_save_machine_mode(machine_mode_t mode)
+{
+    return settings_save_machine_mode_slot(settings_load_active_printer(), mode);
+}
+
 /* 写单槽：读出全部槽→改目标槽→按新格式整体重写（顺带完成旧格式迁移） */
 bool settings_save_moonraker_slot(int slot, const moonraker_conf_t *in)
 {
     if (slot < 0 || slot >= PRINTER_SLOTS) return false;
     moonraker_conf_t all[PRINTER_SLOTS];
-    for (int i = 0; i < PRINTER_SLOTS; i++)
+    machine_mode_t modes[PRINTER_SLOTS];
+    for (int i = 0; i < PRINTER_SLOTS; i++) {
         settings_load_moonraker_slot(i, &all[i]);
+        modes[i] = settings_load_machine_mode_slot(i);
+    }
     all[slot] = *in;
 
     char *buf = malloc(CONF_BUF_SIZE);
     if (!buf) return false;
-    size_t n = snprintf(buf, CONF_BUF_SIZE, "# Moonraker printers\nactive=%d\n",
+    size_t n = snprintf(buf, CONF_BUF_SIZE, "# Printer connection slots\nactive=%d\n",
                         settings_load_active_printer());
     for (int i = 0; i < PRINTER_SLOTS; i++) {
+        n += snprintf(buf + n, CONF_BUF_SIZE - n, "machine_mode_%d=%s\n", i,
+                      modes[i] == MACHINE_MODE_BAMBU ? "bambu" : "klipper");
         if (!all[i].host[0]) continue;
         n += snprintf(buf + n, CONF_BUF_SIZE - n, "host_%d=%s\nport_%d=%u\napi_key_%d=%s\n",
                       i, all[i].host, i, (unsigned)(all[i].port ? all[i].port : 7125),

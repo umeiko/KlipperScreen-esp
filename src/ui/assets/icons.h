@@ -40,6 +40,10 @@ LV_IMAGE_DECLARE(img_globe_16);    /* 16px 地球：设置-语言行 */
 LV_IMAGE_DECLARE(img_globe_32);    /* 32px 大屏变体 */
 LV_IMAGE_DECLARE(img_swap_16);     /* 16px 双向箭头：Moonraker-切换打印机行 */
 LV_IMAGE_DECLARE(img_swap_32);     /* 32px 大屏变体 */
+LV_IMAGE_DECLARE(img_klipper_logo_56);  /* Klipper 标志：机器模式 / 打印机槽位 */
+LV_IMAGE_DECLARE(img_klipper_logo_112); /* 大屏 2x 变体 */
+LV_IMAGE_DECLARE(img_bambu_logo_56);    /* Bambu 标志：机器模式 */
+LV_IMAGE_DECLARE(img_bambu_logo_112);   /* 大屏 2x 变体 */
 
 #ifdef __cplusplus
 }

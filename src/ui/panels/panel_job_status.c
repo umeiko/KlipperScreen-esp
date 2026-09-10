@@ -212,6 +212,7 @@ static lv_obj_t *create(void)
     lv_obj_t *btn_estop_ = theme_button(scr, LV_SYMBOL_WARNING, "急停", 0);
     btn_estop = btn_estop_;
     lv_obj_set_style_bg_color(btn_estop, theme_col(THEME_COL_ERROR), 0);
+    theme_focus_bg(btn_estop, THEME_COL_ERROR, LV_OPA_COVER);
     lv_obj_set_size(btn_estop, bw3, ui_px(36));
     lv_obj_align(btn_estop, LV_ALIGN_BOTTOM_RIGHT, -ui_px(10), -ui_px(8));
     lv_obj_add_event_cb(btn_estop, on_estop, LV_EVENT_CLICKED, NULL);
