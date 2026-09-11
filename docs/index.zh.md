@@ -46,4 +46,4 @@
 
 ## 许可证
 
-GPLv3。仓库：[github.com/umeiko/KlipperScreen-esp](https://github.com/umeiko/KlipperScreen-esp)
+MIT。仓库：[github.com/umeiko/KlipperScreen-esp](https://github.com/umeiko/KlipperScreen-esp)

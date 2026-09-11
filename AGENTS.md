@@ -2,7 +2,7 @@
 
 ## 项目概况
 
-Klipper 远程显示屏：ESP32 固件（ESP-IDF 5.5.5）+ Windows 桌面端（MinGW，调试用同一套 UI 代码）。LVGL 9.3，GPLv3。仓库：`umeiko/KlipperScreen-esp`。
+Klipper 远程显示屏：ESP32 固件（ESP-IDF 5.5.5）+ Windows 桌面端（MinGW，调试用同一套 UI 代码）。LVGL 9.3，MIT。仓库：`umeiko/KlipperScreen-esp`。
 
 ## 构建/烧录
 

@@ -1,8 +1,8 @@
 #pragma once
 /*
- * KlipperScreen material-dark 图标的 LVGL A8 资源（tools/icongen/gen_icons.mjs 生成）
+ * UI 图标的 LVGL A8 资源（tools/icongen/gen_icons.mjs 生成）
  * A8 = 仅 alpha 通道的白色图标，用 theme_img() 的 recolor 着色。
- * SVG 源文件在 svg/ 子目录（来自 KlipperScreen，GPL-3.0）。
+ * SVG 源文件在 svg/ 子目录。
  */
 #include "lvgl.h"
 

@@ -46,4 +46,4 @@ For self-compiling see the repo README; to run the firmware on your own board se
 
 ## License
 
-GPLv3. Repository: [github.com/umeiko/KlipperScreen-esp](https://github.com/umeiko/KlipperScreen-esp)
+MIT. Repository: [github.com/umeiko/KlipperScreen-esp](https://github.com/umeiko/KlipperScreen-esp)

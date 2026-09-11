@@ -118,10 +118,10 @@ Adding a new board of the same architecture = one file in `src/bsp/<arch>/`. A w
 
 ## Credits
 
-- UI iconography adapted from [KlipperScreen](https://github.com/KlipperScreen/KlipperScreen) material-dark theme (GPL-3.0)
+- [KlipperScreen](https://github.com/KlipperScreen/KlipperScreen) — UI design inspiration
 
 - LVGL, ESP-IDF, esptool by their respective authors
 
 ## License
 
-GPL-3.0.
+MIT.

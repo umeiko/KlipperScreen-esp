@@ -3,7 +3,7 @@ site_description: 跨平台 3D 打印机显示与控制软件（ESP32 / Windows 
 site_url: https://umeiko.github.io/KlipperScreen-esp/
 repo_url: https://github.com/umeiko/KlipperScreen-esp
 edit_uri: edit/main/docs/
-copyright: Copyright &copy; umeiko, GPLv3
+copyright: Copyright &copy; umeiko, MIT
 
 theme:
   name: material

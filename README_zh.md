@@ -139,7 +139,7 @@ python tools/fontgen/gen_fonts.py        # 默认用 C:/Windows/Fonts/simhei.ttf
 
 ## 图标（assets/icons.h）
 
-界面图标来自 KlipperScreen 的 material-dark 主题（GPL-3.0），SVG 原件在 `src/ui/assets/svg/`，
+界面图标的 SVG 原件在 `src/ui/assets/svg/`，
 经 resvg 渲染 + LVGLImage.py 转成 A8 alpha 图（体积小，运行时用 `theme_img()` 的 recolor 任意着色）：
 
 ```bash
@@ -159,3 +159,12 @@ node tools/icongen/gen_icons.mjs
 - **ESP32**：`src/bsp/esp32/bsp_wifi_esp32.c`（esp_wifi 事件驱动）
 - **Windows**：`src/bsp/desktop/bsp_wifi_windows.c`（netsh wlan，自动适配中英文系统输出）
 - **Linux**：`src/bsp/desktop/bsp_wifi_linux.c`（nmcli，需 NetworkManager）
+
+## 致谢
+
+- [KlipperScreen](https://github.com/KlipperScreen/KlipperScreen) — 界面设计灵感来源
+- LVGL、ESP-IDF、esptool 等由各自作者维护
+
+## 许可证
+
+MIT。
