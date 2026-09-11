@@ -9,7 +9,9 @@
   <img src="docs/screenshots/main_photo.jpg" alt="CYD 2432S028R 实机运行效果" width="720">
 </p>
 
-基于 ESP32 显示开发板的 Klipper 远程控制屏（对标 KlipperScreen），通过 WiFi 连接 Moonraker，支持触摸、旋钮或二者并存。多后端架构共享全部界面和业务代码。
+**Klipper Remote** 是一款紧凑的跨平台 3D 打印机显示与控制软件，可运行在低成本 ESP32 开发板以及 Windows/macOS 桌面端。它通过 **Moonraker** 完整控制 **Klipper** 打印机，并在 Windows 端提供只读的**拓竹云端状态监视**；共享 LVGL 界面支持触摸、旋转编码器、鼠标、键盘或混合输入，EC11 参考板则展示了完全不使用触摸屏的纯旋钮设备。
+
+单独命名的 SDL2 模拟器使用 mock 数据，无需连接打印机即可用于布局开发、输入实验和界面截图。
 
 ## 界面实拍
 

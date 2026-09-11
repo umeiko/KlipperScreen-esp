@@ -11,9 +11,9 @@
   <img src="docs/screenshots/main_photo.jpg" alt="Klipper Remote on a CYD 2432S028R" width="720">
 </p>
 
-A compact remote display for **Klipper** 3D printers, talking to **Moonraker** over WiFi — running on cheap ESP32 display boards with touch, a rotary encoder, or both. Think of it as a pocket-sized, wireless KlipperScreen.
+**Klipper Remote** is a compact, cross-platform display and controller for 3D printers. It runs on inexpensive ESP32 boards and Windows/macOS desktops, provides full **Klipper** control through **Moonraker**, and adds read-only **Bambu Cloud** monitoring on Windows. Its shared LVGL UI supports touch, rotary encoder, mouse, keyboard, or mixed input; the EC11 reference target demonstrates a rotary-only device.
 
-The same UI code also ships as a real **Windows Moonraker controller** and as a separately named SDL2 simulator for layout development and screenshot testing.
+The separately named SDL2 simulator uses mock data for layout development, input experiments, and screenshot testing without a printer.
 
 ## Screenshots
 
