@@ -1,4 +1,5 @@
 #include "ui_layout.h"
+#include "assets/icons.h"
 
 #ifdef ESP_PLATFORM
 #include "sdkconfig.h"   /* CONFIG_BOARD_* 板型宏（裁剪全表字体尺寸档用） */
@@ -147,14 +148,47 @@ const lv_font_t *ui_font_icon(void)
 #endif
 }
 
+/* 小屏(160x128) 0.45x 图标映射：base → _sm 变体（tools/icongen 生成） */
+static const struct { const lv_image_dsc_t *base, *sm; } icon_sm_map[] = {
+    { &img_heater,          &img_heater_sm },
+    { &img_nozzle_16,       &img_nozzle_16_sm },
+    { &img_bed_16,          &img_bed_16_sm },
+    { &img_nozzle_32,       &img_nozzle_32_sm },
+    { &img_bed_32,          &img_bed_32_sm },
+    { &img_move,            &img_move_sm },
+    { &img_extrude,         &img_extrude_sm },
+    { &img_files,           &img_files_sm },
+    { &img_printer,         &img_printer_sm },
+    { &img_settings,        &img_settings_sm },
+    { &img_wifi_4,          &img_wifi_4_sm },
+    { &img_wifi_3,          &img_wifi_3_sm },
+    { &img_wifi_2,          &img_wifi_2_sm },
+    { &img_wifi_1,          &img_wifi_1_sm },
+    { &img_link_off,        &img_link_off_sm },
+    { &img_link,            &img_link_sm },
+    { &img_alert_circle,    &img_alert_circle_sm },
+    { &img_globe_16,        &img_globe_16_sm },
+    { &img_swap_16,         &img_swap_16_sm },
+    { &img_klipper_logo_56, &img_klipper_logo_56_sm },
+    { &img_bambu_logo_56,   &img_bambu_logo_56_sm },
+};
+
+static const lv_image_dsc_t *icon_sm(const lv_image_dsc_t *base)
+{
+    for (size_t i = 0; i < sizeof(icon_sm_map) / sizeof(icon_sm_map[0]); i++)
+        if (icon_sm_map[i].base == base) return icon_sm_map[i].sm;
+    return base;
+}
+
 const lv_image_dsc_t *ui_icon(const lv_image_dsc_t *i16, const lv_image_dsc_t *i32)
 {
 #if defined(UI_FONT_SMALL)
     (void)i32;
-    return i16;   /* 小屏恒用 16px 图标 */
+    return icon_sm(i16);   /* 小屏恒用 0.45x 变体（无映射则用原图） */
 #elif defined(UI_FONT_BIG)
     return (UI_FONT_BIG && i32) ? i32 : i16;
 #else
+    if (small()) return icon_sm(i16);
     return (big() && i32) ? i32 : i16;
 #endif
 }

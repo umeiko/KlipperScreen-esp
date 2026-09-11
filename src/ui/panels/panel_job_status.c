@@ -238,14 +238,14 @@ static lv_obj_t *make_info_card(lv_obj_t *parent, int x, int y, int width, int h
     lv_obj_t *card = theme_card(parent);
     lv_obj_set_size(card, width, height);
     lv_obj_set_pos(card, x, y);
-    int tight = height < ui_px(40);
+    int tight = compact() || height < ui_px(40);   /* 小屏卡高只有 23~31px，必须走紧凑排布 */
     if (tight) lv_obj_set_style_pad_ver(card, ui_px(1), 0);
     lv_obj_t *cap = theme_label(card, caption, THEME_FONT_S, THEME_COL_TEXT_DIM);
     lv_obj_align(cap, LV_ALIGN_TOP_LEFT, 0, tight ? 0 : -ui_px(1));
     *value = theme_label(card, "--", THEME_FONT_S, color);
-    if (tight) {   /* 防折行盖住标题行：超出裁断 */
+    if (tight) {   /* 防折行盖住标题行：限宽，放不下就滚动显示 */
         lv_obj_set_width(*value, width - 2 * THEME_PAD);
-        lv_label_set_long_mode(*value, LV_LABEL_LONG_CLIP);
+        lv_label_set_long_mode(*value, LV_LABEL_LONG_SCROLL_CIRCULAR);
     }
     lv_obj_align(*value, LV_ALIGN_BOTTOM_LEFT, 0, tight ? 0 : ui_px(1));
     return card;
@@ -293,12 +293,13 @@ static lv_obj_t *create(void)
     lv_obj_t *file_card = theme_card(scr);
     lv_obj_set_size(file_card, right_w, ui_px(46));
     lv_obj_set_pos(file_card, right_x, y0);
+    if (compact()) lv_obj_set_style_pad_ver(file_card, ui_px(1), 0);
     lbl_file_cap = theme_label(file_card, "当前任务", THEME_FONT_S, THEME_COL_TEXT_DIM);
-    lv_obj_align(lbl_file_cap, LV_ALIGN_TOP_LEFT, 0, -ui_px(1));
-    lbl_file = theme_label(file_card, "", THEME_FONT_M, THEME_COL_TEXT);
+    lv_obj_align(lbl_file_cap, LV_ALIGN_TOP_LEFT, 0, compact() ? 0 : -ui_px(1));
+    lbl_file = theme_label(file_card, "", compact() ? THEME_FONT_S : THEME_FONT_M, THEME_COL_TEXT);
     lv_obj_set_width(lbl_file, right_w - ui_px(12));
     lv_label_set_long_mode(lbl_file, LV_LABEL_LONG_SCROLL_CIRCULAR);
-    lv_obj_align(lbl_file, LV_ALIGN_BOTTOM_LEFT, 0, ui_px(1));
+    lv_obj_align(lbl_file, LV_ALIGN_BOTTOM_LEFT, 0, compact() ? 0 : ui_px(1));
 
     int cell_w = (right_w - gap) / 2;
     int row2_y = y0 + ui_px(46) + gap;

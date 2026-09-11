@@ -48,4 +48,3 @@ const lv_image_dsc_t img_wifi_4 = {
   .data = img_wifi_4_map,
   .reserved = NULL,
 };
-

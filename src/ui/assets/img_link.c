@@ -46,4 +46,3 @@ const lv_image_dsc_t img_link = {
   .data = img_link_map,
   .reserved = NULL,
 };
-

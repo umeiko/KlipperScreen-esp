@@ -45,6 +45,29 @@ LV_IMAGE_DECLARE(img_klipper_logo_112); /* 大屏 2x 变体 */
 LV_IMAGE_DECLARE(img_bambu_logo_56);    /* Bambu 标志：机器模式 */
 LV_IMAGE_DECLARE(img_bambu_logo_112);   /* 大屏 2x 变体 */
 
+/* 小屏(160x128) 0.45x 变体，ui_icon() 小屏时自动映射 */
+LV_IMAGE_DECLARE(img_heater_sm);
+LV_IMAGE_DECLARE(img_nozzle_16_sm);
+LV_IMAGE_DECLARE(img_bed_16_sm);
+LV_IMAGE_DECLARE(img_nozzle_32_sm);
+LV_IMAGE_DECLARE(img_bed_32_sm);
+LV_IMAGE_DECLARE(img_move_sm);
+LV_IMAGE_DECLARE(img_extrude_sm);
+LV_IMAGE_DECLARE(img_files_sm);
+LV_IMAGE_DECLARE(img_printer_sm);
+LV_IMAGE_DECLARE(img_settings_sm);
+LV_IMAGE_DECLARE(img_wifi_4_sm);
+LV_IMAGE_DECLARE(img_wifi_3_sm);
+LV_IMAGE_DECLARE(img_wifi_2_sm);
+LV_IMAGE_DECLARE(img_wifi_1_sm);
+LV_IMAGE_DECLARE(img_link_off_sm);
+LV_IMAGE_DECLARE(img_link_sm);
+LV_IMAGE_DECLARE(img_alert_circle_sm);
+LV_IMAGE_DECLARE(img_globe_16_sm);
+LV_IMAGE_DECLARE(img_swap_16_sm);
+LV_IMAGE_DECLARE(img_klipper_logo_56_sm);
+LV_IMAGE_DECLARE(img_bambu_logo_56_sm);
+
 #ifdef __cplusplus
 }
 #endif

@@ -58,4 +58,3 @@ const lv_image_dsc_t img_move = {
   .data = img_move_map,
   .reserved = NULL,
 };
-

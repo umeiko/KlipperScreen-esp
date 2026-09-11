@@ -86,4 +86,3 @@ const lv_image_dsc_t img_settings_56 = {
   .data = img_settings_56_map,
   .reserved = NULL,
 };
-

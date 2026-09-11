@@ -261,11 +261,11 @@ static lv_obj_t *create(void)
     int reserve_bottom = ui_px(36) + ui_px(12) + gap;   /* 预设行高 + 底边距 + 间隔 */
     int card_h = (ui_scr_h() - y0 - reserve_bottom - gap) / 2;
 
-    row_ext_obj = make_row(scr, "Extruder", THEME_COL_EXTRUDER, &img_nozzle_32, card_h,
+    row_ext_obj = make_row(scr, "Extruder", THEME_COL_EXTRUDER, ui_icon(&img_nozzle_32, NULL), card_h,
                            &lbl_ext_cur, &lbl_ext_tgt);
     lv_obj_align(row_ext_obj, LV_ALIGN_TOP_MID, 0, y0);
 
-    row_bed_obj = make_row(scr, "Heatbed", THEME_COL_BED, &img_bed_32, card_h,
+    row_bed_obj = make_row(scr, "Heatbed", THEME_COL_BED, ui_icon(&img_bed_32, NULL), card_h,
                            &lbl_bed_cur, &lbl_bed_tgt);
     lv_obj_align(row_bed_obj, LV_ALIGN_TOP_MID, 0, y0 + card_h + gap);
 
