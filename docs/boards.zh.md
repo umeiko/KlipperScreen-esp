@@ -113,6 +113,10 @@ CYD 固件默认已启用旋转编码器支持（PCNT 硬件正交解码）。�
 
 ## EC11 旋钮 ESP32 最小系统
 
+![1.8 寸 ST7735S 模组](screenshots/boards/ec11_knob_esp32_st7735s.png)
+
+*常见的 1.8" 128×160 ST7735S SPI 模组。排针从上到下：GND / VCC / SCL / SDA / RES / DC / CS / BLK——注意这里的 `SCL`/`SDA` 是 SPI 的 SCLK 和 MOSI，不是 I2C。*
+
 与 CYD 2432S028R **同款主控（ESP32）** 的纯旋钮最小系统：1.8" 128×160 ST7735S SPI 屏 + EC11 编码器，无触摸。所有 IO 分配都与 CYD 的板载 LCD 排针及其外挂 EC11 接法一一对应，CYD 底板（或任意 ESP32 开发板按同样接线）可直接使用。逻辑分辨率 **160×128 横屏**。
 
 - 主控：ESP32（双核 240MHz，520KB SRAM），4MB QIO Flash

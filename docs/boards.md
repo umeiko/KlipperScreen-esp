@@ -113,6 +113,10 @@ Power the DevKit from USB-C. Many SPI display boards label clock and data as `SC
 
 ## EC11 Knob ESP32 Minimal
 
+![1.8" ST7735S module](screenshots/boards/ec11_knob_esp32_st7735s.png)
+
+*Typical 1.8" 128×160 ST7735S SPI module. Header pins top to bottom: GND / VCC / SCL / SDA / RES / DC / CS / BLK — note that `SCL`/`SDA` here are SPI SCLK and MOSI, not I2C.*
+
 A minimal rotary-only build on the **same ESP32 MCU as the CYD 2432S028R**: a 1.8" 128×160 ST7735S SPI display plus an EC11 encoder, no touch. Every IO assignment mirrors the CYD's on-board LCD header and its optional EC11 hookup, so a CYD base board (or the same wiring on any ESP32 dev board) works out of the box. Logical resolution **160×128 landscape**.
 
 - MCU: ESP32 (dual-core 240MHz, 520KB SRAM), 4MB QIO flash
