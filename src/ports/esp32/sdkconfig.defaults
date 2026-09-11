@@ -2,8 +2,9 @@
 # 板型相关项（芯片/Flash/PSRAM/板型选择）在 sdkconfig.defaults.<board>，
 # 由 tools/build-esp32.sh 按板型拼入 SDKCONFIG_DEFAULTS。
 
-# LVGL：16bit 色深，启用大字号
+# LVGL：16bit 色深，启用大字号（12 供 160x128 小屏档）
 CONFIG_LV_COLOR_DEPTH_16=y
+CONFIG_LV_FONT_MONTSERRAT_12=y
 CONFIG_LV_FONT_MONTSERRAT_16=y
 CONFIG_LV_FONT_MONTSERRAT_24=y
 CONFIG_LV_FONT_MONTSERRAT_28=y

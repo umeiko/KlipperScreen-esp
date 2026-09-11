@@ -121,7 +121,7 @@ static lv_obj_t *create(void)
 }
 
 panel_def_t panel_file_detail_def = {
-    .name = "file_detail", .title = "文件详情",
+    .name = "file_detail", .title = "文件详情", .title_s = "详情",
     .create = create,
     .on_show = update_ui,
     .on_tick = NULL,

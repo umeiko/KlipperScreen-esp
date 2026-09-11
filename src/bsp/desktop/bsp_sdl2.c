@@ -46,7 +46,7 @@ void bsp_init(void)
     const char *res = getenv("KLIPPER_RES");
     if (res) {
         int w = 0, h = 0;
-        if (sscanf(res, "%dx%d", &w, &h) == 2 && w >= 240 && h >= 240) {
+        if (sscanf(res, "%dx%d", &w, &h) == 2 && w >= 128 && h >= 96) {
             scr_w = w; scr_h = h;
         }
     }
@@ -54,7 +54,8 @@ void bsp_init(void)
     lv_init();
 
     lv_display_t *disp = lv_sdl_window_create(scr_w, scr_h);
-    lv_sdl_window_set_zoom(disp, scr_w <= 320 ? 2 : 1);
+    /* 小屏放大看：160x128 → 3x，320x240 → 2x，800x480 → 1x */
+    lv_sdl_window_set_zoom(disp, scr_w <= 200 ? 3 : (scr_w <= 320 ? 2 : 1));
 #ifdef KLIPPER_DESKTOP_SIMULATOR
     lv_sdl_window_set_title(disp, "Klipper Remote Simulator");
 #else

@@ -18,6 +18,9 @@ menu "Board selection"
 
         config BOARD_EC11_KNOB_MINIMAL
             bool "EC11 Knob Minimal System / EC11 旋钮最小系统 (ESP32-S3 + ST7789)"
+
+        config BOARD_EC11_KNOB_ESP32
+            bool "EC11 Knob ESP32 Minimal (ESP32 + 1.8\" 128x160 ST7735S, 引脚对齐 CYD)"
     endchoice
 
 endmenu

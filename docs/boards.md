@@ -5,6 +5,7 @@
 | [CYD 2432S028R](#cyd-2432s028r) | `cyd_2432s028r` | 2.8" 240×320 ILI9341 SPI | XPT2046 resistive | ESP32 / 4MB | ✅ Stable |
 | [E32R35T](#e32r35t) | `e32r35t` | 3.5" 320×480 ST7796U SPI | XPT2046 resistive | ESP32-32E / 4MB | ✅ Stable |
 | [EC11 Knob Minimal System](#ec11-knob-minimal-system) | `ec11_knob_minimal` | 240×320 ST7789 SPI | None, rotary only | ESP32-S3 N16R8 / 16MB | ✅ Official reference, contributor tested |
+| [EC11 Knob ESP32 Minimal](#ec11-knob-esp32-minimal) | `ec11_knob_esp32` | 1.8" 128×160 ST7735S SPI | None, rotary only | ESP32 / 4MB | 🆕 New, CYD-compatible pinout |
 | [JC8048W550](#jc8048w550) | `jc8048w550` | 5" 800×480 ST7262 RGB parallel | GT911 capacitive | ESP32-S3 / 16MB | ✅ Stable |
 
 Flash packages are named `klipper-remote-esp32-<board>.zip` (asset names carry no version, so the links below always point to the latest stable release). Please report problems in [Issues](https://github.com/umeiko/KlipperScreen-esp/issues).
@@ -14,6 +15,7 @@ Flash packages are named `klipper-remote-esp32-<board>.zip` (asset names carry n
 | CYD 2432S028R | [klipper-remote-esp32-cyd_2432s028r.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/klipper-remote-esp32-cyd_2432s028r.zip) |
 | E32R35T | [klipper-remote-esp32-e32r35t.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/klipper-remote-esp32-e32r35t.zip) |
 | EC11 Knob Minimal System | [klipper-remote-esp32-ec11_knob_minimal.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/klipper-remote-esp32-ec11_knob_minimal.zip) |
+| EC11 Knob ESP32 Minimal | [klipper-remote-esp32-ec11_knob_esp32.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/klipper-remote-esp32-ec11_knob_esp32.zip) |
 | JC8048W550 | [klipper-remote-esp32-jc8048w550.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/klipper-remote-esp32-jc8048w550.zip) |
 | Windows desktop simulator | [klipper-remote-desktop-win-x86_64.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/klipper-remote-desktop-win-x86_64.zip) |
 
@@ -108,6 +110,33 @@ Download and edit the [Fritzing source (.fzz)](hardware/ec11_knob_minimal.fzz), 
 Power the DevKit from USB-C. Many SPI display boards label clock and data as `SCL` and `SDA`; here they still mean **SPI SCLK and MOSI**, not I2C. Rotation and press provide all navigation, and either action wakes the display after its timeout. This target has no touch layer and never enters touch calibration.
 
 **Screen-off / wake buttons.** Wire a momentary button between GPIO39 and GND (the firmware enables the internal pull-up; the press pulls the pin low, release returns high). Press once to blank the screen, press again to wake. The DevKit's on-board BOOT key (GPIO0) works the same way — both buttons are active in parallel, and either one toggles the screen.
+
+## EC11 Knob ESP32 Minimal
+
+A minimal rotary-only build on the **same ESP32 MCU as the CYD 2432S028R**: a 1.8" 128×160 ST7735S SPI display plus an EC11 encoder, no touch. Every IO assignment mirrors the CYD's on-board LCD header and its optional EC11 hookup, so a CYD base board (or the same wiring on any ESP32 dev board) works out of the box. Logical resolution **160×128 landscape**.
+
+- MCU: ESP32 (dual-core 240MHz, 520KB SRAM), 4MB QIO flash
+- Display: ST7735S via the ST7789-compatible esp_lcd driver with inversion enabled (INVON is mandatory on ST7735S); SPI2 @ 40MHz, DMA double buffering
+- Input: EC11 only (PCNT hardware quadrature); no touch layer, never enters touch calibration
+- Backlight: GPIO21, LEDC PWM 8bit/5kHz, active high
+- Screen off / wake: on-board BOOT key (GPIO0)
+
+| Module pin | ESP32 pin | Purpose |
+|---|---|---|
+| ST7735S VCC | 3V3 | Display power |
+| ST7735S GND | GND | Ground |
+| ST7735S SCL / SCK | GPIO14 | SPI clock |
+| ST7735S SDA / MOSI | GPIO13 | SPI data out |
+| ST7735S CS | GPIO15 | Chip select |
+| ST7735S DC / RS | GPIO2 | Data/command select |
+| ST7735S RST / RES | GPIO4 | Display reset |
+| ST7735S BL / LED / BLK | GPIO21 | Backlight, active high |
+| EC11 CLK / A | GPIO35 | **Needs an external ~10kΩ pull-up to 3V3** — GPIO35 is input-only with no internal pull-up |
+| EC11 DT / B | GPIO22 | Internal pull-up |
+| EC11 SW / KEY | GPIO27 | Internal pull-up, active-low |
+| EC11 C / GND | GND | Common contact of A/B/SW to GND |
+
+ST7735S modules vary between sellers: if the picture is mirrored or shows a coloured offset band at an edge, adjust `LCD_MIRROR_X/Y` and `LCD_GAP_X/Y` at the top of `src/bsp/esp32/bsp_ec11_knob_esp32.c` and rebuild. Rotation and press provide all navigation, and either action wakes the display after its timeout.
 
 ## JC8048W550
 

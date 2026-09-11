@@ -118,7 +118,7 @@ static lv_obj_t *create(void)
 
         logos[i] = theme_img(card, ui_icon(&img_klipper_logo_56, &img_klipper_logo_112),
                              THEME_COL_ACCENT);
-        lv_image_set_scale(logos[i], 146);   /* 56→约 32px；大屏 112→约 64px */
+        lv_image_set_scale(logos[i], ui_scale() < 1.0f ? 66 : 146);   /* 56→约 32px；大屏 112→约 64px；小屏再乘 0.45 */
         /* 缩放以图像中心为轴，按原始边界对齐会留下 12/24px 空白。 */
         lv_obj_align(logos[i], LV_ALIGN_LEFT_MID, -ui_px(12), 0);
 
@@ -137,7 +137,7 @@ static lv_obj_t *create(void)
 }
 
 panel_def_t panel_printers_def = {
-    .name = "printers", .title = "切换打印机",
+    .name = "printers", .title = "切换打印机", .title_s = "切换",
     .create = create,
     .on_show = refresh,
     .on_tick = NULL,

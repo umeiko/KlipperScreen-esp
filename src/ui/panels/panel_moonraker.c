@@ -645,7 +645,7 @@ static lv_obj_t *create(void)
 }
 
 panel_def_t panel_moonraker_def = {
-    .name = "moonraker", .title = "打印机连接设置",
+    .name = "moonraker", .title = "打印机连接设置", .title_s = "连接",
     .create = create,
     .on_show = on_show,
     .on_tick = tick,

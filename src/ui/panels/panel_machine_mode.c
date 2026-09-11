@@ -95,7 +95,7 @@ static lv_obj_t *create(void)
 }
 
 panel_def_t panel_machine_mode_def = {
-    .name = "machine_mode", .title = "机器模式",
+    .name = "machine_mode", .title = "机器模式", .title_s = "模式",
     .create = create,
     .on_show = refresh,
     .on_tick = NULL,

@@ -291,7 +291,7 @@ static lv_obj_t *create(void)
 }
 
 panel_def_t panel_wifi_def = {
-    .name = "wifi", .title = "无线网络",
+    .name = "wifi", .title = "无线网络", .title_s = "网络",
     .create = create,
     .on_show = start_scan,
     .on_tick = tick,

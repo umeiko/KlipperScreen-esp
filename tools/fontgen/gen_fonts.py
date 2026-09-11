@@ -31,7 +31,7 @@ DEFAULT_FONT = r"C:\Windows\Fonts\simhei.ttf"
 # 西文兜底字体：simhei 只覆盖拼音用拉丁字母（é/è/à/ê/ù…），缺 ç/ô/É 等，
 # Latin-1 补充区（0xA0-0xFF）整体由该字体补齐，避免法语/意语出现方框。
 DEFAULT_LATIN_FONT = r"C:\Windows\Fonts\arial.ttf"
-SIZES = (14, 16, 28, 32)   # 14/16: 320x240 基准；28/32: 800x480 双倍档
+SIZES = (10, 12, 14, 16, 28, 32)   # 10/12: 160x128 小屏档；14/16: 320x240 基准；28/32: 800x480 双倍档
 
 
 def iter_literals(path: Path):
@@ -154,6 +154,8 @@ def main() -> int:
     ap.add_argument("--font", default=DEFAULT_FONT, help="ttf/otf 主字体源路径（CJK+ASCII）")
     ap.add_argument("--font-latin", default=DEFAULT_LATIN_FONT,
                     help="西文兜底字体源路径（Latin-1 补充区 0xA0-0xFF）")
+    ap.add_argument("--sizes", type=int, nargs="+", default=None,
+                    help="只生成指定字号（默认 SIZES 全量）；增量补新档用，避免重写已有字体文件")
     args = ap.parse_args()
 
     if not Path(args.font).is_file():
@@ -175,8 +177,9 @@ def main() -> int:
     print(f"[scan] GB2312 全表 {len(gb)} + 源码扫描，合计 {len(symbols)} 个非 ASCII 字符"
           f" -> {CHARSET_OUT.relative_to(ROOT)}")
 
-    for size in SIZES:
-        # 主版本全尺寸不压缩（见 gen_font 注释）；14/16 另出 _cmp 压缩变体给 CYD
+    sizes = args.sizes if args.sizes else SIZES
+    for size in sizes:
+        # 主版本全尺寸不压缩（见 gen_font 注释）；16 及以下另出 _cmp 压缩变体给小 flash 板
         gen_font(args.font, args.font_latin, size, symbols, compress=False)
         if size <= 16:
             gen_font(args.font, args.font_latin, size, symbols, compress=True, suffix="_cmp")
@@ -185,8 +188,9 @@ def main() -> int:
     # 全表 5.4MB 字形在 flash，渲染时走 XIP cache 读；表越大 cache 局部性越差，
     # 文本渲染的 flash 突发读取在 MSPI 上与 EDMA 扫描争抢（滑动抽动嫌疑之一）。
     # 代价：文件名/SSID 里表外汉字会显示方框。
-    for size in (28, 32):
-        gen_font(args.font, args.font_latin, size, lit, compress=False, suffix="_min")
+    if not args.sizes:
+        for size in (28, 32):
+            gen_font(args.font, args.font_latin, size, lit, compress=False, suffix="_min")
     print("[done] 字体生成完成，重新编译固件/桌面端即可生效")
     return 0
 

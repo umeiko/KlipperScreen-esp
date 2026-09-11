@@ -23,6 +23,7 @@ static lv_obj_t *lbl_elapsed;
 static lv_obj_t *lbl_remaining;
 static lv_obj_t *lbl_ext;
 static lv_obj_t *lbl_bed;
+static int compact(void);   /* 定义在 make_info_card 处 */
 static lv_obj_t *btn_pause;
 static lv_obj_t *lbl_pause_icon;
 static lv_obj_t *lbl_pause_text;
@@ -122,13 +123,15 @@ static void update_ui(void)
     else snprintf(buf, sizeof(buf), "--:--:--");
     lv_label_set_text(lbl_remaining, buf);
     char current[12], target_temp[12], temp_text[32];
+    /* 小屏紧凑格：去掉空格与度号，防止折行盖住标题行 */
+    const char *fmt = compact() ? "%s/%s" : "%s / %s" "\xC2\xB0";
     theme_fmt_float(current, sizeof(current), printer_temp_ext(), 1);
     theme_fmt_float(target_temp, sizeof(target_temp), printer_target_ext(), 0);
-    snprintf(temp_text, sizeof(temp_text), "%s / %s" "\xC2\xB0", current, target_temp);
+    snprintf(temp_text, sizeof(temp_text), fmt, current, target_temp);
     lv_label_set_text(lbl_ext, temp_text);
     theme_fmt_float(current, sizeof(current), printer_temp_bed(), 1);
     theme_fmt_float(target_temp, sizeof(target_temp), printer_target_bed(), 0);
-    snprintf(temp_text, sizeof(temp_text), "%s / %s" "\xC2\xB0", current, target_temp);
+    snprintf(temp_text, sizeof(temp_text), fmt, current, target_temp);
     lv_label_set_text(lbl_bed, temp_text);
 
     int32_t target = printer_progress_permille();
@@ -227,16 +230,24 @@ static void on_estop(lv_event_t *e)
     confirm_open("确认急停？\n打印机将立即停止所有运动和加热", "急停", do_estop, NULL);
 }
 
+static int compact(void) { return ui_scale() < 1.0f; }   /* 小屏：行高放不下两行带边距文本 */
+
 static lv_obj_t *make_info_card(lv_obj_t *parent, int x, int y, int width, int height,
                                 const char *caption, lv_obj_t **value, uint32_t color)
 {
     lv_obj_t *card = theme_card(parent);
     lv_obj_set_size(card, width, height);
     lv_obj_set_pos(card, x, y);
+    int tight = height < ui_px(40);
+    if (tight) lv_obj_set_style_pad_ver(card, ui_px(1), 0);
     lv_obj_t *cap = theme_label(card, caption, THEME_FONT_S, THEME_COL_TEXT_DIM);
-    lv_obj_align(cap, LV_ALIGN_TOP_LEFT, 0, -ui_px(1));
+    lv_obj_align(cap, LV_ALIGN_TOP_LEFT, 0, tight ? 0 : -ui_px(1));
     *value = theme_label(card, "--", THEME_FONT_S, color);
-    lv_obj_align(*value, LV_ALIGN_BOTTOM_LEFT, 0, ui_px(1));
+    if (tight) {   /* 防折行盖住标题行：超出裁断 */
+        lv_obj_set_width(*value, width - 2 * THEME_PAD);
+        lv_label_set_long_mode(*value, LV_LABEL_LONG_CLIP);
+    }
+    lv_obj_align(*value, LV_ALIGN_BOTTOM_LEFT, 0, tight ? 0 : ui_px(1));
     return card;
 }
 
@@ -248,7 +259,8 @@ static lv_obj_t *create(void)
     int gap = ui_gap(6);
     int x0 = ui_px(8);
     int y0 = THEME_TITLEBAR_H + ui_px(6);
-    int body_h = ui_scr_h() - y0 - ui_px(52);
+    /* 小屏底部按钮区压缩预留（按钮本身只有 ui_px(28) 高），把高度还给信息卡 */
+    int body_h = ui_scr_h() - y0 - ui_px(compact() ? 40 : 52);
     int progress_w = ui_px(102);
     int right_x = x0 + progress_w + gap;
     int right_w = ui_scr_w() - right_x - ui_px(8);
@@ -337,6 +349,6 @@ static lv_obj_t *create(void)
 }
 
 panel_def_t panel_job_status_def = {
-    .name = "job_status", .title = "打印状态",
+    .name = "job_status", .title = "打印状态", .title_s = "打印",
     .create = create, .on_show = update_ui, .on_tick = update_ui,
 };

@@ -5,6 +5,7 @@
 | [CYD 2432S028R](#cyd-2432s028r) | `cyd_2432s028r` | 2.8" 240×320 ILI9341 SPI | XPT2046 电阻 | ESP32 / 4MB | ✅ 稳定 |
 | [E32R35T](#e32r35t) | `e32r35t` | 3.5" 320×480 ST7796U SPI | XPT2046 电阻 | ESP32-32E / 4MB | ✅ 稳定 |
 | [EC11 旋钮最小系统](#ec11) | `ec11_knob_minimal` | 240×320 ST7789 SPI | 无，纯旋钮 | ESP32-S3 N16R8 / 16MB | ✅ 官方参考，贡献者实机验证 |
+| [EC11 旋钮 ESP32 最小系统](#ec11-旋钮-esp32-最小系统) | `ec11_knob_esp32` | 1.8" 128×160 ST7735S SPI | 无，纯旋钮 | ESP32 / 4MB | 🆕 新机型，引脚兼容 CYD |
 | [JC8048W550](#jc8048w550) | `jc8048w550` | 5" 800×480 ST7262 RGB 并口 | GT911 电容 | ESP32-S3 / 16MB | ✅ 稳定 |
 
 刷机包命名：`klipper-remote-esp32-<board>.zip`（资产名不带版本号，下面的直链永远指向最新正式版）。遇到问题请到 [Issues](https://github.com/umeiko/KlipperScreen-esp/issues) 反馈。
@@ -14,6 +15,7 @@
 | CYD 2432S028R | [klipper-remote-esp32-cyd_2432s028r.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/klipper-remote-esp32-cyd_2432s028r.zip) |
 | E32R35T | [klipper-remote-esp32-e32r35t.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/klipper-remote-esp32-e32r35t.zip) |
 | EC11 旋钮最小系统 | [klipper-remote-esp32-ec11_knob_minimal.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/klipper-remote-esp32-ec11_knob_minimal.zip) |
+| EC11 旋钮 ESP32 最小系统 | [klipper-remote-esp32-ec11_knob_esp32.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/klipper-remote-esp32-ec11_knob_esp32.zip) |
 | JC8048W550 | [klipper-remote-esp32-jc8048w550.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/klipper-remote-esp32-jc8048w550.zip) |
 | Windows 桌面模拟器 | [klipper-remote-desktop-win-x86_64.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/klipper-remote-desktop-win-x86_64.zip) |
 
@@ -108,6 +110,33 @@ CYD 固件默认已启用旋转编码器支持（PCNT 硬件正交解码）。�
 开发板本身从 USB-C 供电。很多 SPI 屏把时钟和数据写成 `SCL`、`SDA`，这里仍然是 **SPI SCLK、MOSI**，不要接到 I2C 引脚。EC11 的旋转与按下都能导航，屏幕自动熄灭后再次操作旋钮即可唤醒；本机型没有触摸层，也不会进入触摸校准。
 
 **息屏/唤醒按钮。** 在 GPIO39 与 GND 之间接一个轻触按键即可（固件开启内部上拉、下拉关闭：松开为高电平 1，按下接地为低电平 0，低电平有效）。按一下息屏，再按一下唤醒。开发板板载的 BOOT 键（GPIO0）功能相同——两个按钮同时生效，任意一个都能切换息屏/唤醒。
+
+## EC11 旋钮 ESP32 最小系统
+
+与 CYD 2432S028R **同款主控（ESP32）** 的纯旋钮最小系统：1.8" 128×160 ST7735S SPI 屏 + EC11 编码器，无触摸。所有 IO 分配都与 CYD 的板载 LCD 排针及其外挂 EC11 接法一一对应，CYD 底板（或任意 ESP32 开发板按同样接线）可直接使用。逻辑分辨率 **160×128 横屏**。
+
+- 主控：ESP32（双核 240MHz，520KB SRAM），4MB QIO Flash
+- 显示：ST7735S，走 ST7789 兼容的 esp_lcd 驱动并开启反色（ST7735S 必须 INVON）；SPI2 @ 40MHz，DMA 双缓冲
+- 输入：仅 EC11（PCNT 硬件正交解码）；无触摸层，不会进入触摸校准
+- 背光：GPIO21，LEDC PWM 8bit/5kHz，高电平点亮
+- 息屏/唤醒：板载 BOOT 键（GPIO0）
+
+| 模块引脚 | ESP32 引脚 | 用途 |
+|---|---|---|
+| ST7735S VCC | 3V3 | 屏幕供电 |
+| ST7735S GND | GND | 地 |
+| ST7735S SCL / SCK | GPIO14 | SPI 时钟 |
+| ST7735S SDA / MOSI | GPIO13 | SPI 数据输出 |
+| ST7735S CS | GPIO15 | 片选 |
+| ST7735S DC / RS | GPIO2 | 数据/命令选择 |
+| ST7735S RST / RES | GPIO4 | 屏幕复位 |
+| ST7735S BL / LED / BLK | GPIO21 | 背光，高电平点亮 |
+| EC11 CLK / A | GPIO35 | **需外接 ~10kΩ 上拉到 3V3**——GPIO35 只能输入且无内部上拉 |
+| EC11 DT / B | GPIO22 | 内部上拉 |
+| EC11 SW / KEY | GPIO27 | 内部上拉，低电平有效 |
+| EC11 C / GND | GND | A/B/SW 公共端接地 |
+
+不同卖家的 ST7735S 模组有差异：画面镜像或边缘出现彩边/偏移时，改 `src/bsp/esp32/bsp_ec11_knob_esp32.c` 顶部的 `LCD_MIRROR_X/Y` 与 `LCD_GAP_X/Y` 重新编译即可。EC11 的旋转与按下都能导航，屏幕自动熄灭后再次操作旋钮即可唤醒。
 
 ## JC8048W550
 

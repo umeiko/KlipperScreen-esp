@@ -46,6 +46,70 @@ static char *conf_load(const char *file)
     return buf;
 }
 
+/* moonraker.conf 全量 RAM 缓存：printer_* 温度/能力 getter 每秒被 UI 节拍多次调用，
+ * 每次都走 conf_load（4KB malloc + 同步 fopen/fread/fclose）会把 LVGL 任务阻塞在
+ * 文件 IO 上——温度页曾因此整页卡顿（现网实测）。文件 ≤4KB，缓存一份在内存，
+ * 所有写路径（conf_update_key / settings_save_moonraker_slot）负责失效。
+ *
+ * 并发：桌面 Moonraker worker、ESP32 esp_timer 回调与 LVGL 线程会并发读写缓存，
+ * 因此对 mr_cache_buf 的一切访问（加载/解析/失效）都必须在 mr_cache_lock 临界区内，
+ * 缓存内容指针不得带出锁外使用。持锁期间不得调用会失效缓存的写函数（互斥锁不可重入）。 */
+#if defined(_WIN32)
+#include <windows.h>
+static CRITICAL_SECTION mr_cs;
+static INIT_ONCE mr_cs_once = INIT_ONCE_STATIC_INIT;
+static BOOL CALLBACK mr_cs_init(PINIT_ONCE once, PVOID param, PVOID *ctx)
+{
+    (void)once; (void)param; (void)ctx;
+    InitializeCriticalSection(&mr_cs);
+    return TRUE;
+}
+static void mr_cache_lock(void)
+{
+    InitOnceExecuteOnce(&mr_cs_once, mr_cs_init, NULL, NULL);
+    EnterCriticalSection(&mr_cs);
+}
+static void mr_cache_unlock(void) { LeaveCriticalSection(&mr_cs); }
+#else
+#include <pthread.h>
+/* ESP-IDF 与 POSIX 桌面都支持 PTHREAD_MUTEX_INITIALIZER 静态初始化 */
+static pthread_mutex_t mr_mutex = PTHREAD_MUTEX_INITIALIZER;
+static void mr_cache_lock(void)   { pthread_mutex_lock(&mr_mutex); }
+static void mr_cache_unlock(void) { pthread_mutex_unlock(&mr_mutex); }
+#endif
+
+static char mr_cache_buf[CONF_BUF_SIZE];
+static bool mr_cache_valid;
+
+/* 失效缓存（自锁，可在任意线程调用；调用方不得持有 mr_cache_lock） */
+static void mr_cache_invalidate(void)
+{
+    mr_cache_lock();
+    mr_cache_valid = false;
+    mr_cache_unlock();
+}
+
+/* 返回缓存的 moonraker.conf 内容（永不 NULL；文件缺失为空串）。
+ * 调用方必须已持有 mr_cache_lock，且只能在持锁期间使用返回内容。 */
+static const char *conf_moonraker_locked(void)
+{
+    if (!mr_cache_valid) {
+        if (bsp_conf_read("moonraker.conf", mr_cache_buf, CONF_BUF_SIZE) < 0)
+            mr_cache_buf[0] = 0;
+        mr_cache_valid = true;
+    }
+    return mr_cache_buf;
+}
+
+/* 单 key 读取（内部自锁，高频 getter 走这里：纯内存访问，无文件 I/O、无 malloc） */
+static bool mr_conf_get(const char *key, char *out, size_t out_len)
+{
+    mr_cache_lock();
+    bool ok = kv_get(conf_moonraker_locked(), key, out, out_len);
+    mr_cache_unlock();
+    return ok;
+}
+
 bool settings_load_wifi(wifi_conf_t *out)
 {
     memset(out, 0, sizeof(*out));
@@ -74,8 +138,8 @@ bool settings_load_moonraker_slot(int slot, moonraker_conf_t *out)
     memset(out, 0, sizeof(*out));
     out->port = 7125;
     if (slot < 0 || slot >= PRINTER_SLOTS) return false;
-    char *buf = conf_load("moonraker.conf");
-    if (!buf) return false;
+    mr_cache_lock();
+    const char *buf = conf_moonraker_locked();
 
     snprintf(key, sizeof(key), "name_%d", slot);
     kv_get(buf, key, out->name, sizeof(out->name));
@@ -84,7 +148,7 @@ bool settings_load_moonraker_slot(int slot, moonraker_conf_t *out)
     bool has = kv_get(buf, key, out->host, sizeof(out->host));
     if (!has && slot == 0)   /* 旧格式迁移：裸 host= 视为槽 0 */
         has = kv_get(buf, "host", out->host, sizeof(out->host));
-    if (!has || !out->host[0]) { free(buf); return false; }
+    if (!has || !out->host[0]) { mr_cache_unlock(); return false; }
 
     snprintf(key, sizeof(key), "port_%d", slot);
     char port[8];
@@ -97,7 +161,7 @@ bool settings_load_moonraker_slot(int slot, moonraker_conf_t *out)
     snprintf(key, sizeof(key), "api_key_%d", slot);
     if (!kv_get(buf, key, out->api_key, sizeof(out->api_key)) && slot == 0)
         kv_get(buf, "api_key", out->api_key, sizeof(out->api_key));
-    free(buf);
+    mr_cache_unlock();
     out->valid = true;
     return true;
 }
@@ -105,11 +169,7 @@ bool settings_load_moonraker_slot(int slot, moonraker_conf_t *out)
 int settings_load_active_printer(void)
 {
     char val[8];
-    char *buf = conf_load("moonraker.conf");
-    if (!buf) return 0;
-    bool has = kv_get(buf, "active", val, sizeof(val));
-    free(buf);
-    if (!has) return 0;
+    if (!mr_conf_get("active", val, sizeof(val))) return 0;
     int s = atoi(val);
     return (s >= 0 && s < PRINTER_SLOTS) ? s : 0;
 }
@@ -140,29 +200,33 @@ bool settings_save_printer_name(const char *name)
     return settings_save_printer_name_slot(settings_load_active_printer(), name);
 }
 
+/* 旧全局 machine_mode 兼容：每槽每次开机最多查一次 klipperscreen.conf。
+ * 查完立即把明确值补写回 moonraker.conf，此后所有读取都命中 RAM 缓存、
+ * 零文件 I/O；mr_legacy_checked 同时保证补写失败也不会反复写 flash。 */
+static bool mr_legacy_checked[PRINTER_SLOTS];
+
 machine_mode_t settings_load_machine_mode_slot(int slot)
 {
     if (slot < 0 || slot >= PRINTER_SLOTS) return MACHINE_MODE_KLIPPER;
 
     char key[24], val[12];
     snprintf(key, sizeof(key), "machine_mode_%d", slot);
-    char *buf = conf_load("moonraker.conf");
-    bool got = buf && kv_get(buf, key, val, sizeof(val));
-    free(buf);
-    if (got)
+    if (mr_conf_get(key, val, sizeof(val)))
         return strcmp(val, "bambu") == 0 ? MACHINE_MODE_BAMBU : MACHINE_MODE_KLIPPER;
 
-    /* 兼容早期 WIP 的全局 machine_mode：只有非默认 Bambu 值需要迁移，
-       并把它归属到迁移时的活动槽位，避免之后随活动槽漂移。 */
-    if (slot == settings_load_active_printer()) {
-        buf = conf_load("klipperscreen.conf");
-        got = buf && kv_get(buf, "machine_mode", val, sizeof(val));
+    /* 只有非默认 Bambu 值需要迁移，并把它归属到迁移时的活动槽位，
+       避免之后随活动槽漂移。标记先置位：并发重复进入也是幂等的同一结果。 */
+    if (slot == settings_load_active_printer() && !mr_legacy_checked[slot]) {
+        mr_legacy_checked[slot] = true;
+        char *buf = conf_load("klipperscreen.conf");
+        bool got = buf && kv_get(buf, "machine_mode", val, sizeof(val));
         free(buf);
         if (got && strcmp(val, "bambu") == 0) {
             conf_update_key("moonraker.conf", key, "bambu");
             conf_update_key("klipperscreen.conf", "machine_mode", "klipper");
             return MACHINE_MODE_BAMBU;
         }
+        conf_update_key("moonraker.conf", key, "klipper");
     }
     return MACHINE_MODE_KLIPPER;
 }
@@ -192,9 +256,7 @@ bambu_link_t settings_load_bambu_link_slot(int slot)
     if (slot < 0 || slot >= PRINTER_SLOTS) return BAMBU_LINK_CLOUD_MONITOR;
     char key[24], val[12];
     snprintf(key, sizeof(key), "bambu_link_%d", slot);
-    char *buf = conf_load("moonraker.conf");
-    bool got = buf && kv_get(buf, key, val, sizeof(val));
-    free(buf);
+    bool got = mr_conf_get(key, val, sizeof(val));
     return got && strcmp(val, "lan") == 0 ? BAMBU_LINK_LAN : BAMBU_LINK_CLOUD_MONITOR;
 }
 
@@ -223,15 +285,15 @@ bool settings_load_bambu_device_slot(int slot, bambu_device_conf_t *out)
     char key[32];
     memset(out, 0, sizeof(*out));
     if (slot < 0 || slot >= PRINTER_SLOTS) return false;
-    char *buf = conf_load("moonraker.conf");
-    if (!buf) return false;
+    mr_cache_lock();
+    const char *buf = conf_moonraker_locked();
     snprintf(key, sizeof(key), "bambu_serial_%d", slot);
     bool got = kv_get(buf, key, out->serial, sizeof(out->serial));
     snprintf(key, sizeof(key), "bambu_name_%d", slot);
     kv_get(buf, key, out->name, sizeof(out->name));
     snprintf(key, sizeof(key), "bambu_model_%d", slot);
     kv_get(buf, key, out->model, sizeof(out->model));
-    free(buf);
+    mr_cache_unlock();
     out->valid = got && out->serial[0];
     return out->valid;
 }
@@ -302,6 +364,7 @@ bool settings_save_moonraker_slot(int slot, const moonraker_conf_t *in)
     }
     bool ok = bsp_conf_write("moonraker.conf", buf) == 0;
     free(buf);
+    mr_cache_invalidate();
     return ok;
 }
 
@@ -339,6 +402,7 @@ static bool conf_update_key(const char *file, const char *key, const char *val)
     bool ok = bsp_conf_write(file, out) == 0;
     free(buf);
     free(out);
+    if (strcmp(file, "moonraker.conf") == 0) mr_cache_invalidate();
     return ok;
 }
 

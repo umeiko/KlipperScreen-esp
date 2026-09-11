@@ -39,6 +39,14 @@ jobs:
             chip: esp32s3
             flash_size: 16MB
             bl_offset: 0x0
+          - board: ec11_knob_esp32        # EC11 Knob ESP32 Minimal: ESP32 + 128x160 ST7735S + EC11
+            target: esp32
+            bdir: build-ec11-knob-esp32
+            sdkcfg: sdkconfig.ec11_knob_esp32
+            defs: sdkconfig.defaults;sdkconfig.defaults.ec11_knob_esp32
+            chip: esp32
+            flash_size: 4MB
+            bl_offset: 0x1000
           - board: jc8048w550         # JC8048W550 5" ESP32-S3
             target: esp32s3
             bdir: build-jc8048w550
@@ -93,6 +101,8 @@ jobs:
           - board: e32r35t
             suffix: ""
           - board: ec11_knob_minimal
+            suffix: ""
+          - board: ec11_knob_esp32
             suffix: ""
           - board: jc8048w550
             suffix: ""

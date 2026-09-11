@@ -72,8 +72,10 @@ static void show(panel_def_t *p, int push)
     ensure_created(p);          /* 懒加载，之后复用 */
     if (push) ui_screen_push(p->scr);
     else      ui_screen_pop(p->scr);
-    titlebar_set(p->title, nav_top > 0);
-    titlebar_show_temps(!p->hide_temps);
+    const char *title = (ui_scale() < 1.0f && p->title_s) ? p->title_s : p->title;
+    titlebar_set(title, nav_top > 0);
+    /* 小屏（scale<1）标题位窄，子面板的温度让位给标题，只在主面板（时钟位）显示 */
+    titlebar_show_temps(!p->hide_temps && (ui_scale() >= 1.0f || nav_top == 0));
     ui_nav_activate(p->nav_group);
     ui_nav_set_global_obj(titlebar_back_button(), nav_top > 0);
     if (p->on_show) p->on_show();

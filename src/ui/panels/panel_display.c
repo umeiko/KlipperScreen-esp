@@ -120,7 +120,7 @@ static lv_obj_t *create(void)
 }
 
 panel_def_t panel_display_def = {
-    .name = "display", .title = "显示设置",
+    .name = "display", .title = "显示设置", .title_s = "显示",
     .create = create,
     .on_show = NULL,
     .on_tick = NULL,

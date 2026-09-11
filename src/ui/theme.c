@@ -166,6 +166,7 @@ lv_obj_t *theme_img(lv_obj_t *parent, const lv_image_dsc_t *src, uint32_t col_he
 {
     lv_obj_t *img = lv_image_create(parent);
     lv_image_set_src(img, src);
+    if (ui_scale() < 1.0f) lv_image_set_scale(img, 115);  /* 小屏：SVG 图标统一缩到 0.45x（115/256） */
     /* A8 只有 alpha 通道，靠 recolor 上色 */
     lv_obj_set_style_image_recolor(img, theme_col(col_hex), 0);
     lv_obj_set_style_image_recolor_opa(img, LV_OPA_COVER, 0);

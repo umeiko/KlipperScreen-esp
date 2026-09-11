@@ -293,7 +293,7 @@ static lv_obj_t *create(void)
 }
 
 panel_def_t panel_temperature_def = {
-    .name = "temperature", .title = "温度控制",
+    .name = "temperature", .title = "温度控制", .title_s = "温度",
     .create = create,
     .on_show = update_temps,
     .on_tick = update_temps,

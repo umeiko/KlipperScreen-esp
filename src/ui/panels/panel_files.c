@@ -116,7 +116,7 @@ static lv_obj_t *create(void)
 }
 
 panel_def_t panel_files_def = {
-    .name = "files", .title = "打印文件",
+    .name = "files", .title = "打印文件", .title_s = "文件",
     .create = create,
     .on_show = on_show,
     .on_tick = NULL,

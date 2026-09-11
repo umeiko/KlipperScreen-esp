@@ -582,6 +582,6 @@ static void on_show(void)
 }
 
 panel_def_t panel_bambu_setup_def = {
-    .name = "bambu_setup", .title = "拓竹连接",
+    .name = "bambu_setup", .title = "拓竹连接", .title_s = "拓竹",
     .create = create, .on_show = on_show, .on_tick = refresh, .hide_temps = 1,
 };

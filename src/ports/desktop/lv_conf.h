@@ -14,6 +14,7 @@
 #define LV_SDL_MOUSEWHEEL_MODE 0   /* encoder: wheel turns, middle button presses */
 
 /* 字号 */
+#define LV_FONT_MONTSERRAT_12 1   /* 小屏（160x128）图标/大数字档 */
 #define LV_FONT_MONTSERRAT_14 1
 #define LV_FONT_MONTSERRAT_16 1
 #define LV_FONT_MONTSERRAT_24 1

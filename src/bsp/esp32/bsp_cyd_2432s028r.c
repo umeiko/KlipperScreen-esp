@@ -322,6 +322,7 @@ void bsp_fade_out(uint32_t ms)
 }
 
 /* ---------- LVGL 对接 ---------- */
+
 static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
 {
     /* ILI9341 走 SPI 要求先发像素高字节，LVGL 内存是小端 RGB565 → 就地交换字节。

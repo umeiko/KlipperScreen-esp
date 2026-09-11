@@ -92,6 +92,6 @@ static lv_obj_t *create(void)
 }
 
 panel_def_t panel_bambu_link_def = {
-    .name = "bambu_link", .title = "连接方式",
+    .name = "bambu_link", .title = "连接方式", .title_s = "方式",
     .create = create, .on_show = refresh, .on_tick = NULL, .hide_temps = 1,
 };

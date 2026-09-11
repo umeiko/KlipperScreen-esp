@@ -13,6 +13,7 @@ extern "C" {
 typedef struct {
     const char *name;                 /* "main" / "job_status" / ... */
     const char *title;                /* 标题栏文字 */
+    const char *title_s;              /* 小屏（ui_scale()<1，如 160x128）短标题，≤2 字；NULL 用 title */
     lv_obj_t *scr;                    /* 缓存的屏幕对象（懒加载） */
     lv_group_t *nav_group;            /* 本面板的编码器/键盘焦点组 */
     lv_obj_t *(*create)(void);        /* 首次构建，返回 screen 根对象 */
