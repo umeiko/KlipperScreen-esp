@@ -8,7 +8,7 @@
 #include <string.h>
 #include <stdlib.h>
 
-#define CONF_BUF_SIZE 2048   /* moonraker.conf 要装 6 槽 × (host+port+key) */
+#define CONF_BUF_SIZE 4096   /* 6 槽 Klipper 参数 + Bambu 设备选择 */
 
 static bool conf_update_key(const char *file, const char *key, const char *val);
 
@@ -67,7 +67,7 @@ bool settings_save_wifi(const wifi_conf_t *in)
     return bsp_conf_write("network.conf", buf) == 0;
 }
 
-/* 读单槽：新格式 host_N/port_N/api_key_N；槽 0 兼容旧格式 host=/port=/api_key= */
+/* 读单槽：新格式 name_N/host_N/port_N/api_key_N；槽 0 兼容旧连接格式。 */
 bool settings_load_moonraker_slot(int slot, moonraker_conf_t *out)
 {
     char key[16];
@@ -76,6 +76,9 @@ bool settings_load_moonraker_slot(int slot, moonraker_conf_t *out)
     if (slot < 0 || slot >= PRINTER_SLOTS) return false;
     char *buf = conf_load("moonraker.conf");
     if (!buf) return false;
+
+    snprintf(key, sizeof(key), "name_%d", slot);
+    kv_get(buf, key, out->name, sizeof(out->name));
 
     snprintf(key, sizeof(key), "host_%d", slot);
     bool has = kv_get(buf, key, out->host, sizeof(out->host));
@@ -122,6 +125,19 @@ bool settings_save_active_printer(int slot)
 bool settings_load_moonraker(moonraker_conf_t *out)
 {
     return settings_load_moonraker_slot(settings_load_active_printer(), out);
+}
+
+bool settings_save_printer_name_slot(int slot, const char *name)
+{
+    if (slot < 0 || slot >= PRINTER_SLOTS || !name) return false;
+    char key[16];
+    snprintf(key, sizeof(key), "name_%d", slot);
+    return conf_update_key("moonraker.conf", key, name);
+}
+
+bool settings_save_printer_name(const char *name)
+{
+    return settings_save_printer_name_slot(settings_load_active_printer(), name);
 }
 
 machine_mode_t settings_load_machine_mode_slot(int slot)
@@ -171,15 +187,90 @@ bool settings_save_machine_mode(machine_mode_t mode)
     return settings_save_machine_mode_slot(settings_load_active_printer(), mode);
 }
 
+bambu_link_t settings_load_bambu_link_slot(int slot)
+{
+    if (slot < 0 || slot >= PRINTER_SLOTS) return BAMBU_LINK_CLOUD_MONITOR;
+    char key[24], val[12];
+    snprintf(key, sizeof(key), "bambu_link_%d", slot);
+    char *buf = conf_load("moonraker.conf");
+    bool got = buf && kv_get(buf, key, val, sizeof(val));
+    free(buf);
+    return got && strcmp(val, "lan") == 0 ? BAMBU_LINK_LAN : BAMBU_LINK_CLOUD_MONITOR;
+}
+
+bool settings_save_bambu_link_slot(int slot, bambu_link_t link)
+{
+    if (slot < 0 || slot >= PRINTER_SLOTS ||
+        (link != BAMBU_LINK_CLOUD_MONITOR && link != BAMBU_LINK_LAN)) return false;
+    char key[24];
+    snprintf(key, sizeof(key), "bambu_link_%d", slot);
+    return conf_update_key("moonraker.conf", key,
+                           link == BAMBU_LINK_LAN ? "lan" : "cloud");
+}
+
+bambu_link_t settings_load_bambu_link(void)
+{
+    return settings_load_bambu_link_slot(settings_load_active_printer());
+}
+
+bool settings_save_bambu_link(bambu_link_t link)
+{
+    return settings_save_bambu_link_slot(settings_load_active_printer(), link);
+}
+
+bool settings_load_bambu_device_slot(int slot, bambu_device_conf_t *out)
+{
+    char key[32];
+    memset(out, 0, sizeof(*out));
+    if (slot < 0 || slot >= PRINTER_SLOTS) return false;
+    char *buf = conf_load("moonraker.conf");
+    if (!buf) return false;
+    snprintf(key, sizeof(key), "bambu_serial_%d", slot);
+    bool got = kv_get(buf, key, out->serial, sizeof(out->serial));
+    snprintf(key, sizeof(key), "bambu_name_%d", slot);
+    kv_get(buf, key, out->name, sizeof(out->name));
+    snprintf(key, sizeof(key), "bambu_model_%d", slot);
+    kv_get(buf, key, out->model, sizeof(out->model));
+    free(buf);
+    out->valid = got && out->serial[0];
+    return out->valid;
+}
+
+bool settings_load_bambu_device(bambu_device_conf_t *out)
+{
+    return settings_load_bambu_device_slot(settings_load_active_printer(), out);
+}
+
+bool settings_save_bambu_device_slot(int slot, const bambu_device_conf_t *in)
+{
+    if (slot < 0 || slot >= PRINTER_SLOTS || !in) return false;
+    char key[32];
+    snprintf(key, sizeof(key), "bambu_serial_%d", slot);
+    if (!conf_update_key("moonraker.conf", key, in->serial)) return false;
+    snprintf(key, sizeof(key), "bambu_name_%d", slot);
+    if (!conf_update_key("moonraker.conf", key, in->name)) return false;
+    snprintf(key, sizeof(key), "bambu_model_%d", slot);
+    return conf_update_key("moonraker.conf", key, in->model);
+}
+
+bool settings_save_bambu_device(const bambu_device_conf_t *in)
+{
+    return settings_save_bambu_device_slot(settings_load_active_printer(), in);
+}
+
 /* 写单槽：读出全部槽→改目标槽→按新格式整体重写（顺带完成旧格式迁移） */
 bool settings_save_moonraker_slot(int slot, const moonraker_conf_t *in)
 {
     if (slot < 0 || slot >= PRINTER_SLOTS) return false;
     moonraker_conf_t all[PRINTER_SLOTS];
     machine_mode_t modes[PRINTER_SLOTS];
+    bambu_link_t links[PRINTER_SLOTS];
+    bambu_device_conf_t bambu_devices[PRINTER_SLOTS];
     for (int i = 0; i < PRINTER_SLOTS; i++) {
         settings_load_moonraker_slot(i, &all[i]);
         modes[i] = settings_load_machine_mode_slot(i);
+        links[i] = settings_load_bambu_link_slot(i);
+        settings_load_bambu_device_slot(i, &bambu_devices[i]);
     }
     all[slot] = *in;
 
@@ -190,6 +281,20 @@ bool settings_save_moonraker_slot(int slot, const moonraker_conf_t *in)
     for (int i = 0; i < PRINTER_SLOTS; i++) {
         n += snprintf(buf + n, CONF_BUF_SIZE - n, "machine_mode_%d=%s\n", i,
                       modes[i] == MACHINE_MODE_BAMBU ? "bambu" : "klipper");
+        n += snprintf(buf + n, CONF_BUF_SIZE - n, "bambu_link_%d=%s\n", i,
+                      links[i] == BAMBU_LINK_LAN ? "lan" : "cloud");
+        if (bambu_devices[i].serial[0]) {
+            n += snprintf(buf + n, CONF_BUF_SIZE - n, "bambu_serial_%d=%s\n", i,
+                          bambu_devices[i].serial);
+            if (bambu_devices[i].name[0])
+                n += snprintf(buf + n, CONF_BUF_SIZE - n, "bambu_name_%d=%s\n", i,
+                              bambu_devices[i].name);
+            if (bambu_devices[i].model[0])
+                n += snprintf(buf + n, CONF_BUF_SIZE - n, "bambu_model_%d=%s\n", i,
+                              bambu_devices[i].model);
+        }
+        if (all[i].name[0])
+            n += snprintf(buf + n, CONF_BUF_SIZE - n, "name_%d=%s\n", i, all[i].name);
         if (!all[i].host[0]) continue;
         n += snprintf(buf + n, CONF_BUF_SIZE - n, "host_%d=%s\nport_%d=%u\napi_key_%d=%s\n",
                       i, all[i].host, i, (unsigned)(all[i].port ? all[i].port : 7125),

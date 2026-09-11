@@ -12,6 +12,8 @@
 #include "moonraker_client.h"
 #include "klipper_api.h"
 #include "app_settings.h"
+#include "bambu_cloud.h"
+#include "bambu_monitor.h"
 #include "bsp_wifi.h"
 
 #include "cJSON.h"
@@ -43,26 +45,93 @@ static struct {
     .print_state = "standby",
 };
 
+static bool klipper_active(void)
+{
+    return settings_load_machine_mode() == MACHINE_MODE_KLIPPER;
+}
+
+static void sync_bambu_device_metadata(const bambu_cloud_snapshot_t *cloud,
+                                       bambu_device_conf_t *selected)
+{
+    if (!cloud || !selected || !selected->valid) return;
+    for (int i = 0; i < cloud->device_count; i++) {
+        const bambu_cloud_device_t *device = &cloud->devices[i];
+        if (strcmp(device->serial, selected->serial) != 0) continue;
+        if (strcmp(device->name, selected->name) == 0 &&
+            strcmp(device->model, selected->model) == 0) return;
+        snprintf(selected->name, sizeof(selected->name), "%s", device->name);
+        snprintf(selected->model, sizeof(selected->model), "%s", device->model);
+        settings_save_bambu_device(selected);
+        return;
+    }
+}
+
 /* ---- UI 注入的刷新回调（panel_mgr_tick） ---- */
 static void (*refresh_hook)(void);
 void printer_set_refresh_hook(void (*fn)(void)) { refresh_hook = fn; }
 static void refresh(void) { if (refresh_hook) refresh_hook(); }
 
 /* ---------- 读 ---------- */
-printer_state_t printer_state(void) { return M.state; }
-float printer_temp_ext(void)   { return M.ext; }
-float printer_temp_bed(void)   { return M.bed; }
-float printer_target_ext(void) { return M.ext_t; }
-float printer_target_bed(void) { return M.bed_t; }
-float printer_pos(int axis)    { return M.pos[axis]; }
-int printer_homed(int axis)    { return M.homed[axis]; }
-int printer_progress_permille(void) { return M.progress; }
-const char *printer_filename(void)  { return M.filename; }
-float printer_flow_pct(void)   { return M.flow; }
+static bool bambu_status_snapshot(bambu_monitor_snapshot_t *out)
+{
+    if (settings_load_machine_mode() != MACHINE_MODE_BAMBU ||
+        settings_load_bambu_link() != BAMBU_LINK_CLOUD_MONITOR)
+        return false;
+    bambu_monitor_snapshot(out);
+    return out->connected && out->printer.has_data;
+}
+
+static printer_state_t bambu_printer_state(void)
+{
+    bambu_monitor_snapshot_t monitor;
+    if (!bambu_status_snapshot(&monitor)) return PRINTER_STATE_DISCONNECTED;
+    switch (monitor.printer.state) {
+    case BAMBU_PRINT_RUNNING:
+    case BAMBU_PRINT_PREPARE:  return PRINTER_STATE_PRINTING;
+    case BAMBU_PRINT_PAUSED:   return PRINTER_STATE_PAUSED;
+    case BAMBU_PRINT_FINISHED: return PRINTER_STATE_COMPLETE;
+    case BAMBU_PRINT_FAILED:   return PRINTER_STATE_ERROR;
+    case BAMBU_PRINT_IDLE:
+    case BAMBU_PRINT_UNKNOWN:
+    default:                   return PRINTER_STATE_STANDBY;
+    }
+}
+
+printer_state_t printer_state(void)
+{
+    if (!klipper_active())
+        return bambu_printer_state();
+    return M.state;
+}
+printer_capabilities_t printer_capabilities(void)
+{
+    /* 拓竹后端尚未接入时严禁把操作误发给 Moonraker。 */
+    return klipper_active()
+           ? PRINTER_CAP_KLIPPER_ALL : 0;
+}
+float printer_temp_ext(void)   { bambu_monitor_snapshot_t b; return klipper_active() ? M.ext : (bambu_status_snapshot(&b) ? b.printer.nozzle_temp : 0); }
+float printer_temp_bed(void)   { bambu_monitor_snapshot_t b; return klipper_active() ? M.bed : (bambu_status_snapshot(&b) ? b.printer.bed_temp : 0); }
+float printer_target_ext(void) { bambu_monitor_snapshot_t b; return klipper_active() ? M.ext_t : (bambu_status_snapshot(&b) ? b.printer.nozzle_target : 0); }
+float printer_target_bed(void) { bambu_monitor_snapshot_t b; return klipper_active() ? M.bed_t : (bambu_status_snapshot(&b) ? b.printer.bed_target : 0); }
+float printer_pos(int axis)    { return klipper_active() ? M.pos[axis] : 0; }
+int printer_homed(int axis)    { return klipper_active() ? M.homed[axis] : 0; }
+int printer_progress_permille(void) { bambu_monitor_snapshot_t b; return klipper_active() ? M.progress : (bambu_status_snapshot(&b) ? b.printer.progress_percent * 10 : 0); }
+const char *printer_filename(void)
+{
+    static char bambu_name[96];
+    if (klipper_active()) return M.filename;
+    bambu_monitor_snapshot_t b;
+    if (!bambu_status_snapshot(&b)) { bambu_name[0] = 0; return bambu_name; }
+    strncpy(bambu_name, b.printer.task_name, sizeof(bambu_name) - 1);
+    bambu_name[sizeof(bambu_name) - 1] = 0;
+    return bambu_name;
+}
+float printer_flow_pct(void)   { return klipper_active() ? M.flow : 0; }
 
 /* 取走待提示的 klippy 错误（取后清空）。UI 节拍轮询后弹 toast。 */
 bool printer_take_error(char *out, size_t cap)
 {
+    if (!klipper_active()) return false;
     if (!M.gcode_err[0]) return false;
     strncpy(out, M.gcode_err, cap - 1);
     out[cap - 1] = 0;
@@ -91,20 +160,50 @@ void printer_model_report_rpc_error(char *msg_heap)
 
 uint32_t printer_print_elapsed_s(void)
 {
+    if (!klipper_active()) {
+        bambu_monitor_snapshot_t b;
+        if (!bambu_status_snapshot(&b) || b.printer.remaining_minutes < 0 ||
+            b.printer.progress_percent <= 0 || b.printer.progress_percent >= 100)
+            return 0;
+        /* Cloud reports remaining minutes but no elapsed counter. */
+        uint64_t remaining = (uint64_t)b.printer.remaining_minutes * 60u;
+        return (uint32_t)(remaining * (uint32_t)b.printer.progress_percent /
+                          (uint32_t)(100 - b.printer.progress_percent));
+    }
     return (M.state == PRINTER_STATE_PRINTING || M.state == PRINTER_STATE_PAUSED)
            ? (uint32_t)M.print_duration : 0;
 }
 
 uint32_t printer_print_eta_s(void)
 {
+    if (!klipper_active()) {
+        bambu_monitor_snapshot_t b;
+        return bambu_status_snapshot(&b) && b.printer.remaining_minutes >= 0
+             ? (uint32_t)b.printer.remaining_minutes * 60u : 0;
+    }
     if (M.state != PRINTER_STATE_PRINTING || M.progress < 5) return 0;
     uint32_t el = printer_print_elapsed_s();
     return el * (uint32_t)(1000 - M.progress) / (uint32_t)M.progress;
 }
 
+int printer_layer_current(void)
+{
+    if (klipper_active()) return 0;
+    bambu_monitor_snapshot_t b;
+    return bambu_status_snapshot(&b) ? b.printer.layer_current : 0;
+}
+
+int printer_layer_total(void)
+{
+    if (klipper_active()) return 0;
+    bambu_monitor_snapshot_t b;
+    return bambu_status_snapshot(&b) ? b.printer.layer_total : 0;
+}
+
 /* ---------- 写（转发 klipper_api；本地状态等订阅回推，不乐观更新） ---------- */
 void printer_set_target_ext(float t)
 {
+    if (!klipper_active()) return;
     char g[48];
     snprintf(g, sizeof(g), "M104 S%d", (int)(t + 0.5f));
     klipper_gcode_script(g);
@@ -112,6 +211,7 @@ void printer_set_target_ext(float t)
 
 void printer_set_target_bed(float t)
 {
+    if (!klipper_active()) return;
     char g[48];
     snprintf(g, sizeof(g), "M140 S%d", (int)(t + 0.5f));
     klipper_gcode_script(g);
@@ -119,6 +219,7 @@ void printer_set_target_bed(float t)
 
 void printer_jog(int axis, float dist)
 {
+    if (!klipper_active()) return;
     if (axis < 0 || axis > 2) return;
     char g[64];
     snprintf(g, sizeof(g), "G91\nG1 %c%.2f F%d\nG90",
@@ -128,6 +229,7 @@ void printer_jog(int axis, float dist)
 
 void printer_home(int axis)
 {
+    if (!klipper_active()) return;
     char g[16];
     if (axis < 0) snprintf(g, sizeof(g), "G28");
     else          snprintf(g, sizeof(g), "G28 %c", "XYZ"[axis]);
@@ -136,17 +238,18 @@ void printer_home(int axis)
 
 void printer_extrude(float mm)
 {
+    if (!klipper_active()) return;
     char g[48];
     snprintf(g, sizeof(g), "M83\nG1 E%.2f F300", (double)mm);
     klipper_gcode_script(g);
 }
 
-void printer_print_start(const char *filename) { klipper_print_start(filename); }
-void printer_print_pause(void)  { klipper_print_pause(); }
-void printer_print_resume(void) { klipper_print_resume(); }
-void printer_print_cancel(void) { klipper_print_cancel(); }
-void printer_emergency_stop(void)  { klipper_emergency_stop(); }
-void printer_firmware_restart(void){ klipper_firmware_restart(); }
+void printer_print_start(const char *filename) { if (klipper_active()) klipper_print_start(filename); }
+void printer_print_pause(void)  { if (klipper_active()) klipper_print_pause(); }
+void printer_print_resume(void) { if (klipper_active()) klipper_print_resume(); }
+void printer_print_cancel(void) { if (klipper_active()) klipper_print_cancel(); }
+void printer_emergency_stop(void)  { if (klipper_active()) klipper_emergency_stop(); }
+void printer_firmware_restart(void){ if (klipper_active()) klipper_firmware_restart(); }
 
 /* ---------- GCode 文件列表 ----------
  * server.files.list {"root":"gcodes"} → moonraker_rpc 应答在 LVGL 上下文
@@ -195,7 +298,8 @@ static void on_files_list(char *json, void *ud)
 
 bool printer_files_refresh(printer_files_cb cb, void *ud)
 {
-    if (!cb || files_req.in_flight || M.state == PRINTER_STATE_DISCONNECTED)
+    if (!klipper_active() || !cb || files_req.in_flight ||
+        M.state == PRINTER_STATE_DISCONNECTED)
         return false;
     files_req.cb = cb;
     files_req.ud = ud;
@@ -209,6 +313,7 @@ bool printer_files_refresh(printer_files_cb cb, void *ud)
 
 void printer_file_delete(const char *name)
 {
+    if (!klipper_active()) return;
     char path[112];
     snprintf(path, sizeof(path), "gcodes/%s", name);
     klipper_file_delete(path);
@@ -250,7 +355,7 @@ void printer_model_set_rtt(int ms)
     M.rtt_ms = ms;   /* 仅存储，UI 节拍自会刷新 */
 }
 
-int printer_rtt_ms(void) { return M.rtt_ms; }
+int printer_rtt_ms(void) { return klipper_active() ? M.rtt_ms : 0; }
 
 /* ---------- 增量合入 ---------- */
 static float jnum(cJSON *obj, const char *key, float cur)
@@ -337,6 +442,31 @@ static void tick_1s(lv_timer_t *tm)
 static void tick_autostart(lv_timer_t *tm)
 {
     LV_UNUSED(tm);
+    static uint32_t last_bambu_device_refresh;
+    if (settings_load_machine_mode() == MACHINE_MODE_BAMBU) {
+        if (settings_load_bambu_link() == BAMBU_LINK_CLOUD_MONITOR) {
+            bambu_cloud_snapshot_t cloud;
+            bambu_device_conf_t selected;
+            bambu_cloud_snapshot(&cloud);
+            if (cloud.state == BAMBU_CLOUD_SIGNED_IN &&
+                settings_load_bambu_device(&selected)) {
+                if (cloud.device_count > 0) {
+                    sync_bambu_device_metadata(&cloud, &selected);
+                } else if (!last_bambu_device_refresh ||
+                           lv_tick_elaps(last_bambu_device_refresh) >= 60000) {
+                    if (bambu_cloud_refresh_devices())
+                        last_bambu_device_refresh = lv_tick_get();
+                }
+                bambu_monitor_start(selected.serial);
+            } else {
+                bambu_monitor_stop();
+            }
+        } else {
+            bambu_monitor_stop();
+        }
+        return;
+    }
+    bambu_monitor_stop();
     moonraker_start();   /* 内部幂等：未配置/WiFi 未连/已在跑都直接返回 */
 }
 
@@ -344,6 +474,7 @@ void printer_init(void)
 {
     M.online = 0;
     evaluate_state();
+    bambu_monitor_init();
     lv_timer_create(tick_1s, 1000, NULL);
     lv_timer_create(tick_autostart, 2000, NULL);
 }

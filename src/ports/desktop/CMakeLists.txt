@@ -56,7 +56,6 @@ function(configure_desktop_target target)
     target_link_libraries(${target} PRIVATE lvgl ${SDL2_LIBRARIES})
     if(WIN32)
         target_link_libraries(${target} PRIVATE mingw32 SDL2::SDL2main)
-        set_target_properties(${target} PROPERTIES WIN32_EXECUTABLE FALSE)
     elseif(APPLE AND TARGET SDL2::SDL2main)
         # SDL 官方建议 macOS 也链 SDL2main（Cocoa 启动/事件循环初始化）
         target_link_libraries(${target} PRIVATE SDL2::SDL2main)
@@ -65,24 +64,37 @@ endfunction()
 
 if(WIN32)
     find_package(cJSON CONFIG REQUIRED)
+    set(OPENSSL_USE_STATIC_LIBS TRUE)
+    find_package(OpenSSL REQUIRED)
 
-    add_executable(klipper_remote_desktop
+    # 产品版使用 Windows GUI 子系统，双击启动时不创建控制台窗口。
+    # simulator 保持默认 Console 子系统，便于查看 stdout 调试信息。
+    add_executable(klipper_remote_desktop WIN32
         ${DESKTOP_COMMON_SRCS}
         ${SRC_ROOT}/core/printer_model.c
         ${SRC_ROOT}/core/klipper_api.c
         ${SRC_ROOT}/core/moonraker_client_winhttp.c
+        ${SRC_ROOT}/core/bambu_status.c
+        bambu_cloud_winhttp.c
+        bambu_monitor_openssl.c
     )
     configure_desktop_target(klipper_remote_desktop)
     target_include_directories(klipper_remote_desktop PRIVATE ${CJSON_INCLUDE_DIR}/cjson)
-    target_link_libraries(klipper_remote_desktop PRIVATE cjson-static winhttp)
+    target_link_libraries(klipper_remote_desktop PRIVATE cjson-static winhttp crypt32
+        OpenSSL::SSL OpenSSL::Crypto ws2_32)
 
     add_executable(klipper_remote_simulator
         ${DESKTOP_COMMON_SRCS}
         ${SRC_ROOT}/core/printer_mock.c
         ${SRC_ROOT}/core/moonraker_client_stub.c
+        ${SRC_ROOT}/core/bambu_status.c
+        ${SRC_ROOT}/core/bambu_monitor_stub.c
+        bambu_cloud_winhttp.c
     )
     configure_desktop_target(klipper_remote_simulator)
     target_compile_definitions(klipper_remote_simulator PRIVATE KLIPPER_DESKTOP_SIMULATOR=1)
+    target_include_directories(klipper_remote_simulator PRIVATE ${CJSON_INCLUDE_DIR}/cjson)
+    target_link_libraries(klipper_remote_simulator PRIVATE cjson-static winhttp crypt32)
 else()
     # macOS / Linux：POSIX sockets 原生传输（moonraker_client_posix.c），
     # 另保留 mock 数据的 simulator 目标作开发/布局工具。
@@ -115,6 +127,9 @@ else()
         ${SRC_ROOT}/core/printer_model.c
         ${SRC_ROOT}/core/klipper_api.c
         ${SRC_ROOT}/core/moonraker_client_posix.c
+        ${SRC_ROOT}/core/bambu_status.c
+        ${SRC_ROOT}/core/bambu_monitor_stub.c
+        ${SRC_ROOT}/core/bambu_cloud_stub.c
     )
     configure_desktop_target(klipper_remote_desktop)
     # 代码写的是 #include "cJSON.h"，而头文件实际装在 include/cjson/ 子目录。
@@ -131,6 +146,9 @@ else()
         ${DESKTOP_COMMON_SRCS}
         ${SRC_ROOT}/core/printer_mock.c
         ${SRC_ROOT}/core/moonraker_client_stub.c
+        ${SRC_ROOT}/core/bambu_status.c
+        ${SRC_ROOT}/core/bambu_monitor_stub.c
+        ${SRC_ROOT}/core/bambu_cloud_stub.c
     )
     configure_desktop_target(klipper_remote_simulator)
     target_compile_definitions(klipper_remote_simulator PRIVATE KLIPPER_DESKTOP_SIMULATOR=1)

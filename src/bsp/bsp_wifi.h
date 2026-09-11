@@ -3,7 +3,7 @@
 /*
  * WiFi 抽象：扫描 → 选 AP → 输密码 → 连接，三端实现
  *   esp32   : bsp/esp32/bsp_wifi_esp32.c     （esp_wifi 事件驱动）
- *   Windows : bsp/desktop/bsp_wifi_windows.c （netsh wlan，后台线程 + popen）
+ *   Windows : bsp/desktop/bsp_wifi_windows.c （netsh wlan，后台线程 + 隐藏子进程）
  *   Linux   : bsp/desktop/bsp_wifi_linux.c   （nmcli，后台线程 + popen）
  *
  * 全部为非阻塞轮询模型，UI 在节拍里 poll，不做任何回调注册。

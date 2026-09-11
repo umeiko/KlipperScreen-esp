@@ -1,10 +1,10 @@
 # KlipperScreen-esp
 
-Klipper 3D 打印机的**触摸屏远程显示器**：运行在廉价的 ESP32 开发板上，通过 WiFi 与 **Moonraker** 通信。可以把它理解为一个口袋大小、无线的 KlipperScreen。
+Klipper 3D 打印机的远程显示器：运行在廉价的 ESP32 开发板上，通过 WiFi 与 **Moonraker** 通信。界面支持触摸、旋钮或二者并存，EC11 参考板是纯旋钮路线。
 
 ![实机照片](screenshots/main_photo.jpg)
 
-同一套 UI 代码还能编译成 **桌面模拟器**（SDL2，Windows/Linux），所有面板都可以在不刷机的情况下开发和截图验证。
+同一套 UI 代码还提供 Windows **真实 Moonraker/Bambu 控制端**和单独命名的 SDL2 **模拟器**（Windows/Linux）。模拟器使用本地 mock 数据，用于布局开发和截图验证。
 
 ## 功能特性
 
@@ -12,8 +12,9 @@ Klipper 3D 打印机的**触摸屏远程显示器**：运行在廉价的 ESP32 �
 - **G-code 文件** — 缩略图、元数据、历史记录，打印/删除
 - **控制** — 轴点动与回零、冷挤出保护的挤进/回抽、温度预设（PLA/PETG/ABS/冷却）、带确认的紧急停止与固件重启
 - **稳健连接** — WebSocket 自动重连、应用层心跳与 RTT 显示、僵尸连接检测、Klipper 错误 toast（如限位未触发）
+- **拓竹状态监视** — Windows 已有登录、验证码、账号设备选择和云端 MQTT 状态同步；云端模式只读，局域网 Developer Mode 控制路径预留给后续后端。
 - **杂项** — "Umeko" 开机动画、5 种语言（EN / 简中 / 繁中 / FR / IT，切换时淡黑重启）、亮度滑条、自动息屏触摸唤醒、标题栏时钟从 Moonraker 主机同步（无需联网）
-- **一次性触摸校准**持久化到 flash；2432S028R 出厂校准已内置
+- **输入路线** — 无触摸旋钮板无需触摸层；电阻屏走板型专属校准流程；电容屏通常直接提供屏幕坐标；触摸和旋钮可以共存
 
 ## 支持的板子
 
@@ -30,15 +31,18 @@ Klipper 3D 打印机的**触摸屏远程显示器**：运行在廉价的 ESP32 �
 
 1. 从 [Releases](https://github.com/umeiko/KlipperScreen-esp/releases) 下载对应板型的 zip，解压后 `flash.bat COMx`（Windows）或 `./flash.sh /dev/ttyUSB0`
 2. 设置 → 无线网络：扫描 → 选 AP → 输密码
-3. 设置 → Moonraker：选打印机槽位（最多 6 台），填主机 IP + 端口（默认 7125）
+3. 设置 → 打印机连接设置：选打印机槽位和 Klipper/拓竹模式；Klipper 再填写主机 IP + 端口（默认 7125），拓竹继续进入局域网或云端设置
 
-自行编译见仓库 README；把固件移植到自己的板子见[移植指南](porting.md)。
+自行编译见仓库 README；把固件移植到自己的板子见[移植指南](porting.zh.md)。移植指南第 5 步先选择“无触摸”或“有触摸”，有触摸时再区分电阻屏和电容屏。
 
 ## 文档导航
 
-- [支持的板子](boards.md) — 现有板型的硬件信息与引脚定义
-- [移植到自己的开发板](porting.md) — BSP 接口契约与实现要点
-- [贡献新板型（PR 指南）](contributing-board.md) — 提交 PR 需要改哪些文件、验证什么
+- [支持的板子](boards.zh.md) — 现有板型的硬件信息与引脚定义
+- [移植到自己的开发板](porting.zh.md) — BSP 接口契约与实现要点
+- [贡献新板型（PR 指南）](contributing-board.zh.md) — 提交 PR 需要改哪些文件、验证什么
+- [界面展示](screenshots.zh.md) — 当前桌面模拟器英文界面截图
+- [架构说明](architecture.md) — 共享 UI、BSP、桌面控制端与模拟器结构
+- [拓竹接入说明](bambu-integration-architecture.md) — 当前只读云端边界与后续局域网路线
 
 ## 许可证
 

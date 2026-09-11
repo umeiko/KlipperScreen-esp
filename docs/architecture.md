@@ -190,17 +190,20 @@ dedicated screen GPIO ──────▶ debounce ─▶ screen_power.toggle
 
 ### 4.3 后端边界（ESP32 / Windows / simulator）
 
-UI 只依赖 `printer.h`、`moonraker_client.h` 和 BSP 公共接口。同一份 UI 在构建时选择后端实现：
+UI 只依赖 `printer.h`、后端公共状态接口和 BSP 公共接口。同一份 UI 在构建时选择 Moonraker 或 Bambu 后端实现：
 
 | 能力 | ESP32 | Windows 控制端 | desktop simulator |
 |---|---|---|---|
 | 显示与输入 | 板型 BSP + LVGL | SDL2 mouse + mousewheel | SDL2 mouse + mousewheel |
 | 打印机状态模型 | `printer_model.c` | `printer_model.c` | `printer_mock.c` |
 | Moonraker WebSocket | `moonraker_client.c` / esp_websocket_client | `moonraker_client_winhttp.c` / WinHTTP | `moonraker_client_stub.c` |
+| Bambu cloud status | Embedded stub (reserved) | Windows sign-in + MQTT monitor | Empty/stub monitor for layout work |
 | 控制指令 | 共享 `klipper_api.c` | 共享 `klipper_api.c` | mock 本地状态变化 |
 | 配置 | LittleFS | `%APPDATA%\KlipperRemote` | 工作目录 |
 
 Windows 网络线程只负责收发和 JSON-RPC 路由；状态更新经 `lv_async_call` 投回持锁的 LVGL 主线程。发行程序和模拟器是两个构建目标，因此 mock 状态不会进入实际控制链路。
+
+当前 Windows 产品拓竹路径比 Klipper 路径更窄：已实现登录、验证码、账号设备选择和云端 MQTT 只读状态监视。局域网 Developer Mode 页面只是预留 UI，控制后端和嵌入式云登录尚未完成。模拟器的打印机监视器保持本地空/mock 状态，默认不会启动云连接。
 
 ---
 
@@ -272,12 +275,12 @@ ESP32 上是双核 FreeRTOS，模型对齐 KlipperScreen 的"网络线程 → GL
 
 - **没有独立 core_task**：`esp_websocket_client` 自带任务即 net_task；WS 回调里直接 cJSON 解析，status 子对象序列化后经 `lv_async_call` 投递进 LVGL 任务合入模型。模型读写全在 LVGL 上下文，**不需要互斥锁**，也省掉 EventBus——状态变化直接调 UI 注入的 `printer_set_refresh_hook(panel_mgr_tick)`。
 - **UI→网络方向**：`printer_*` 写访问器 → `klipper_api_*` 拼 JSON-RPC → `esp_websocket_client_send_text`（线程安全，直接发，无队列）。
-- **数据层契约**：`src/core/printer.h`（原 `mock_printer.h` 改名，新增 `DISCONNECTED/ERROR` 状态）；desktop 链接 `printer_mock.c`（本地模拟，截图/演示用），esp32 链接 `printer_model.c`（真实 Moonraker 数据），构建系统按后端选源文件，无 `#ifdef`。
+- **数据层契约**：`src/core/printer.h`（原 `mock_printer.h` 改名，新增 `DISCONNECTED/ERROR` 状态）；Windows 产品端和 ESP32 链接 `printer_model.c`（真实 Moonraker 数据，Windows 另含 Bambu 云监视），desktop simulator 链接 `printer_mock.c`（本地模拟，截图/演示用），构建系统按目标选源文件，无 `#ifdef`。
 - **MoonrakerClient**（`moonraker_client.c`）：握手 4 步 identify→server.info→objects.list→subscribe（响应即全量）；klippy 未连接时 5s 轮询 server.info；断线指数退避 1→30s 无上限重连；`notify_klippy_ready` 重发订阅，`notify_klippy_shutdown/disconnected` 伪造 webhooks 状态合入（KlipperScreen 同款手法）。
 - **配置存储**：见 §8，`bsp_conf` + `app_settings`（key=value 行格式，两端都不引 JSON 库）。
-- **设置面板**：`panel_settings` → "Moonraker 连接"（`panel_moonraker`：主机/端口/API Key/状态 + 保存并连接）。
+- **设置面板**：`panel_settings` → "打印机连接设置" / `Printer Connection`（`panel_moonraker`：机器模式、主机/端口/API Key、Bambu 连接方式与状态 + 保存并连接）。
 - **WiFi**：`bsp_wifi_esp32.c` 断线 2s 自动重连；`app_main` 开机按 `network.conf` 自动回连；`printer_model` 2s 轮询在 WiFi 就绪且已配置后拉起 Moonraker 客户端。
-- **尚未落地**：plat_* 平台抽象表（§4.2）、EventBus、core_task 队列、动态设备枚举（订阅固定 extruder+heater_bed）、文件列表真实化、温度曲线环形缓冲。desktop 端网络为空桩（`moonraker_client_stub.c`）。
+- **尚未落地**：plat_* 平台抽象表（§4.2）、EventBus、core_task 队列、动态设备枚举（订阅固定 extruder+heater_bed）、文件列表真实化、温度曲线环形缓冲。desktop simulator 的打印机网络与 Bambu monitor 仍为空桩（`moonraker_client_stub.c` / `bambu_monitor_stub.c`）。
 
 ### 5.4 PanelManager（components/ui_core）
 

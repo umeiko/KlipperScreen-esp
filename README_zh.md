@@ -21,17 +21,18 @@
 
 ## 功能
 
-- 多打印机：最多 6 个 Moonraker 槽位，3×2 切换页一键换机，秒级重连
+- 多打印机：最多 6 个打印机槽位，可分别对应 Klipper 或拓竹，3×2 切换页一键换机，秒级重连
 - 实时状态：标题栏喷嘴/热床温度、状态卡按状态整卡变色（空闲绿/异常红/断连黄）
 - 打印任务：G-code 历史列表、二级菜单打印/删除、进度环 + 已用/剩余时间、暂停/恢复/取消
 - 控制：轴点动/归零、挤出/回抽（冷挤出保护）、温度预设（PLA/PETG/ABS/冷却）、急停/下位机重启（带确认）
 - 链路健壮：WS 自动重连、应用层心跳 RTT 显示、僵尸连接检测、Klipper 报错 toast（如限位未触发）
+- 拓竹云监视：Windows 控制端已有登录、验证码、账号设备选择和云端 MQTT 实时状态同步；云端模式只读，局域网 Developer Mode 界面已预留，控制后端仍在开发中
 - 体验细节：「Umeko」开机动画、5 种语言（EN/简中/繁中/FR/IT，切换时渐暗到黑再重启）、背光滑杆、自动息屏（15秒~1小时/永不）触摸/旋钮唤醒、标题栏时钟（从 Moonraker 上位机对时，纯内网）
 - 电阻触摸使用两点校准并持久化到 flash；电容触摸直接使用屏幕坐标，纯旋钮板无需触摸层
 
 ## 技术栈
 
-ESP-IDF v5.5.5 · LVGL v9.3 · 多后端（ESP32 各 CYD 板型 / desktop SDL2：Windows+Linux / 未来 Pico SDK、STM32…）
+ESP-IDF v5.5.5 · LVGL v9.3 · 多后端（ESP32 四个正式板型 / desktop SDL2：Windows+Linux）
 
 ## 刷机（免编译）
 
@@ -48,18 +49,21 @@ ESP-IDF v5.5.5 · LVGL v9.3 · 多后端（ESP32 各 CYD 板型 / desktop SDL2�
 
 Windows 发行包包含两个用途明确的程序：
 
-- `klipper_remote_desktop.exe` 是真实控制端。在“设置 → Moonraker”填写主机后，它通过系统 WinHTTP WebSocket 接收实时状态，并发送与 ESP32 固件相同的控制指令。
-- `klipper_remote_simulator.exe` 使用本地模拟打印机数据，供界面布局预研和截图回归。
+- `klipper_remote_desktop.exe` 是真实控制端。在“设置 → 打印机连接设置”配置 Klipper 主机后，它通过系统 WinHTTP WebSocket 接收实时状态，并发送与 ESP32 固件相同的控制指令。
+- `klipper_remote_desktop.exe` 还提供当前 Windows 拓竹云流程：登录、验证码、账号设备选择和只读 MQTT 状态监视。
+- `klipper_remote_simulator.exe` 使用本地模拟打印机数据，供界面布局预研和截图回归；启动时不会自动连接真实打印机或拓竹云。
 
 真实控制端的配置保存在 `%APPDATA%\KlipperRemote`，模拟器仍把便携配置留在运行目录，二者不会混用打印机状态。
 
-在“设置 → Moonraker → 主机”上按下旋钮会打开四段式 IPv4 编辑器：旋转修改当前 0–255 数值，按下进入下一段，快速旋转最高加速到每格 10。触摸点击仍打开完整键盘，因此可以继续输入域名。
+在“设置 → 打印机连接设置 → 主机”上按下旋钮会打开四段式 IPv4 编辑器：旋转修改当前 0–255 数值，按下进入下一段，快速旋转最高加速到每格 10。触摸点击仍打开完整键盘，因此可以继续输入域名。
 
 ## 首次配置
 
 1. 设置 → 无线网络：扫描 → 选 AP → 输密码，存入 `network.conf`
-2. 设置 → Moonraker：先选打印机槽位（最多 6 台），填主机 IP + 端口（默认 7125）+ 可选 API Key，存入 `moonraker.conf`
+2. 设置 → 打印机连接设置：先选打印机槽位（最多 6 台）和机器模式；Klipper 再填主机 IP + 端口（默认 7125）+ 可选 API Key，拓竹继续进入局域网或云端设置，配置存入 `moonraker.conf`
 3. 语言/背光/自动息屏等偏好存入 `klipperscreen.conf`
+
+拓竹模式从“设置 → 打印机连接设置 → 机器模式 → 拓竹”进入。Windows 产品端登录并选定设备后可使用“云端监视”查看状态；“局域网控制”是 Developer Mode 预留路径，控制后端尚未完成。
 
 串口 CLI（115200 8N1）可调试：`help` / `wifi` / `mr` / `printer <1-6>` / `mrstart` / `gc` / `status` / `ps` / `ls` / `cd` / `cat` / `rm` …
 
@@ -104,7 +108,7 @@ docs/                   # 设计文档
 ## 构建
 
 ```bash
-# Windows：真实控制端 + 开发模拟器；Linux 当前构建模拟器
+# 桌面端（Windows：真实控制端 + 开发模拟器；Linux/macOS：桌面目标）
 bash tools/build-desktop.sh
 ./src/ports/desktop/build/klipper_remote_desktop.exe              # 真实 Moonraker 控制端
 ./src/ports/desktop/build/klipper_remote_simulator.exe            # 布局模拟器
@@ -115,6 +119,8 @@ cd src/ports/esp32
 powershell -NoProfile -ExecutionPolicy Bypass -File ../../../tools/idf.ps1 build
 powershell -NoProfile -ExecutionPolicy Bypass -File ../../../tools/idf.ps1 -p COMx flash monitor
 ```
+
+桌面真实控制端默认把配置放在 `%APPDATA%\KlipperRemote`，模拟器从自己的工作目录读写配置。开发和截图时可设置 `KLIPPER_CONFIG_DIR` 指向独立目录，并在其中写入 `language=en` 生成英文界面。
 
 桌面窗口中，鼠标左键仍模拟触摸；滚轮正反转模拟旋钮旋转，中键模拟按下旋钮，
 可以直接测试触摸与旋钮并存的交互。

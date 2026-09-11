@@ -3,6 +3,7 @@
  * 用法:
  *   klipper_remote_desktop[.exe]                  真实 Moonraker 控制端
  *   klipper_remote_simulator[.exe]                开发/布局模拟器
+ *   klipper_remote_desktop[.exe] --panel <name>   交互式打开指定面板
  *   klipper_remote_simulator[.exe] <毫秒> <out.bmp> 运行指定毫秒后截图保存并退出
  */
 #include "bsp.h"
@@ -134,10 +135,14 @@ int main(int argc, char **argv)
     bsp_set_brightness(settings_load_brightness());
     bsp_set_screen_timeout(settings_load_screen_off());
 
+    /* 交互式直达面板，供桌面端联调真实连接流程。 */
+    if (argc >= 3 && strcmp(argv[1], "--panel") == 0)
+        ui_app_open(argv[2]);
+
     /* 截图模式: <毫秒> <out.bmp> [面板名] */
     int shot_at = 0;
     const char *shot_path = NULL;
-    if (argc >= 3) {
+    if (argc >= 3 && strcmp(argv[1], "--panel") != 0) {
         shot_at = atoi(argv[1]);
         shot_path = argv[2];
         if (argc >= 4)

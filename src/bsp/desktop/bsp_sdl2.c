@@ -29,6 +29,8 @@ static int SDLCALL screen_input_filter(void *userdata, SDL_Event *event)
 {
     (void)userdata;
     bool activity = event->type == SDL_MOUSEWHEEL ||
+                    event->type == SDL_KEYDOWN ||
+                    event->type == SDL_TEXTINPUT ||
                     event->type == SDL_FINGERDOWN ||
                     (event->type == SDL_MOUSEBUTTONDOWN &&
                      (event->button.button == SDL_BUTTON_LEFT ||

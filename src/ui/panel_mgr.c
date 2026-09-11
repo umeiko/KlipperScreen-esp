@@ -20,6 +20,8 @@ extern panel_def_t panel_display_def;
 extern panel_def_t panel_wifi_def;
 extern panel_def_t panel_moonraker_def;
 extern panel_def_t panel_machine_mode_def;
+extern panel_def_t panel_bambu_link_def;
+extern panel_def_t panel_bambu_setup_def;
 extern panel_def_t panel_printers_def;
 extern panel_def_t panel_brightness_def;
 
@@ -37,6 +39,8 @@ static panel_def_t *registry[] = {
     &panel_wifi_def,
     &panel_moonraker_def,
     &panel_machine_mode_def,
+    &panel_bambu_link_def,
+    &panel_bambu_setup_def,
     &panel_printers_def,
     &panel_brightness_def,
 };
@@ -73,6 +77,7 @@ static void show(panel_def_t *p, int push)
     ui_nav_activate(p->nav_group);
     ui_nav_set_global_obj(titlebar_back_button(), nav_top > 0);
     if (p->on_show) p->on_show();
+    ui_nav_refocus_visible(p->nav_group);
 }
 
 void panel_mgr_init(void)
@@ -85,6 +90,7 @@ void panel_mgr_init(void)
     ui_nav_activate(nav_stack[0]->nav_group);
     ui_nav_set_global_obj(titlebar_back_button(), false);
     if (nav_stack[0]->on_show) nav_stack[0]->on_show();
+    ui_nav_refocus_visible(nav_stack[0]->nav_group);
 }
 
 void panel_mgr_open(const char *name)

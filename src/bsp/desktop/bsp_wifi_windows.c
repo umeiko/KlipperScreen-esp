@@ -10,7 +10,9 @@
 
 #include <windows.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <wchar.h>
 
 #define SCAN_MAX      24
 #define CONNECT_TIMEOUT_S 15
@@ -40,11 +42,101 @@ static void oem_to_utf8(const char *in, char *out, size_t out_sz)
     WideCharToMultiByte(CP_UTF8, 0, w, -1, out, (int)out_sz, NULL, NULL);
 }
 
-static void utf8_to_oem(const char *in, char *out, size_t out_sz)
+/* 在 GUI 子系统进程中直接调用 _popen/system 会反复创建可见的控制台窗口。
+ * 统一通过 CREATE_NO_WINDOW 启动 netsh；需要输出时由匿名管道读取。 */
+static int run_netsh_hidden(const wchar_t *args, char **output)
 {
-    wchar_t w[256];
-    MultiByteToWideChar(CP_UTF8, 0, in, -1, w, 256);
-    WideCharToMultiByte(CP_ACP, 0, w, -1, out, (int)out_sz, NULL, NULL);
+    if (output) *output = NULL;
+
+    SECURITY_ATTRIBUTES sa = {
+        .nLength = sizeof(sa), .lpSecurityDescriptor = NULL, .bInheritHandle = TRUE
+    };
+    HANDLE read_pipe = NULL, write_pipe = NULL;
+    if (!CreatePipe(&read_pipe, &write_pipe, &sa, 0)) return 0;
+    SetHandleInformation(read_pipe, HANDLE_FLAG_INHERIT, 0);
+
+    wchar_t exe[MAX_PATH];
+    UINT n = GetSystemDirectoryW(exe, MAX_PATH);
+    if (!n || n + 12 >= MAX_PATH) {
+        CloseHandle(read_pipe);
+        CloseHandle(write_pipe);
+        return 0;
+    }
+    wcscat(exe, L"\\netsh.exe");
+
+    wchar_t cmdline[1024];
+    if (swprintf(cmdline, sizeof(cmdline) / sizeof(cmdline[0]),
+                 L"\"%ls\" %ls", exe, args) < 0) {
+        CloseHandle(read_pipe);
+        CloseHandle(write_pipe);
+        return 0;
+    }
+
+    STARTUPINFOW si = { .cb = sizeof(si) };
+    si.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
+    si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+    si.hStdOutput = write_pipe;
+    si.hStdError = write_pipe;
+    PROCESS_INFORMATION pi = {0};
+    BOOL started = CreateProcessW(exe, cmdline, NULL, NULL, TRUE,
+                                  CREATE_NO_WINDOW, NULL, NULL, &si, &pi);
+    CloseHandle(write_pipe);
+    if (!started) {
+        CloseHandle(read_pipe);
+        return 0;
+    }
+
+    char *data = NULL;
+    size_t len = 0, cap = 0;
+    int alloc_ok = 1;
+    char chunk[1024];
+    DWORD got = 0;
+    while (ReadFile(read_pipe, chunk, sizeof(chunk), &got, NULL) && got) {
+        if (!output || !alloc_ok) continue;
+        if (len + got + 1 > cap) {
+            size_t next = cap ? cap * 2 : 4096;
+            while (next < len + got + 1) next *= 2;
+            char *grown = realloc(data, next);
+            if (!grown) {
+                free(data);
+                data = NULL;
+                alloc_ok = 0;
+                continue;
+            }
+            data = grown;
+            cap = next;
+        }
+        memcpy(data + len, chunk, got);
+        len += got;
+    }
+    CloseHandle(read_pipe);
+    WaitForSingleObject(pi.hProcess, INFINITE);
+    DWORD exit_code = 1;
+    GetExitCodeProcess(pi.hProcess, &exit_code);
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+
+    if (output && alloc_ok) {
+        if (!data) data = malloc(1);
+        if (data) data[len] = 0;
+        *output = data;
+    }
+    return exit_code == 0 && (!output || (alloc_ok && data));
+}
+
+static char *next_output_line(char **cursor)
+{
+    if (!cursor || !*cursor || !**cursor) return NULL;
+    char *line = *cursor;
+    char *nl = strchr(line, '\n');
+    if (nl) {
+        *nl = 0;
+        *cursor = nl + 1;
+    } else {
+        *cursor = line + strlen(line);
+    }
+    return line;
 }
 
 static char *trim(char *s)
@@ -63,11 +155,15 @@ static DWORD WINAPI scan_thread(void *unused)
     bsp_wifi_ap_t local[SCAN_MAX];
     int n = 0, cur = -1;
 
-    FILE *fp = _popen("netsh wlan show networks mode=bssid 2>NUL", "r");
-    if (!fp) { W.scan_state = 3; return 0; }
+    char *output = NULL;
+    if (!run_netsh_hidden(L"wlan show networks mode=bssid", &output)) {
+        free(output);
+        W.scan_state = 3;
+        return 0;
+    }
 
-    char raw[512], line[512];
-    while (fgets(raw, sizeof(raw), fp)) {
+    char line[512], *cursor = output, *raw;
+    while ((raw = next_output_line(&cursor)) != NULL) {
         oem_to_utf8(raw, line, sizeof(line));
 
         if (strstr(line, "SSID") && !strstr(line, "BSSID")) {
@@ -92,7 +188,7 @@ static DWORD WINAPI scan_thread(void *unused)
                 local[cur].rssi = pct / 2 - 100;           /* 百分比粗略换算 dBm */
         }
     }
-    _pclose(fp);
+    free(output);
 
     EnterCriticalSection(&W.lock);
     memcpy(W.aps, local, n * sizeof(bsp_wifi_ap_t));
@@ -106,12 +202,15 @@ static DWORD WINAPI scan_thread(void *unused)
 
 static int check_connected(const char *ssid)
 {
-    FILE *fp = _popen("netsh wlan show interfaces 2>NUL", "r");
-    if (!fp) return 0;
+    char *output = NULL;
+    if (!run_netsh_hidden(L"wlan show interfaces", &output)) {
+        free(output);
+        return 0;
+    }
 
     int state_ok = 0, ssid_ok = 0;
-    char raw[512], line[512];
-    while (fgets(raw, sizeof(raw), fp)) {
+    char line[512], *cursor = output, *raw;
+    while ((raw = next_output_line(&cursor)) != NULL) {
         oem_to_utf8(raw, line, sizeof(line));
         if ((strstr(line, "State") || strstr(line, "状态")) && strchr(line, ':')) {
             char *v = trim(strchr(line, ':') + 1);
@@ -121,7 +220,7 @@ static int check_connected(const char *ssid)
             if (strcmp(v, ssid) == 0) ssid_ok = 1;
         }
     }
-    _pclose(fp);
+    free(output);
     return state_ok && ssid_ok;
 }
 
@@ -149,11 +248,15 @@ static DWORD WINAPI connect_thread(void *password)
     xml_escape(W.target_ssid, ssid_x, sizeof(ssid_x));
     xml_escape(pass ? pass : "", pass_x, sizeof(pass_x));
 
-    char path[MAX_PATH];
-    GetTempPathA(sizeof(path), path);
-    strncat(path, "krd_wifi_profile.xml", sizeof(path) - strlen(path) - 1);
+    wchar_t path[MAX_PATH];
+    DWORD path_len = GetTempPathW(MAX_PATH, path);
+    if (!path_len || path_len >= MAX_PATH - 22) {
+        W.conn_state = BSP_WIFI_FAILED;
+        return 0;
+    }
+    wcscat(path, L"krd_wifi_profile.xml");
 
-    FILE *f = fopen(path, "w");
+    FILE *f = _wfopen(path, L"w");
     if (!f) { W.conn_state = BSP_WIFI_FAILED; return 0; }
     fprintf(f,
         "<?xml version=\"1.0\"?>\n"
@@ -171,16 +274,26 @@ static DWORD WINAPI connect_thread(void *password)
         "</WLANProfile>\n", ssid_x, ssid_x, pass_x);
     fclose(f);
 
-    char cmd[512];
-    snprintf(cmd, sizeof(cmd), "netsh wlan add profile filename=\"%s\" user=current >NUL 2>&1", path);
-    system(cmd);
+    wchar_t args[MAX_PATH + 96];
+    swprintf(args, sizeof(args) / sizeof(args[0]),
+             L"wlan add profile filename=\"%ls\" user=current", path);
+    int profile_ok = run_netsh_hidden(args, NULL);
 
-    /* 命令行参数要转回 OEM 代码页，否则中文 SSID 乱码 */
-    char ssid_oem[BSP_WIFI_SSID_MAX * 2 + 1];
-    utf8_to_oem(W.target_ssid, ssid_oem, sizeof(ssid_oem));
-    snprintf(cmd, sizeof(cmd), "netsh wlan connect name=\"%s\" >NUL 2>&1", ssid_oem);
-    system(cmd);
-    DeleteFileA(path);
+    wchar_t ssid_w[BSP_WIFI_SSID_MAX + 1];
+    int ssid_len = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
+                                       W.target_ssid, -1, ssid_w,
+                                       sizeof(ssid_w) / sizeof(ssid_w[0]));
+    int connect_ok = 0;
+    if (ssid_len > 0) {
+        swprintf(args, sizeof(args) / sizeof(args[0]),
+                 L"wlan connect name=\"%ls\"", ssid_w);
+        connect_ok = run_netsh_hidden(args, NULL);
+    }
+    DeleteFileW(path);
+    if (!profile_ok || !connect_ok) {
+        W.conn_state = BSP_WIFI_FAILED;
+        return 0;
+    }
 
     for (int i = 0; i < CONNECT_TIMEOUT_S; i++) {
         Sleep(1000);
@@ -200,19 +313,20 @@ static DWORD WINAPI poll_thread(void *unused)
 {
     (void)unused;
     for (;;) {
-        FILE *fp = _popen("netsh wlan show interfaces 2>NUL", "r");
+        char *output = NULL;
+        int queried = run_netsh_hidden(L"wlan show interfaces", &output);
         int ok = 0;
-        if (fp) {
-            char raw[512], line[512];
-            while (fgets(raw, sizeof(raw), fp)) {
+        if (queried) {
+            char line[512], *cursor = output, *raw;
+            while ((raw = next_output_line(&cursor)) != NULL) {
                 oem_to_utf8(raw, line, sizeof(line));
                 if ((strstr(line, "State") || strstr(line, "状态")) && strchr(line, ':')) {
                     char *v = trim(strchr(line, ':') + 1);
                     if (strstr(v, "connected") || strstr(v, "已连接")) ok = 1;
                 }
             }
-            _pclose(fp);
         }
+        free(output);
         W.net_connected = ok;
         Sleep(5000);
     }

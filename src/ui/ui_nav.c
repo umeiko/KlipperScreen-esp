@@ -1,6 +1,10 @@
 #include "ui_nav.h"
 #include "theme.h"
 
+#ifndef ESP_PLATFORM
+#include <SDL.h>
+#endif
+
 #define UI_NAV_SCOPE_MAX 24
 #define UI_NAV_MODAL_MAX 8
 
@@ -15,6 +19,88 @@ static lv_group_t *modal_stack[UI_NAV_MODAL_MAX];
 static unsigned modal_depth;
 static lv_obj_t *global_obj;
 static bool global_enabled;
+
+#ifndef ESP_PLATFORM
+static lv_obj_t *desktop_textarea;
+static ui_desktop_input_cb_t desktop_input_cb;
+static void *desktop_input_ud;
+static bool desktop_watch_installed;
+
+static int SDLCALL desktop_keyboard_watch(void *userdata, SDL_Event *event)
+{
+    LV_UNUSED(userdata);
+    if (!desktop_textarea && !desktop_input_cb) return 0;
+
+    if (event->type == SDL_TEXTINPUT) {
+        if (desktop_textarea)
+            lv_textarea_add_text(desktop_textarea, event->text.text);
+        else
+            desktop_input_cb(UI_DESKTOP_INPUT_TEXT, event->text.text, desktop_input_ud);
+        return 0;
+    }
+    if (event->type != SDL_KEYDOWN) return 0;
+
+    SDL_Keycode key = event->key.keysym.sym;
+    SDL_Keymod mod = (SDL_Keymod)event->key.keysym.mod;
+    if ((mod & KMOD_CTRL) && key == SDLK_v) {
+        char *clipboard = SDL_GetClipboardText();
+        if (clipboard) {
+            if (desktop_textarea)
+                lv_textarea_add_text(desktop_textarea, clipboard);
+            else
+                desktop_input_cb(UI_DESKTOP_INPUT_TEXT, clipboard, desktop_input_ud);
+            SDL_free(clipboard);
+        }
+        return 0;
+    }
+
+    ui_desktop_input_event_t input_event;
+    switch (key) {
+    case SDLK_BACKSPACE: input_event = UI_DESKTOP_INPUT_BACKSPACE; break;
+    case SDLK_DELETE:    input_event = UI_DESKTOP_INPUT_DELETE;    break;
+    case SDLK_RETURN:
+    case SDLK_KP_ENTER:  input_event = UI_DESKTOP_INPUT_READY;     break;
+    case SDLK_ESCAPE:    input_event = UI_DESKTOP_INPUT_CANCEL;    break;
+    case SDLK_LEFT:
+        if (desktop_textarea) lv_textarea_cursor_left(desktop_textarea);
+        return 0;
+    case SDLK_RIGHT:
+        if (desktop_textarea) lv_textarea_cursor_right(desktop_textarea);
+        return 0;
+    case SDLK_HOME:
+        if (desktop_textarea) lv_textarea_set_cursor_pos(desktop_textarea, 0);
+        return 0;
+    case SDLK_END:
+        if (desktop_textarea) lv_textarea_set_cursor_pos(desktop_textarea, LV_TEXTAREA_CURSOR_LAST);
+        return 0;
+    default:
+        return 0;   /* printable keys arrive separately as SDL_TEXTINPUT */
+    }
+
+    if (desktop_textarea) {
+        if (input_event == UI_DESKTOP_INPUT_BACKSPACE)
+            lv_textarea_delete_char(desktop_textarea);
+        else if (input_event == UI_DESKTOP_INPUT_DELETE)
+            lv_textarea_delete_char_forward(desktop_textarea);
+        else if (input_event == UI_DESKTOP_INPUT_READY)
+            lv_obj_send_event(desktop_textarea, LV_EVENT_READY, NULL);
+        else if (input_event == UI_DESKTOP_INPUT_CANCEL)
+            lv_obj_send_event(desktop_textarea, LV_EVENT_CANCEL, NULL);
+    } else {
+        desktop_input_cb(input_event, NULL, desktop_input_ud);
+    }
+    return 0;
+}
+
+static void desktop_input_start(void)
+{
+    if (!desktop_watch_installed) {
+        SDL_AddEventWatch(desktop_keyboard_watch, NULL);
+        desktop_watch_installed = true;
+    }
+    SDL_StartTextInput();
+}
+#endif
 
 /*
  * LVGL normally scrolls a newly focused child into view with animation.  That
@@ -153,6 +239,26 @@ void ui_nav_activate(lv_group_t *group)
         lv_group_add_obj(group, global_obj);
 }
 
+void ui_nav_refocus_visible(lv_group_t *group)
+{
+    if (!group) return;
+    lv_obj_t *focused = lv_group_get_focused(group);
+    if (!focused) {
+        lv_group_focus_next(group);
+        return;
+    }
+
+    bool available = !(lv_obj_get_state(focused) & LV_STATE_DISABLED);
+    for (lv_obj_t *node = focused; available && node; node = lv_obj_get_parent(node))
+        available = !lv_obj_has_flag(node, LV_OBJ_FLAG_HIDDEN);
+
+    /* Conditional pages often create all possible actions once and hide the
+       unavailable ones in on_show().  LVGL leaves focus on such an object;
+       advance once and its group walker skips every hidden entry. */
+    if (!available)
+        lv_group_focus_next(group);
+}
+
 void ui_nav_set_global_obj(lv_obj_t *obj, bool enabled)
 {
     if (global_obj && global_obj != obj)
@@ -190,4 +296,39 @@ void ui_nav_modal_end(lv_group_t *group)
         bind_navigation_indevs(NULL);
     }
     lv_group_delete(group);
+}
+
+void ui_desktop_textarea_begin(lv_obj_t *textarea)
+{
+#ifndef ESP_PLATFORM
+    desktop_textarea = textarea;
+    desktop_input_cb = NULL;
+    desktop_input_ud = NULL;
+    desktop_input_start();
+#else
+    LV_UNUSED(textarea);
+#endif
+}
+
+void ui_desktop_input_begin(ui_desktop_input_cb_t callback, void *user_data)
+{
+#ifndef ESP_PLATFORM
+    desktop_textarea = NULL;
+    desktop_input_cb = callback;
+    desktop_input_ud = user_data;
+    desktop_input_start();
+#else
+    LV_UNUSED(callback);
+    LV_UNUSED(user_data);
+#endif
+}
+
+void ui_desktop_input_end(void)
+{
+#ifndef ESP_PLATFORM
+    desktop_textarea = NULL;
+    desktop_input_cb = NULL;
+    desktop_input_ud = NULL;
+    SDL_StopTextInput();
+#endif
 }

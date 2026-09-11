@@ -12,6 +12,8 @@
 #include "../widgets/keypad.h"
 #include "../assets/icons.h"
 #include "app_settings.h"
+#include "bambu_cloud.h"
+#include "bambu_monitor.h"
 #include "moonraker_client.h"
 #include "printer.h"
 #include <string.h>
@@ -21,10 +23,23 @@
 static moonraker_conf_t cfg;        /* 工作副本（当前槽），保存时才落盘 */
 static lv_obj_t *lbl_machine_mode;
 static lv_obj_t *lbl_switch;
+static lv_obj_t *lbl_printer_name;
+static lv_obj_t *lbl_bambu_link;
+static lv_obj_t *lbl_bambu_setup;
 static lv_obj_t *lbl_host;
 static lv_obj_t *lbl_port;
 static lv_obj_t *lbl_key;
 static lv_obj_t *lbl_status;
+static lv_obj_t *row_bambu_link;
+static lv_obj_t *row_bambu_setup;
+static lv_obj_t *row_machine_mode;
+static lv_obj_t *row_switch;
+static lv_obj_t *row_printer_name;
+static lv_obj_t *row_host;
+static lv_obj_t *row_port;
+static lv_obj_t *row_key;
+static lv_obj_t *row_status;
+static lv_obj_t *btn_save;
 
 /* ---------- 文本输入弹层 ---------- */
 static lv_obj_t *txt_overlay;
@@ -58,6 +73,7 @@ static void refresh_row(lv_obj_t *lbl, const char *val, int masked)
 static void txt_overlay_close(void)
 {
     if (txt_overlay) {
+        ui_desktop_input_end();
         ui_nav_detach_scope(txt_overlay);
         lv_obj_delete(txt_overlay);
         txt_overlay = NULL;
@@ -73,6 +89,12 @@ static void on_txt_ready(lv_event_t *e)
     strncpy(edit_target, v, edit_cap - 1);
     edit_target[edit_cap - 1] = 0;
     refresh_row(*edit_label, edit_target, edit_masked);
+    if (edit_target == cfg.name) {
+        if (settings_save_printer_name(cfg.name))
+            ui_toast("打印机名称已保存", THEME_COL_OK);
+        else
+            ui_toast("保存失败", THEME_COL_ERROR);
+    }
     txt_overlay_close();
 }
 
@@ -104,7 +126,10 @@ static void open_text_dialog(const char *title, char *target, size_t cap,
     ta = lv_textarea_create(txt_overlay);
     lv_obj_set_style_text_font(ta, THEME_FONT_S, 0);
     lv_textarea_set_one_line(ta, true);
+    lv_textarea_set_max_length(ta, (uint32_t)(cap - 1));
     lv_textarea_set_text(ta, target);
+    lv_obj_add_event_cb(ta, on_txt_ready, LV_EVENT_READY, NULL);
+    lv_obj_add_event_cb(ta, on_txt_cancel, LV_EVENT_CANCEL, NULL);
     lv_obj_set_width(ta, ui_px(300));
     lv_obj_align(ta, LV_ALIGN_TOP_MID, 0, ui_px(34));
 
@@ -122,6 +147,7 @@ static void open_text_dialog(const char *title, char *target, size_t cap,
     theme_focusable(kb);
     lv_group_focus_obj(kb);
     lv_group_set_editing(txt_nav_group, true);
+    ui_desktop_textarea_begin(ta);
 }
 
 /* ---------- 旋钮专用 IPv4 编辑弹层 ---------- */
@@ -332,6 +358,12 @@ static void on_key_click(lv_event_t *e)
     open_text_dialog("API Key（可留空）", cfg.api_key, sizeof(cfg.api_key), &lbl_key, 1);
 }
 
+static void on_name_click(lv_event_t *e)
+{
+    LV_UNUSED(e);
+    open_text_dialog("打印机名称", cfg.name, sizeof(cfg.name), &lbl_printer_name, 0);
+}
+
 static void on_port_done(float value, int ok, void *ud)
 {
     LV_UNUSED(ud);
@@ -393,19 +425,58 @@ static lv_obj_t *make_row(lv_obj_t *parent, const char *key, lv_obj_t **val_lbl,
 
 static void update_rows(void)
 {
-    lv_label_set_text(lbl_machine_mode,
-        settings_load_machine_mode() == MACHINE_MODE_BAMBU ? TR("拓竹") : "Klipper");
+    bool bambu = settings_load_machine_mode() == MACHINE_MODE_BAMBU;
+    bambu_link_t link = settings_load_bambu_link();
+    lv_label_set_text(lbl_machine_mode, bambu ? TR("拓竹") : "Klipper");
 
-    /* 槽位行：当前槽号 + 该槽主机 */
+    /* Klipper 使用本地名称；拓竹直接显示云端设备名，不提供本地别名。 */
     char sw[80];
+    char fallback_name[24];
+    snprintf(fallback_name, sizeof(fallback_name), TR("打印机 %d"),
+             settings_load_active_printer() + 1);
+    const char *slot_name = cfg.name[0] ? cfg.name : fallback_name;
+    bambu_device_conf_t bambu_device;
+    if (bambu && settings_load_bambu_device(&bambu_device) && bambu_device.name[0])
+        slot_name = bambu_device.name;
     snprintf(sw, sizeof(sw), "%d · %s", settings_load_active_printer() + 1,
-             cfg.host[0] ? cfg.host : TR("未设置"));
+             slot_name);
     lv_label_set_text(lbl_switch, sw);
+    refresh_row(lbl_printer_name, cfg.name, 0);
+    lv_label_set_text(lbl_bambu_link,
+        link == BAMBU_LINK_LAN ? TR("局域网控制") : TR("云端监视"));
+    lv_label_set_text(lbl_bambu_setup,
+        link == BAMBU_LINK_LAN ? TR("填写或扫描打印机") : TR("登录 Bambu 账号"));
     refresh_row(lbl_host, cfg.host, 0);
     refresh_row(lbl_key, cfg.api_key, 1);
     char buf[8];
     snprintf(buf, sizeof(buf), "%u", (unsigned)(cfg.port ? cfg.port : 7125));
     lv_label_set_text(lbl_port, buf);
+
+    lv_obj_set_flag(row_bambu_link, LV_OBJ_FLAG_HIDDEN, !bambu);
+    lv_obj_set_flag(row_bambu_setup, LV_OBJ_FLAG_HIDDEN, !bambu);
+    lv_obj_set_flag(row_printer_name, LV_OBJ_FLAG_HIDDEN, bambu);
+    lv_obj_set_flag(row_host, LV_OBJ_FLAG_HIDDEN, bambu);
+    lv_obj_set_flag(row_port, LV_OBJ_FLAG_HIDDEN, bambu);
+    lv_obj_set_flag(row_key, LV_OBJ_FLAG_HIDDEN, bambu);
+    lv_obj_set_flag(btn_save, LV_OBJ_FLAG_HIDDEN, bambu);
+    if (bambu) {
+        lv_obj_t *rows[] = {row_machine_mode, row_switch,
+                            row_bambu_link, row_bambu_setup, row_status};
+        int y0 = THEME_TITLEBAR_H + ui_px(6);
+        for (int i = 0; i < 5; i++) {
+            lv_obj_set_height(rows[i], ui_px(35));
+            lv_obj_align(rows[i], LV_ALIGN_TOP_MID, 0, y0 + ui_px(i * 39));
+        }
+    } else {
+        lv_obj_set_height(row_machine_mode, ui_px(38));
+        lv_obj_set_height(row_switch, ui_px(38));
+        lv_obj_set_height(row_printer_name, ui_px(38));
+        lv_obj_set_height(row_status, ui_px(38));
+        lv_obj_align(row_machine_mode, LV_ALIGN_TOP_MID, 0, THEME_TITLEBAR_H + ui_px(6));
+        lv_obj_align(row_switch, LV_ALIGN_TOP_MID, 0, THEME_TITLEBAR_H + ui_px(50));
+        lv_obj_align(row_printer_name, LV_ALIGN_TOP_MID, 0, THEME_TITLEBAR_H + ui_px(94));
+        lv_obj_align(row_status, LV_ALIGN_TOP_MID, 0, THEME_TITLEBAR_H + ui_px(270));
+    }
 }
 
 static void on_show(void)
@@ -422,7 +493,74 @@ static void tick(void)
 {
     const char *s;
     uint32_t col;
-    char buf[40];
+    char buf[64];
+    char setup_buf[64];
+    if (settings_load_machine_mode() == MACHINE_MODE_BAMBU) {
+        bool cloud = settings_load_bambu_link() == BAMBU_LINK_CLOUD_MONITOR;
+        if (!cloud) {
+            lv_label_set_text(lbl_status, TR("尚未连接打印机"));
+            lv_obj_set_style_text_color(lbl_status, theme_col(THEME_COL_TEXT_DIM), 0);
+            return;
+        }
+
+        bambu_cloud_snapshot_t session;
+        bambu_device_conf_t selected;
+        bambu_cloud_snapshot(&session);
+        bool has_device = settings_load_bambu_device(&selected);
+        if (session.state == BAMBU_CLOUD_BUSY) {
+            s = TR("连接中…"); col = THEME_COL_WARN;
+        } else if (session.state == BAMBU_CLOUD_NEED_CODE ||
+                   session.state == BAMBU_CLOUD_NEED_TFA) {
+            s = TR("请完成登录"); col = THEME_COL_WARN;
+        } else if (session.state == BAMBU_CLOUD_FAILED) {
+            s = TR("登录失败"); col = THEME_COL_ERROR;
+        } else if (session.state != BAMBU_CLOUD_SIGNED_IN) {
+            s = TR("尚未登录"); col = THEME_COL_TEXT_DIM;
+        } else if (!has_device) {
+            s = TR("已登录 · 请选择打印机"); col = THEME_COL_WARN;
+        } else {
+            bambu_monitor_snapshot_t monitor;
+            bambu_monitor_snapshot(&monitor);
+            const bambu_cloud_device_t *device = NULL;
+            for (int i = 0; i < session.device_count; i++) {
+                if (strcmp(session.devices[i].serial, selected.serial) == 0) {
+                    device = &session.devices[i];
+                    break;
+                }
+            }
+            if (monitor.connected && monitor.printer.has_data) {
+                snprintf(buf, sizeof(buf), "%s · %s", TR("实时状态已同步"),
+                         selected.model[0] ? selected.model : TR("拓竹"));
+                s = buf; col = THEME_COL_OK;
+            } else if (monitor.state == BAMBU_MONITOR_AUTH_ERROR) {
+                s = TR(monitor.message); col = THEME_COL_ERROR;
+            } else if (monitor.state == BAMBU_MONITOR_CONNECTING ||
+                       monitor.state == BAMBU_MONITOR_NETWORK_ERROR) {
+                s = TR(monitor.message); col = THEME_COL_WARN;
+            } else if (!device) {
+                s = TR("已登录 · 正在刷新"); col = THEME_COL_WARN;
+            } else if (!device->online) {
+                s = TR("已登录 · 打印机离线"); col = THEME_COL_WARN;
+            } else {
+                snprintf(buf, sizeof(buf), "%s · %s", TR("已连接"),
+                         selected.model[0] ? selected.model : TR("拓竹"));
+                s = buf; col = THEME_COL_OK;
+            }
+        }
+        if (session.state == BAMBU_CLOUD_SIGNED_IN) {
+            if (has_device)
+                snprintf(setup_buf, sizeof(setup_buf), "%s · %s", TR("已登录"),
+                         selected.model[0] ? selected.model : TR("已选择打印机"));
+            else
+                snprintf(setup_buf, sizeof(setup_buf), "%s", TR("请选择打印机"));
+            lv_label_set_text(lbl_bambu_setup, setup_buf);
+        } else {
+            lv_label_set_text(lbl_bambu_setup, TR("登录 Bambu 账号"));
+        }
+        lv_label_set_text(lbl_status, s);
+        lv_obj_set_style_text_color(lbl_status, theme_col(col), 0);
+        return;
+    }
     switch (moonraker_state()) {
     case MOONRAKER_READY:
         /* 已连接时附应用层心跳延迟（5s 一跳，0=还没测到） */
@@ -452,6 +590,18 @@ static void on_machine_mode_click(lv_event_t *e)
     panel_mgr_open("machine_mode");
 }
 
+static void on_bambu_link_click(lv_event_t *e)
+{
+    LV_UNUSED(e);
+    panel_mgr_open("bambu_link");
+}
+
+static void on_bambu_setup_click(lv_event_t *e)
+{
+    LV_UNUSED(e);
+    panel_mgr_open("bambu_setup");
+}
+
 static lv_obj_t *create(void)
 {
     lv_obj_t *scr = lv_obj_create(NULL);
@@ -459,31 +609,36 @@ static lv_obj_t *create(void)
     lv_obj_set_scroll_dir(scr, LV_DIR_VER);   /* 机器模式 + 连接项超出 240 高，允许上下滚动 */
 
     int y = THEME_TITLEBAR_H + ui_px(6);
-    lv_obj_t *r;
-    r = make_row(scr, "机器模式", &lbl_machine_mode, y, NULL);
-    lv_obj_add_event_cb(r, on_machine_mode_click, LV_EVENT_CLICKED, NULL);
-    r = make_row(scr, "切换打印机", &lbl_switch, y + ui_px(44), ui_icon(&img_swap_16, &img_swap_32));
-    lv_obj_add_event_cb(r, on_switch_click, LV_EVENT_CLICKED, NULL);
-    r = make_row(scr, "主机", &lbl_host, y + ui_px(88), NULL);
-    lv_obj_add_event_cb(r, on_host_click, LV_EVENT_CLICKED, NULL);
-    r = make_row(scr, "端口", &lbl_port, y + ui_px(132), NULL);
-    lv_obj_add_event_cb(r, on_port_click, LV_EVENT_CLICKED, NULL);
-    r = make_row(scr, "API Key", &lbl_key, y + ui_px(176), NULL);
-    lv_obj_add_event_cb(r, on_key_click, LV_EVENT_CLICKED, NULL);
+    row_machine_mode = make_row(scr, "机器模式", &lbl_machine_mode, y, NULL);
+    lv_obj_add_event_cb(row_machine_mode, on_machine_mode_click, LV_EVENT_CLICKED, NULL);
+    row_switch = make_row(scr, "切换打印机", &lbl_switch, y + ui_px(44), ui_icon(&img_swap_16, &img_swap_32));
+    lv_obj_add_event_cb(row_switch, on_switch_click, LV_EVENT_CLICKED, NULL);
+    row_printer_name = make_row(scr, "打印机名称", &lbl_printer_name, y + ui_px(88), NULL);
+    lv_obj_add_event_cb(row_printer_name, on_name_click, LV_EVENT_CLICKED, NULL);
+    row_bambu_link = make_row(scr, "连接方式", &lbl_bambu_link, y + ui_px(132), NULL);
+    lv_obj_add_event_cb(row_bambu_link, on_bambu_link_click, LV_EVENT_CLICKED, NULL);
+    row_bambu_setup = make_row(scr, "连接设置", &lbl_bambu_setup, y + ui_px(176), NULL);
+    lv_obj_add_event_cb(row_bambu_setup, on_bambu_setup_click, LV_EVENT_CLICKED, NULL);
+    row_host = make_row(scr, "主机", &lbl_host, y + ui_px(132), NULL);
+    lv_obj_add_event_cb(row_host, on_host_click, LV_EVENT_CLICKED, NULL);
+    row_port = make_row(scr, "端口", &lbl_port, y + ui_px(176), NULL);
+    lv_obj_add_event_cb(row_port, on_port_click, LV_EVENT_CLICKED, NULL);
+    row_key = make_row(scr, "API Key", &lbl_key, y + ui_px(220), NULL);
+    lv_obj_add_event_cb(row_key, on_key_click, LV_EVENT_CLICKED, NULL);
 
     /* 连接状态行（不可点） */
-    lv_obj_t *srow = theme_card(scr);
-    lv_obj_set_size(srow, ui_content_w(), ui_px(38));
-    lv_obj_align(srow, LV_ALIGN_TOP_MID, 0, y + ui_px(220));
-    lv_obj_t *k = theme_label(srow, "状态", THEME_FONT_M, THEME_COL_TEXT);
+    row_status = theme_card(scr);
+    lv_obj_set_size(row_status, ui_content_w(), ui_px(38));
+    lv_obj_align(row_status, LV_ALIGN_TOP_MID, 0, y + ui_px(264));
+    lv_obj_t *k = theme_label(row_status, "状态", THEME_FONT_M, THEME_COL_TEXT);
     lv_obj_align(k, LV_ALIGN_LEFT_MID, ui_px(2), 0);
-    lbl_status = theme_label(srow, "", THEME_FONT_S, THEME_COL_TEXT_DIM);
+    lbl_status = theme_label(row_status, "", THEME_FONT_S, THEME_COL_TEXT_DIM);
     lv_obj_align(lbl_status, LV_ALIGN_RIGHT_MID, -ui_px(4), 0);
 
-    lv_obj_t *btn = theme_button(scr, LV_SYMBOL_SAVE, "保存并连接", 1);
-    lv_obj_set_size(btn, ui_content_w(), ui_px(36));
-    lv_obj_align(btn, LV_ALIGN_TOP_MID, 0, y + ui_px(266));
-    lv_obj_add_event_cb(btn, on_save_click, LV_EVENT_CLICKED, NULL);
+    btn_save = theme_button(scr, LV_SYMBOL_SAVE, "保存并连接", 1);
+    lv_obj_set_size(btn_save, ui_content_w(), ui_px(36));
+    lv_obj_align(btn_save, LV_ALIGN_TOP_MID, 0, y + ui_px(310));
+    lv_obj_add_event_cb(btn_save, on_save_click, LV_EVENT_CLICKED, NULL);
 
     on_show();   /* 读当前槽并刷新行 */
     return scr;

@@ -3,6 +3,7 @@
  * 连续快速旋转会把步长从 1°C 逐步放大到 10°C，停顿后恢复精调。
  */
 #include "../theme.h"
+#include "../lang.h"
 #include "../ui_anim.h"
 #include "../panel_mgr.h"
 #include "printer.h"
@@ -17,6 +18,7 @@ static lv_obj_t *lbl_ext_cur, *lbl_ext_tgt;
 static lv_obj_t *lbl_bed_cur, *lbl_bed_tgt;
 static int ext_shown10 = -1, bed_shown10 = -1;   /* 0.1 度单位的显示值 */
 static lv_obj_t *row_ext_obj, *row_bed_obj;
+static lv_obj_t *preset_row, *readonly_hint;
 static lv_obj_t *editing_row, *editing_tgt;
 static lv_timer_t *commit_timer;
 static int editing_value, sent_value, speed_score, step_size = 1;
@@ -126,6 +128,7 @@ static int accelerated_step(uint32_t now)
 
 static void on_temp_row(lv_event_t *e)
 {
+    if (!printer_has_capability(PRINTER_CAP_TEMP_CONTROL)) return;
     lv_obj_t *row = lv_event_get_target_obj(e);
     lv_event_code_t code = lv_event_get_code(e);
 
@@ -169,6 +172,7 @@ static void on_temp_row(lv_event_t *e)
 
 static void on_preset(lv_event_t *e)
 {
+    if (!printer_has_capability(PRINTER_CAP_TEMP_CONTROL)) return;
     int idx = (int)(intptr_t)lv_event_get_user_data(e);
     static const struct { float e, b; const char *name; } presets[] = {
         {210, 60, "PLA"}, {240, 80, "PETG"}, {250, 100, "ABS"}, {0, 0, "全部冷却"},
@@ -211,10 +215,27 @@ static lv_obj_t *make_row(lv_obj_t *parent, const char *name, uint32_t col,
 
 static void update_temps(void)
 {
+    bool writable = printer_has_capability(PRINTER_CAP_TEMP_CONTROL);
+    lv_obj_set_flag(preset_row, LV_OBJ_FLAG_HIDDEN, !writable);
+    lv_obj_set_flag(readonly_hint, LV_OBJ_FLAG_HIDDEN, writable);
+    if (writable) {
+        lv_obj_remove_state(row_ext_obj, LV_STATE_DISABLED);
+        lv_obj_remove_state(row_bed_obj, LV_STATE_DISABLED);
+    } else {
+        if (editing_row) {
+            if (commit_timer) { lv_timer_delete(commit_timer); commit_timer = NULL; }
+            lv_obj_set_style_text_color(editing_tgt, theme_col(THEME_COL_TEXT_DIM), 0);
+            editing_row = NULL;
+            editing_tgt = NULL;
+        }
+        lv_obj_add_state(row_ext_obj, LV_STATE_DISABLED);
+        lv_obj_add_state(row_bed_obj, LV_STATE_DISABLED);
+    }
+
     int e10 = (int)(printer_temp_ext() * 10);
     int b10 = (int)(printer_temp_bed() * 10);
-    if (ext_shown10 < 0) ext_shown10 = e10;   /* 首次直接到位 */
-    if (bed_shown10 < 0) bed_shown10 = b10;
+    if (ext_shown10 < 0) { ext_shown10 = e10; temp_anim_cb(lbl_ext_cur, e10); }
+    if (bed_shown10 < 0) { bed_shown10 = b10; temp_anim_cb(lbl_bed_cur, b10); }
     if (e10 != ext_shown10) {
         ui_anim_to(lbl_ext_cur, temp_anim_cb, ext_shown10, e10, UI_ANIM_SLOW, lv_anim_path_ease_out);
     }
@@ -250,20 +271,23 @@ static lv_obj_t *create(void)
 
     /* 预设行 */
     static const char *names[] = {"PLA", "PETG", "ABS", "冷却"};
-    lv_obj_t *row = lv_obj_create(scr);
-    lv_obj_remove_style_all(row);
-    lv_obj_set_size(row, ui_content_w(), ui_px(36));
-    lv_obj_align(row, LV_ALIGN_BOTTOM_MID, 0, -ui_px(12));
-    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_column(row, gap, 0);
+    preset_row = lv_obj_create(scr);
+    lv_obj_remove_style_all(preset_row);
+    lv_obj_set_size(preset_row, ui_content_w(), ui_px(36));
+    lv_obj_align(preset_row, LV_ALIGN_BOTTOM_MID, 0, -ui_px(12));
+    lv_obj_set_flex_flow(preset_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(preset_row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(preset_row, gap, 0);
 
     int pw = (ui_content_w() - 3 * gap) / 4;
     for (int i = 0; i < 4; i++) {
-        lv_obj_t *b = theme_button(row, NULL, names[i], 0);
+        lv_obj_t *b = theme_button(preset_row, NULL, names[i], 0);
         lv_obj_set_size(b, pw, ui_px(34));
         lv_obj_add_event_cb(b, on_preset, LV_EVENT_CLICKED, (void *)(intptr_t)i);
     }
+
+    readonly_hint = theme_label(scr, "云端监视 · 温度只读", THEME_FONT_S, THEME_COL_TEXT_DIM);
+    lv_obj_align(readonly_hint, LV_ALIGN_BOTTOM_MID, 0, -ui_px(20));
 
     return scr;
 }

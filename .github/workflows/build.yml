@@ -157,6 +157,7 @@ jobs:
             mingw-w64-ucrt-x86_64-ninja
             mingw-w64-ucrt-x86_64-SDL2
             mingw-w64-ucrt-x86_64-cjson
+            mingw-w64-ucrt-x86_64-openssl
             zip
 
       - name: Fetch LVGL v9.3.0 (third_party/lvgl is gitignored)

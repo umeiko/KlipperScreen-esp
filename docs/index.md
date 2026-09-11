@@ -1,10 +1,10 @@
 # KlipperScreen-esp
 
-A touchscreen remote display for **Klipper** 3D printers, talking to **Moonraker** over WiFi — running on cheap ESP32 boards. Think of it as a pocket-sized, wireless KlipperScreen.
+A compact remote display for **Klipper** 3D printers, talking to **Moonraker** over WiFi on inexpensive ESP32 boards. The same UI supports touch, rotary encoder, or both; the EC11 reference target is rotary-only.
 
 ![On-device photo](screenshots/main_photo.jpg)
 
-The same UI code also compiles as a **desktop simulator** (SDL2, Windows/Linux), so every panel can be developed and screenshot-tested without flashing hardware.
+The same UI code also ships as a Windows **real Moonraker/Bambu controller** and a separately named SDL2 **simulator** (Windows/Linux). The simulator uses mock data for layout work and screenshot testing.
 
 ## Features
 
@@ -12,8 +12,9 @@ The same UI code also compiles as a **desktop simulator** (SDL2, Windows/Linux),
 - **G-code files** — thumbnails, metadata, history, print/delete
 - **Control** — axis jog & homing, extrude/retract with cold-extrusion guard, temperature presets (PLA/PETG/ABS/cooldown), emergency stop & firmware restart with confirmation
 - **Robust link** — WebSocket auto-reconnect, app-level heartbeat with RTT display, zombie-connection detection, Klipper error toasts (e.g. endstop not triggered)
+- **Bambu status monitor** — Windows sign-in, verification code, bound-device selection, and cloud MQTT status sync are available. Cloud mode is read-only; LAN Developer Mode controls are reserved for a later backend.
 - **Extras** — "Umeko" boot animation, 5 languages (EN / 简中 / 繁中 / FR / IT, fade-to-black reboot on switch), brightness slider, auto screen-off with touch wake, title-bar clock synced from the Moonraker host (no internet needed)
-- **One-time touch calibration** persisted to flash; factory calibration pre-installed for the 2432S028R
+- **Input paths** — no-touch rotary boards need no touch layer; resistive touch uses a board-specific calibration path; capacitive touch normally reports screen coordinates directly. Touch and rotary can coexist.
 
 ## Supported boards
 
@@ -30,15 +31,18 @@ Full pinouts and hardware details: [Supported boards](boards.md).
 
 1. Download the zip for your board from [Releases](https://github.com/umeiko/KlipperScreen-esp/releases), unzip, then `flash.bat COMx` (Windows) or `./flash.sh /dev/ttyUSB0`
 2. Settings → WiFi: scan → pick AP → enter password
-3. Settings → Moonraker: pick a printer slot (up to 6), enter host IP + port (default 7125)
+3. Settings → Printer Connection: pick a printer slot and choose Klipper or Bambu mode; for Klipper, enter the host IP + port (default 7125), while Bambu continues to its LAN or cloud settings
 
-For self-compiling see the repo README; to run the firmware on your own board see the [porting guide](porting.md).
+For self-compiling see the repo README; to run the firmware on your own board see the [porting guide](porting.md). Start its input section by choosing the no-touch or touch route, then choose resistive or capacitive touch where applicable.
 
 ## Documentation map
 
 - [Supported boards](boards.md) — hardware info and pinouts of existing boards
 - [Porting to your own board](porting.md) — the BSP contract and implementation notes
 - [Contributing a new board](contributing-board.md) — what a board-support PR must change and verify
+- [Screenshots](screenshots.md) — current English desktop simulator screens
+- [Architecture](architecture.md) — shared UI, BSP, desktop controller, and simulator structure
+- [Bambu integration notes](bambu-integration-architecture.md) — current read-only cloud boundary and planned LAN path
 
 ## License
 
