@@ -41,6 +41,19 @@ Logical resolution **320×240 landscape**.
 | Touch CS / IRQ | 33 / 36 | |
 | BOOT button | 0 | Screen off / wake |
 
+### Optional EC11 rotary encoder
+
+The CYD firmware ships with rotary-encoder support enabled (PCNT hardware quadrature decoding). Wire a bare EC11 to the extended IO header; the encoder works alongside the touchscreen — rotate to move the focus, press to confirm.
+
+| EC11 pin | GPIO | Notes |
+|---|---|---|
+| A | 35 | **Needs an external ~10kΩ pull-up to 3V3** — GPIO35 is input-only and has no internal pull-up |
+| B | 22 | Internal pull-up |
+| SW (push) | 27 | Internal pull-up, active-low |
+| C / GND | GND | Common contact of A/B/SW to GND |
+
+Encoder modules that already provide pull-ups on A/B can be wired directly.
+
 ## E32R35T
 
 ![E32R35T](screenshots/boards/e32r35t.png)
