@@ -28,9 +28,10 @@ UI_DIR = ROOT / "src" / "ui"
 CONV_JS = ROOT / "tools" / "fontgen" / "node_modules" / "lv_font_conv" / "lv_font_conv.js"
 CHARSET_OUT = ROOT / "tmp" / "cjk_chars.txt"
 DEFAULT_FONT = r"C:\Windows\Fonts\simhei.ttf"
-# 西文兜底字体：simhei 只覆盖拼音用拉丁字母（é/è/à/ê/ù…），缺 ç/ô/É 等，
-# Latin-1 补充区（0xA0-0xFF）整体由该字体补齐，避免法语/意语出现方框。
-DEFAULT_LATIN_FONT = r"C:\Windows\Fonts\arial.ttf"
+# 西文字体：Lato（OFL 许可，可嵌入分发，已随仓库提供）。ASCII(0x20-0x7F)与
+# Latin-1 补充区(0xA0-0xFF，法语/意语重音字母)全部由它提供，界面西文风格统一；
+# 主字体 simhei 只负责 CJK 等非 ASCII 字符。
+DEFAULT_LATIN_FONT = str(ROOT / "tools" / "fontgen" / "fonts" / "Lato-Regular.ttf")
 SIZES = (10, 12, 14, 16, 28, 32)   # 10/12: 160x128 小屏档；14/16: 320x240 基准；28/32: 800x480 双倍档
 
 
@@ -127,15 +128,16 @@ def gen_font(font: str, latin_font: str, size: int, symbols: str, compress: bool
     out = ROOT / "src" / "ui" / "assets" / f"font_cjk_{size}{suffix}.c"
     cmd = [
         "node", str(CONV_JS),
-        "--font", font,
+        "--font", latin_font,
         "--size", str(size),
         "--bpp", "4",
         "--format", "lvgl",
         "--lv-include", "lvgl.h",
-        "--range", "0x20-0x7F",
-        "--symbols", symbols,
+        "--range", "0x20-0x7F",       # ASCII 用西文字体（Lato）
         "--font", latin_font,
-        "--range", "0xA0-0xFF",
+        "--range", "0xA0-0xFF",       # Latin-1 补充区同用 Lato（风格统一）
+        "--font", font,
+        "--symbols", symbols,         # CJK 等非 ASCII 用主字体（simhei）
         "-o", str(out),
     ]
     # 全部尺寸主版本不压缩：JC8048W550 滑动列表每帧重绘数百个字形，
@@ -153,7 +155,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="生成 LVGL CJK 子集字体")
     ap.add_argument("--font", default=DEFAULT_FONT, help="ttf/otf 主字体源路径（CJK+ASCII）")
     ap.add_argument("--font-latin", default=DEFAULT_LATIN_FONT,
-                    help="西文兜底字体源路径（Latin-1 补充区 0xA0-0xFF）")
+                    help="西文字体源路径（ASCII 0x20-0x7F + Latin-1 补充区 0xA0-0xFF，默认 Lato/OFL）")
     ap.add_argument("--sizes", type=int, nargs="+", default=None,
                     help="只生成指定字号（默认 SIZES 全量）；增量补新档用，避免重写已有字体文件")
     args = ap.parse_args()
