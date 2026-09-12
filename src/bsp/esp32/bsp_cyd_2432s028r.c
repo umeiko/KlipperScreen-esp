@@ -11,6 +11,7 @@
 
 #include <math.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "cJSON.h"
 #include "driver/gpio.h"
@@ -312,11 +313,13 @@ void bsp_fade_out(uint32_t ms)
     ledc_fade_start(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, LEDC_FADE_WAIT_DONE);
     bl_duty = 0;
 
-    /* 渐暗后把 GRAM 整屏推黑：否则面板寄存器残留旧帧，下次上电瞬间会闪一下旧画面 */
-    static uint16_t black[LCD_H_RES * 40];   /* 静态零初始化即全黑（RGB565 0x0000） */
-    for (int y = 0; y < LCD_V_RES; y += 40) {
+    /* 渐暗后把 GRAM 整屏推黑：否则面板寄存器残留旧帧，下次上电瞬间会闪一下旧画面。
+       不保留任何常驻缓冲：栈上现场填一行全 0，逐行推完即释放 */
+    uint16_t black[LCD_H_RES];
+    memset(black, 0, sizeof(black));   /* RGB565 0x0000 = 黑 */
+    for (int y = 0; y < LCD_V_RES; y++) {
         xSemaphoreTake(lcd_trans_done, 0);
-        esp_lcd_panel_draw_bitmap(panel_handle, 0, y, LCD_H_RES, y + 40, black);
+        esp_lcd_panel_draw_bitmap(panel_handle, 0, y, LCD_H_RES, y + 1, black);
         xSemaphoreTake(lcd_trans_done, pdMS_TO_TICKS(500));
     }
 }
@@ -382,12 +385,21 @@ static void touch_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
 
 static void lvgl_task(void *arg)
 {
+    /* 堆低水位监控：free 创新低的整 KB 时打 WARN，定位内存泄漏/OOM（WDT 前兆） */
+    size_t low_mark = (size_t)-1;
     for (;;) {
         bsp_lvgl_lock();
         lv_timer_handler();
         bsp_screen_power_poll();
         bsp_sleep_button_poll();
         bsp_lvgl_unlock();
+        size_t free_kb = esp_get_free_heap_size() / 1024;
+        if (free_kb < low_mark) {
+            low_mark = free_kb;
+            ESP_LOGW(TAG, "heap low: free=%uKB min_ever=%uKB largest_blk=%uB",
+                     (unsigned)free_kb, (unsigned)(esp_get_minimum_free_heap_size() / 1024),
+                     (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+        }
         vTaskDelay(pdMS_TO_TICKS(5));
     }
 }

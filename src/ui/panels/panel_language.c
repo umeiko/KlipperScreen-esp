@@ -79,4 +79,5 @@ panel_def_t panel_language_def = {
     .create = create,
     .on_show = refresh,
     .on_tick = NULL,
+    .hide_temps = 1,
 };

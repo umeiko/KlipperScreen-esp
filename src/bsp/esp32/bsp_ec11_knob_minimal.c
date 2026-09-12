@@ -16,6 +16,8 @@
 #include "bsp_screen_power.h"
 #include "bsp_sleep_button.h"
 
+#include <string.h>
+
 #include "driver/ledc.h"
 #include "driver/spi_master.h"
 #include "esp_heap_caps.h"
@@ -172,9 +174,10 @@ void bsp_fade_out(uint32_t ms)
     ESP_ERROR_CHECK(ledc_fade_start(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0,
                                     LEDC_FADE_WAIT_DONE));
 
-    static uint16_t black[LCD_H_RES * DRAW_BUF_LINES];
-    for (int y = 0; y < LCD_V_RES; y += DRAW_BUF_LINES)
-        draw_wait(0, y, LCD_H_RES, y + DRAW_BUF_LINES, black);
+    uint16_t black[LCD_H_RES];
+    memset(black, 0, sizeof(black));   /* 栈上现场填一行全 0，逐行推，不留常驻缓冲 */
+    for (int y = 0; y < LCD_V_RES; y++)
+        draw_wait(0, y, LCD_H_RES, y + 1, black);
 }
 
 static void lvgl_task(void *arg)

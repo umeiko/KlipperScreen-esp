@@ -295,4 +295,5 @@ panel_def_t panel_wifi_def = {
     .create = create,
     .on_show = start_scan,
     .on_tick = tick,
+    .hide_temps = 1,
 };

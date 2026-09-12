@@ -120,4 +120,5 @@ panel_def_t panel_files_def = {
     .create = create,
     .on_show = on_show,
     .on_tick = NULL,
+    .hide_temps = 1,   /* 文件管理与打印控制无关，标题栏不显示温度 */
 };

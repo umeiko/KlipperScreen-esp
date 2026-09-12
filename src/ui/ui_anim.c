@@ -74,12 +74,12 @@ void ui_toast(const char *text, uint32_t accent_hex)
 }
 
 /* ---------- 转场 ---------- */
-void ui_screen_push(lv_obj_t *scr)
+void ui_screen_push(lv_obj_t *scr, bool del_prev)
 {
-    lv_screen_load_anim(scr, LV_SCR_LOAD_ANIM_MOVE_LEFT, UI_ANIM_NORMAL, 0, false);
+    lv_screen_load_anim(scr, LV_SCR_LOAD_ANIM_MOVE_LEFT, UI_ANIM_NORMAL, 0, del_prev);
 }
 
-void ui_screen_pop(lv_obj_t *scr)
+void ui_screen_pop(lv_obj_t *scr, bool del_prev)
 {
-    lv_screen_load_anim(scr, LV_SCR_LOAD_ANIM_MOVE_RIGHT, UI_ANIM_NORMAL, 0, false);
+    lv_screen_load_anim(scr, LV_SCR_LOAD_ANIM_MOVE_RIGHT, UI_ANIM_NORMAL, 0, del_prev);
 }

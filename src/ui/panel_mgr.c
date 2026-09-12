@@ -60,6 +60,17 @@ static void ensure_created(panel_def_t *p)
     ui_nav_attach_scope(p->scr, p->nav_group);
 }
 
+/* 离开的非主面板不缓存（CYD 等无 PSRAM 机型 17 个面板全常驻必然 OOM）：
+   屏幕对象树由转场 auto_del 在动画结束时删除，这里同步回收导航组/scope，
+   指针清空后 ensure_created 会在下次进入时重建。 */
+static void destroy_left_panel(panel_def_t *p)
+{
+    if (!p || p == nav_stack[0] || !p->scr) return;
+    ui_nav_group_destroy(p->scr, p->nav_group);
+    p->scr = NULL;
+    p->nav_group = NULL;
+}
+
 static panel_def_t *find(const char *name)
 {
     for (unsigned i = 0; i < REG_COUNT; i++)
@@ -67,11 +78,13 @@ static panel_def_t *find(const char *name)
     return NULL;
 }
 
-static void show(panel_def_t *p, int push)
+static void show(panel_def_t *p, int push, panel_def_t *leaving)
 {
-    ensure_created(p);          /* 懒加载，之后复用 */
-    if (push) ui_screen_push(p->scr);
-    else      ui_screen_pop(p->scr);
+    ensure_created(p);          /* 懒加载：常驻的只有主面板和当前面板 */
+    bool del_prev = leaving && leaving != nav_stack[0] && leaving->scr;
+    if (push) ui_screen_push(p->scr, del_prev);
+    else      ui_screen_pop(p->scr, del_prev);
+    if (del_prev) destroy_left_panel(leaving);   /* 对象树由 LVGL 在转场结束后删除 */
     const char *title = (ui_scale() < 1.0f && p->title_s) ? p->title_s : p->title;
     titlebar_set(title, nav_top > 0);
     /* 小屏（scale<1）标题位窄，子面板的温度让位给标题，只在主面板（时钟位）显示 */
@@ -100,22 +113,24 @@ void panel_mgr_open(const char *name)
     panel_def_t *p = find(name);
     if (!p || nav_top >= NAV_DEPTH_MAX - 1) return;
     if (nav_top >= 0 && nav_stack[nav_top] == p) return;   /* 栈顶去重 */
+    panel_def_t *leaving = nav_top >= 0 ? nav_stack[nav_top] : NULL;
     nav_stack[++nav_top] = p;
-    show(p, 1);
+    show(p, 1, leaving);
 }
 
 void panel_mgr_back(void)
 {
     if (nav_top <= 0) return;
-    nav_top--;
-    show(nav_stack[nav_top], 0);
+    panel_def_t *leaving = nav_stack[nav_top--];
+    show(nav_stack[nav_top], 0, leaving);
 }
 
 void panel_mgr_home(void)
 {
     if (nav_top <= 0) return;
+    panel_def_t *leaving = nav_stack[nav_top];
     nav_top = 0;
-    show(nav_stack[0], 0);
+    show(nav_stack[0], 0, leaving);
 }
 
 int panel_mgr_depth(void) { return nav_top + 1; }

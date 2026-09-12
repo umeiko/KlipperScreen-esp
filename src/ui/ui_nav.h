@@ -19,6 +19,10 @@ void ui_nav_prepare_group(lv_group_t *group);
 void ui_nav_attach_scope(lv_obj_t *root, lv_group_t *group);
 void ui_nav_detach_scope(lv_obj_t *root);
 void ui_nav_activate(lv_group_t *group);
+/* 销毁一个面板的导航组（panel_mgr 销毁子面板时用）：
+   摘除 scope 注册；若该组仍是活动组则先解绑 indev。
+   LVGL 的 lv_group_delete 会把组内对象的回指清空，随后删屏幕对象树是安全的。 */
+void ui_nav_group_destroy(lv_obj_t *root, lv_group_t *group);
 /* Move focus away from a control that the page hid while refreshing itself. */
 void ui_nav_refocus_visible(lv_group_t *group);
 

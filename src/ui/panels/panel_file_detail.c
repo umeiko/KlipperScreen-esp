@@ -125,4 +125,5 @@ panel_def_t panel_file_detail_def = {
     .create = create,
     .on_show = update_ui,
     .on_tick = NULL,
+    .hide_temps = 1,
 };

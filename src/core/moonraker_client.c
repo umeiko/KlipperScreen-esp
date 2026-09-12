@@ -67,9 +67,34 @@ static size_t rx_len;
 static void handshake_step_subscribe(void);
 static void force_reconnect(void);
 
-/* ---------- LVGL 投递 ---------- */
+/* lv_async_call 会改 LVGL 全局 timer 链表；本文件均在 WS/esp_timer/cli 任务上下文
+ * 调用它，必须持 LVGL 锁与 lvgl_task 的 lv_timer_handler 互斥——否则链表竞争会
+ * 导致 async 定时器被执行两次/拿到野指针（曾现网崩溃：lv_async_timer_cb lv_free 断言） */
+static void post_to_lvgl(lv_async_cb_t cb, void *p)
+{
+    bsp_lvgl_lock();
+    lv_async_call(cb, p);
+    bsp_lvgl_unlock();
+}
+
+/* 堆载荷专用：返回是否投递成功。lv_async_call 自身也要申请内存，低内存时会失败，
+ * 失败后回调永远不会执行，按"接收方负责 free"的约定载荷就漏了——调用方必须回收。 */
+static bool post_heap_to_lvgl(lv_async_cb_t cb, void *p)
+{
+    bsp_lvgl_lock();
+    lv_result_t r = lv_async_call(cb, p);
+    bsp_lvgl_unlock();
+    return r == LV_RESULT_OK;
+}
+
+/* 状态投递在途去重：Klipper 状态推送可达 4Hz，逐条 lv_async_call 在 LVGL 忙时
+ * 会积压成无界队列（堆只涨不落的"泄漏"假象，heap trace 还抓不到——因为每条最终
+ * 都会被释放）。有在途投递时丢弃本次快照：温度类数据 ≤250ms 后就有下一帧，无感。 */
+static volatile bool status_async_queued;
+
 static void apply_in_lvgl(void *p)
 {
+    status_async_queued = false;
     printer_model_apply_status_json((char *)p);   /* 内部负责 free */
 }
 
@@ -93,27 +118,19 @@ static void report_rtt_in_lvgl(void *p)
     printer_model_set_rtt((int)(intptr_t)p);
 }
 
-/* lv_async_call 会改 LVGL 全局 timer 链表；本文件均在 WS/esp_timer/cli 任务上下文
- * 调用它，必须持 LVGL 锁与 lvgl_task 的 lv_timer_handler 互斥——否则链表竞争会
- * 导致 async 定时器被执行两次/拿到野指针（曾现网崩溃：lv_async_timer_cb lv_free 断言） */
-static void post_to_lvgl(lv_async_cb_t cb, void *p)
-{
-    bsp_lvgl_lock();
-    lv_async_call(cb, p);
-    bsp_lvgl_unlock();
-}
-
-/* status 子对象（cJSON，属于 msg 树）序列化后投递；调用方之后负责删 msg 树 */
+/* status 子对象（cJSON，属于 msg 树）序列化后投递；调用方之后负责删 msg 树。
+   有在途投递时直接丢弃本次快照（在途去重，见 apply_in_lvgl 上方注释） */
 static void post_status(cJSON *status_obj)
 {
-    if (!status_obj) return;
+    if (!status_obj || status_async_queued) return;
     char *txt = cJSON_PrintUnformatted(status_obj);
     if (!txt) return;
     char *heap = malloc(strlen(txt) + 1);
     if (!heap) { cJSON_free(txt); return; }
     strcpy(heap, txt);
     cJSON_free(txt);
-    post_to_lvgl(apply_in_lvgl, heap);
+    if (post_heap_to_lvgl(apply_in_lvgl, heap)) status_async_queued = true;
+    else free(heap);   /* LVGL 也申请失败：回收，别积压 */
 }
 
 /* ---------- 发送 ---------- */
@@ -312,7 +329,10 @@ static void handle_notify(const char *method, cJSON *params)
         cJSON *s = cJSON_GetArrayItem(params, 0);
         if (cJSON_IsString(s) && s->valuestring && strncmp(s->valuestring, "!!", 2) == 0) {
             char *heap = malloc(strlen(s->valuestring) + 1);
-            if (heap) { strcpy(heap, s->valuestring); post_to_lvgl(report_gcode_in_lvgl, heap); }
+            if (heap) {
+                strcpy(heap, s->valuestring);
+                if (!post_heap_to_lvgl(report_gcode_in_lvgl, heap)) free(heap);
+            }
         }
     } else if (strcmp(method, "notify_klippy_ready") == 0) {
         /* klippy 重启完成：重发订阅拿全新快照 */
@@ -324,7 +344,10 @@ static void handle_notify(const char *method, cJSON *params)
                         ? "{\"webhooks\":{\"state\":\"shutdown\"}}"
                         : "{\"webhooks\":{\"state\":\"disconnected\"}}";
         char *heap = malloc(strlen(s) + 1);
-        if (heap) { strcpy(heap, s); post_to_lvgl(apply_in_lvgl, heap); }
+        if (heap) {
+            strcpy(heap, s);
+            if (!post_heap_to_lvgl(apply_in_lvgl, heap)) free(heap);
+        }
     }
     /* notify_gcode_response 已转 toast；proc_stat / filelist_changed 等本期忽略 */
 }
@@ -355,13 +378,16 @@ static void on_ws_message(const char *data, int len)
                      * 不会走 gcode "!!" 行，必须在这里弹 toast */
                     if (!cb && !cb_json) {
                         char *heap = malloc(strlen(emsg) + 1);
-                        if (heap) { strcpy(heap, emsg); post_to_lvgl(report_rpc_err_in_lvgl, heap); }
+                        if (heap) {
+                            strcpy(heap, emsg);
+                            if (!post_heap_to_lvgl(report_rpc_err_in_lvgl, heap)) free(heap);
+                        }
                     }
                     if (cb_json) {   /* 对外回调也要收到失败信号（NULL） */
                         rpc_delivery_t *d = malloc(sizeof(*d));
                         if (d) {
                             d->cb = cb_json; d->ud = ud; d->json = NULL;
-                            post_to_lvgl(deliver_in_lvgl, d);
+                            if (!post_heap_to_lvgl(deliver_in_lvgl, d)) free(d);
                         }
                     }
                 } else if (cb) {
@@ -372,7 +398,10 @@ static void on_ws_message(const char *data, int len)
                     rpc_delivery_t *d = malloc(sizeof(*d));
                     if (d) {
                         d->cb = cb_json; d->ud = ud; d->json = txt;
-                        post_to_lvgl(deliver_in_lvgl, d);
+                        if (!post_heap_to_lvgl(deliver_in_lvgl, d)) {
+                            cJSON_free(txt);
+                            free(d);
+                        }
                     } else {
                         cJSON_free(txt);
                     }

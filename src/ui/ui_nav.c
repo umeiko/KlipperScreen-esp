@@ -239,6 +239,18 @@ void ui_nav_activate(lv_group_t *group)
         lv_group_add_obj(group, global_obj);
 }
 
+void ui_nav_group_destroy(lv_obj_t *root, lv_group_t *group)
+{
+    if (root) ui_nav_detach_scope(root);
+    if (!group) return;
+    if (active_group == group) {   /* 正常不会发生（只销毁已离开的面板），兜底解绑 */
+        active_group = NULL;
+        lv_group_set_default(NULL);
+        bind_navigation_indevs(NULL);
+    }
+    lv_group_delete(group);   /* 会把组内对象（含 global_obj）的回指清空 */
+}
+
 void ui_nav_refocus_visible(lv_group_t *group)
 {
     if (!group) return;

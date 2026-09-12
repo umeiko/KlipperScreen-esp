@@ -61,4 +61,5 @@ panel_def_t panel_settings_def = {
     .create = create,
     .on_show = NULL,
     .on_tick = NULL,
+    .hide_temps = 1,   /* 设置及其子菜单与打印控制无关，标题栏不显示温度 */
 };

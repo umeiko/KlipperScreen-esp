@@ -352,4 +352,5 @@ static lv_obj_t *create(void)
 panel_def_t panel_job_status_def = {
     .name = "job_status", .title = "打印状态", .title_s = "打印",
     .create = create, .on_show = update_ui, .on_tick = update_ui,
+    .hide_temps = 1,   /* 页面内已有温度显示，长语言标题（如法语）避免与标题栏温度遮挡 */
 };

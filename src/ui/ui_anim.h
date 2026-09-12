@@ -23,9 +23,10 @@ void ui_anim_after(uint32_t delay_ms, lv_anim_completed_cb_t cb, void *var);
 /* Toast：顶部滑入 -> 停留 -> 滑出销毁 */
 void ui_toast(const char *text, uint32_t accent_hex);
 
-/* 面板转场时长/方向的统一入口（panel_mgr 使用） */
-void ui_screen_push(lv_obj_t *scr);   /* 进入：左滑 */
-void ui_screen_pop(lv_obj_t *scr);    /* 返回：右滑 */
+/* 面板转场时长/方向的统一入口（panel_mgr 使用）。
+   del_prev=true 时旧屏幕在转场结束后由 LVGL 自动删除（无 PSRAM 机型不缓存子面板） */
+void ui_screen_push(lv_obj_t *scr, bool del_prev);   /* 进入：左滑 */
+void ui_screen_pop(lv_obj_t *scr, bool del_prev);    /* 返回：右滑 */
 
 #ifdef __cplusplus
 }

@@ -49,15 +49,21 @@ void titlebar_init(void)
     lbl_title = theme_label(bar, "", THEME_FONT_M, THEME_COL_TEXT);
     lv_obj_align(lbl_title, LV_ALIGN_LEFT_MID, ui_px(72), 0);
 
-    /* 右侧：喷嘴/热床实时温度（小图标 + 数值） */
+    /* 右侧：喷嘴/热床实时温度（小图标 + 数值）。
+       温度标签定宽 + 文本右对齐，图标/标签用 OUT_LEFT_MID 从右往左链式排布：
+       百位温度（"119°"）变宽时向左占定宽内的空间，不会再压住左侧图标。 */
     lbl_bed = theme_label(bar, "", THEME_FONT_S, THEME_COL_BED);
+    lv_obj_set_width(lbl_bed, ui_px(36));
+    lv_obj_set_style_text_align(lbl_bed, LV_TEXT_ALIGN_RIGHT, 0);
     lv_obj_align(lbl_bed, LV_ALIGN_RIGHT_MID, -ui_px(2), 0);
     ic_bed = theme_img(bar, ui_icon(&img_bed_16, &img_bed_32), THEME_COL_BED);
-    lv_obj_align(ic_bed, LV_ALIGN_RIGHT_MID, -ui_px(34), 0);
+    lv_obj_align_to(ic_bed, lbl_bed, LV_ALIGN_OUT_LEFT_MID, -ui_px(2), 0);
     lbl_ext = theme_label(bar, "", THEME_FONT_S, THEME_COL_EXTRUDER);
-    lv_obj_align(lbl_ext, LV_ALIGN_RIGHT_MID, -ui_px(70), 0);
+    lv_obj_set_width(lbl_ext, ui_px(36));
+    lv_obj_set_style_text_align(lbl_ext, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_obj_align_to(lbl_ext, ic_bed, LV_ALIGN_OUT_LEFT_MID, -ui_px(8), 0);
     ic_ext = theme_img(bar, ui_icon(&img_nozzle_16, &img_nozzle_32), THEME_COL_EXTRUDER);
-    lv_obj_align(ic_ext, LV_ALIGN_RIGHT_MID, -ui_px(102), 0);
+    lv_obj_align_to(ic_ext, lbl_ext, LV_ALIGN_OUT_LEFT_MID, -ui_px(2), 0);
 
     titlebar_tick();
 }

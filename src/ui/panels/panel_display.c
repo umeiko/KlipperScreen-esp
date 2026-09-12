@@ -124,4 +124,5 @@ panel_def_t panel_display_def = {
     .create = create,
     .on_show = NULL,
     .on_tick = NULL,
+    .hide_temps = 1,
 };

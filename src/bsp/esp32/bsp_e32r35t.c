@@ -20,6 +20,7 @@
 
 #include <math.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "cJSON.h"
 #include "driver/gpio.h"
@@ -324,11 +325,13 @@ void bsp_fade_out(uint32_t ms)
     ledc_fade_start(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, LEDC_FADE_WAIT_DONE);
     bl_duty = 0;
 
-    /* 渐暗后把 GRAM 整屏推黑：否则面板寄存器残留旧帧，下次上电瞬间会闪一下旧画面 */
-    static uint16_t black[LCD_H_RES * 40];   /* 静态零初始化即全黑（RGB565 0x0000） */
-    for (int y = 0; y < LCD_V_RES; y += 40) {
+    /* 渐暗后把 GRAM 整屏推黑：否则面板寄存器残留旧帧，下次上电瞬间会闪一下旧画面。
+       不保留任何常驻缓冲：栈上现场填一行全 0，逐行推完即释放 */
+    uint16_t black[LCD_H_RES];
+    memset(black, 0, sizeof(black));   /* RGB565 0x0000 = 黑 */
+    for (int y = 0; y < LCD_V_RES; y++) {
         xSemaphoreTake(lcd_trans_done, 0);
-        esp_lcd_panel_draw_bitmap(panel_handle, 0, y, LCD_H_RES, y + 40, black);
+        esp_lcd_panel_draw_bitmap(panel_handle, 0, y, LCD_H_RES, y + 1, black);
         xSemaphoreTake(lcd_trans_done, pdMS_TO_TICKS(500));
     }
 }

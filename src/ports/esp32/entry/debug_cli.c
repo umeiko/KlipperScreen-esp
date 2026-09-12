@@ -16,6 +16,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
+#include "esp_system.h"
+#include "esp_heap_caps.h"
 #include "esp_wifi.h"
 #include "bsp_wifi.h"
 #include "app_settings.h"
@@ -212,6 +214,115 @@ static void cmd_gc(char *args)
     printf("gcode: '%s' -> %s\n", args, klipper_gcode_script(args) ? "sent" : "send failed");
 }
 
+static void cmd_mem(void)
+{
+    printf("heap: free=%uB min_ever=%uB largest_blk=%uB\n",
+           (unsigned)esp_get_free_heap_size(),
+           (unsigned)esp_get_minimum_free_heap_size(),
+           (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+}
+
+/* ---- 堆泄漏跟踪（heap trace standalone，诊断用） ----
+   `ht` 开始跟踪（申请记录缓冲），再敲一次 `ht` 停止并按调用点聚合打印未释放块。
+   用法：连上 Moonraker 后 ht → 等 ~10s（泄漏几十 KB）→ ht → 把输出贴给上位机，
+   地址用 addr2line 对 ELF 解码。 */
+#if CONFIG_HEAP_TRACING_STANDALONE
+#include "esp_heap_trace.h"
+#define HT_RECORDS 128   /* 记录缓冲 ~7KB；512 条要 ~28KB，会把只剩 45KB 的被测设备自己压死 */
+
+static heap_trace_record_t *ht_buf;
+
+typedef struct { void *caller; size_t bytes; unsigned count; } ht_agg_t;
+
+static void cmd_ht(void)
+{
+    if (ht_buf) {
+        heap_trace_stop();
+        heap_trace_summary_t sum;
+        heap_trace_summary(&sum);
+        printf("trace: allocs=%u frees=%u records=%u%s\n",
+               (unsigned)sum.total_allocations, (unsigned)sum.total_frees,
+               (unsigned)sum.count, sum.has_overflowed ? " OVERFLOWED(记录不够,结果偏前段)" : "");
+
+        ht_agg_t agg[64];
+        int nagg = 0;
+        size_t n = heap_trace_get_count();
+        for (size_t i = 0; i < n; i++) {
+            heap_trace_record_t r;
+            if (heap_trace_get(i, &r) != ESP_OK || r.freed || !r.address) continue;
+            void *c = r.alloced_by[0];
+            int k;
+            for (k = 0; k < nagg; k++)
+                if (agg[k].caller == c) break;
+            if (k == nagg && nagg < 64) { agg[nagg].caller = c; agg[nagg].bytes = 0; agg[nagg].count = 0; nagg++; }
+            if (k < nagg) { agg[k].bytes += r.size; agg[k].count++; }
+        }
+        /* 按字节降序冒泡（量小无所谓） */
+        for (int i = 0; i < nagg; i++)
+            for (int j = i + 1; j < nagg; j++)
+                if (agg[j].bytes > agg[i].bytes) { ht_agg_t t = agg[i]; agg[i] = agg[j]; agg[j] = t; }
+        printf("--- 未释放块 Top（caller=malloc 调用点返回地址） ---\n");
+        for (int i = 0; i < nagg && i < 15; i++) {
+            /* 找回该 caller 的一条完整栈帧便于 addr2line */
+            void *frames[4] = {0};
+            for (size_t j = 0; j < n; j++) {
+                heap_trace_record_t r;
+                if (heap_trace_get(j, &r) != ESP_OK || r.freed || !r.address) continue;
+                if (r.alloced_by[0] == agg[i].caller) { memcpy(frames, r.alloced_by, sizeof(frames)); break; }
+            }
+            printf("  %6uB x%-4u caller=%p %p %p %p\n",
+                   (unsigned)agg[i].bytes, agg[i].count,
+                   frames[0], frames[1], frames[2], frames[3]);
+        }
+        free(ht_buf);
+        ht_buf = NULL;
+        return;
+    }
+    ht_buf = malloc(HT_RECORDS * sizeof(heap_trace_record_t));
+    if (!ht_buf) { printf("ht: no mem for record buffer\n"); return; }
+    heap_trace_init_standalone(ht_buf, HT_RECORDS);
+    heap_trace_start(HEAP_TRACE_LEAKS);
+    printf("ht: tracing started (%u records), 等几秒后再敲 ht 停止并聚合\n", HT_RECORDS);
+}
+#else
+static void cmd_ht(void) { printf("ht: 本固件未开 HEAP_TRACING_STANDALONE\n"); }
+#endif
+
+/* ---- 每任务堆占用（HEAP_TASK_TRACKING，诊断用） ----
+   `taskmem` 打印各任务当前/峰值堆占用，连敲两次对比增长即知哪个任务在漏。 */
+#if CONFIG_HEAP_TASK_TRACKING
+#include "esp_heap_task_info.h"
+static void cmd_taskmem(void)
+{
+    static task_stat_t stats[24];
+    static heap_stat_t hstats[48];
+    heap_all_tasks_stat_t all = {
+        .task_count = 24, .stat_arr = stats,
+        .heap_count = 48, .heap_stat_start = hstats,
+        .alloc_count = 0, .alloc_stat_start = NULL,
+    };
+    if (heap_caps_get_all_task_stat(&all) != ESP_OK) { printf("taskmem: failed\n"); return; }
+    /* 按 current_usage 降序 */
+    size_t n = 0;
+    while (n < 24 && stats[n].handle) n++;
+    for (size_t i = 0; i < n; i++)
+        for (size_t j = i + 1; j < n; j++)
+            if (stats[j].overall_current_usage > stats[i].overall_current_usage) {
+                task_stat_t t = stats[i]; stats[i] = stats[j]; stats[j] = t;
+            }
+    printf("task heap usage (current/peak):\n");
+    for (size_t i = 0; i < n; i++) {
+        if (!stats[i].overall_current_usage && !stats[i].overall_peak_usage) continue;
+        printf("  %-14s %7u / %7u B%s\n", stats[i].name,
+               (unsigned)stats[i].overall_current_usage,
+               (unsigned)stats[i].overall_peak_usage,
+               stats[i].is_alive ? "" : " (deleted)");
+    }
+}
+#else
+static void cmd_taskmem(void) { printf("taskmem: 本固件未开 HEAP_TASK_TRACKING\n"); }
+#endif
+
 static void cli_handle(char *line)
 {
     while (*line == ' ') line++;
@@ -221,7 +332,7 @@ static void cli_handle(char *line)
 
     if (!strcmp(line, "help")) {
         printf("commands: help | scan | wifi <ssid> <pass> | wifioff | wifion | mr <host> [port] | mrstart | status | ps\n"
-               "          printer <1-6> | gc <gcode> | ls [path] | cd <path> | pwd | cat <file> | rm <file> | lcdstat [秒]\n");
+               "          printer <1-6> | gc <gcode> | ls [path] | cd <path> | pwd | cat <file> | rm <file> | lcdstat [秒] | mem | ht | taskmem\n");
     } else if (!strcmp(line, "scan")) {
         cmd_scan();
     } else if (!strcmp(line, "wifi")) {
@@ -234,6 +345,12 @@ static void cli_handle(char *line)
         cmd_ps();
     } else if (!strcmp(line, "gc")) {
         cmd_gc(args);
+    } else if (!strcmp(line, "mem")) {
+        cmd_mem();
+    } else if (!strcmp(line, "ht")) {
+        cmd_ht();
+    } else if (!strcmp(line, "taskmem")) {
+        cmd_taskmem();
     } else if (!strcmp(line, "ls")) {
         cmd_ls(args);
     } else if (!strcmp(line, "cd")) {

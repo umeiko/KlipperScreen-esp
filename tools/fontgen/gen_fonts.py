@@ -126,6 +126,12 @@ def collect_chars() -> str:
 
 def gen_font(font: str, latin_font: str, size: int, symbols: str, compress: bool, suffix: str = "") -> Path:
     out = ROOT / "src" / "ui" / "assets" / f"font_cjk_{size}{suffix}.c"
+    # lv_font_conv 的 Ranger 是"后写覆盖"：--symbols 里若包含已被 Lato range
+    # 覆盖的码点（°·Éàâçèéêô 等 Latin-1 字符会被源码扫描收进来），该码点会被
+    # 改派给 simhei 渲染；simhei 缺字形（É/â/ç/ô 等）时码点整个丢失 → 法语界面
+    # 方框。所以 symbols 必须剔除 Latin range 已覆盖的码点（0x20-0x7F/0xA0-0xFF）。
+    symbols = "".join(ch for ch in symbols
+                      if not (0x20 <= ord(ch) <= 0x7F or 0xA0 <= ord(ch) <= 0xFF))
     cmd = [
         "node", str(CONV_JS),
         "--font", latin_font,
@@ -133,9 +139,11 @@ def gen_font(font: str, latin_font: str, size: int, symbols: str, compress: bool
         "--bpp", "4",
         "--format", "lvgl",
         "--lv-include", "lvgl.h",
-        "--range", "0x20-0x7F",       # ASCII 用西文字体（Lato）
-        "--font", latin_font,
-        "--range", "0xA0-0xFF",       # Latin-1 补充区同用 Lato（风格统一）
+        # ASCII + Latin-1 补充区同用 Lato（风格统一）。
+        # 注意必须是单个 --font 条目 + 逗号分段 range：同一个 ttf 写两个 --font
+        # 条目时 lv_font_conv 会在第二个 range 里莫名丢字形（实测丢 U+00C9 É
+        # 和 U+00E2 â，法语界面大片方框）。
+        "--range", "0x20-0x7F,0xA0-0xFF",
         "--font", font,
         "--symbols", symbols,         # CJK 等非 ASCII 用主字体（simhei）
         "-o", str(out),
@@ -147,8 +155,15 @@ def gen_font(font: str, latin_font: str, size: int, symbols: str, compress: bool
     if not compress:
         cmd.append("--no-compress")
     print(f"[gen] size={size} compress={compress} -> {out.relative_to(ROOT)}")
-    subprocess.run(cmd, check=True, cwd=ROOT)
-    return out
+    # lv_font_conv 在 Windows 上偶发无症状非零退出（重跑即好），自动重试
+    last = None
+    for attempt in range(3):
+        last = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
+        if last.returncode == 0:
+            return out
+        print(f"[gen] 第 {attempt + 1} 次失败 rc={last.returncode}: "
+              f"{(last.stderr or last.stdout or '').strip()[-300:]}", file=sys.stderr)
+    raise RuntimeError(f"lv_font_conv 连续失败（size={size} compress={compress}）")
 
 
 def main() -> int:
