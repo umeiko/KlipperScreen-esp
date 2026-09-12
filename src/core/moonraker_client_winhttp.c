@@ -60,6 +60,7 @@ static pending_t pending[PENDING_MAX];
 static int next_id = 1;
 static volatile LONG state_value = MOONRAKER_OFFLINE;
 static volatile LONG worker_started;
+static volatile LONG disabled;          /* moonraker_stop() 的 desired 态：worker 见此停机休眠 */
 static volatile LONG reload_epoch = 1;
 static volatile LONG reconnect_requested;
 static ULONGLONG klippy_retry_due;
@@ -207,6 +208,7 @@ static bool send_rpc_full(const char *method, const char *params_json,
                           void (*cb_json)(char *, void *), void *ud)
 {
     if (!method || !method[0]) return false;
+    if (InterlockedCompareExchange(&disabled, 0, 0)) return false;   /* stop 后抑制所有 RPC */
     ensure_init();
 
     size_t cap = strlen(method) + (params_json ? strlen(params_json) : 0) + 96;
@@ -579,6 +581,12 @@ static DWORD WINAPI worker_main(void *arg)
 
     for (;;) {
         LONG epoch = InterlockedCompareExchange(&reload_epoch, 0, 0);
+        if (InterlockedCompareExchange(&disabled, 0, 0)) {
+            /* moonraker_stop()：worker 不退出，原地休眠等 start 唤醒（100ms 轮询） */
+            set_state(MOONRAKER_OFFLINE);
+            while (InterlockedCompareExchange(&disabled, 0, 0)) Sleep(100);
+            continue;
+        }
         moonraker_conf_t conf;
         if (!settings_load_moonraker(&conf)) {
             set_state(MOONRAKER_OFFLINE);
@@ -630,7 +638,19 @@ static void ensure_worker(void)
 
 void moonraker_start(void)
 {
+    InterlockedExchange(&disabled, 0);   /* stop 之后靠 start 唤醒休眠的 worker */
     ensure_worker();
+}
+
+void moonraker_stop(void)
+{
+    if (InterlockedCompareExchange(&disabled, 0, 0)) return;   /* 幂等 */
+    InterlockedExchange(&disabled, 1);
+    /* 唤醒并逼退 worker：epoch 失配让 receive_loop（阻塞读 ≤1s 超时）和
+     * wait_backoff（100ms 切片）立即退出，连接在 worker 线程里关闭，
+     * 调用方（可能是 LVGL 线程）不做任何阻塞关闭。 */
+    InterlockedIncrement(&reload_epoch);
+    InterlockedExchange(&reconnect_requested, 1);
 }
 
 void moonraker_reload(void)

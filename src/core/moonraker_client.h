@@ -19,8 +19,17 @@ typedef enum {
     MOONRAKER_READY,         /* 订阅完成，数据在更新 */
 } moonraker_state_t;
 
-/* 读 moonraker.conf 并启动连接（ESP32 会等待 WiFi；可重复调用，幂等） */
+/* 读 moonraker.conf 并启动连接（ESP32 会等待 WiFi；可重复调用，幂等）。
+ * 同时清除 moonraker_stop() 置下的 disabled——stop 之后靠它恢复连接。 */
 void moonraker_start(void);
+
+/* 停止并保持离线（非阻塞、幂等）：只表达 desired disabled 并唤醒各自的
+ * worker/timer；socket/WebSocket 的阻塞关闭与 destroy 在各自 worker/timer
+ * 上下文执行，绝不发生在调用方（可为 LVGL 任务）栈上。
+ * stop 后重连、心跳和待处理 RPC 全部抑制，send_rpc/rpc 返回 false；
+ * worker 本身不被杀死，再次 moonraker_start() 即可恢复。
+ * 用于 Klipper ↔ Bambu 后端互斥（任一时刻只有一套网络连接）。 */
+void moonraker_stop(void);
 
 /* 配置变更后调用：断开并按新配置重连 */
 void moonraker_reload(void);

@@ -444,6 +444,7 @@ static void tick_autostart(lv_timer_t *tm)
     LV_UNUSED(tm);
     static uint32_t last_bambu_device_refresh;
     if (settings_load_machine_mode() == MACHINE_MODE_BAMBU) {
+        moonraker_stop();   /* 幂等：Bambu 模式下 Moonraker 不得持有连接（后端互斥） */
         if (settings_load_bambu_link() == BAMBU_LINK_CLOUD_MONITOR) {
             bambu_cloud_snapshot_t cloud;
             bambu_device_conf_t selected;

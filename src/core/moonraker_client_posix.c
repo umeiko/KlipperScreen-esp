@@ -98,6 +98,7 @@ static pending_t pending[PENDING_MAX];
 static int next_id = 1;
 static volatile int state_value = MOONRAKER_OFFLINE;
 static volatile int worker_started;
+static volatile int disabled;          /* moonraker_stop() 的 desired 态：worker 见此停机休眠 */
 static volatile long reload_epoch = 1;
 static volatile int reconnect_requested;
 static uint64_t klippy_retry_due;
@@ -314,6 +315,7 @@ static bool send_rpc_full(const char *method, const char *params_json,
                           void (*cb_json)(char *, void *), void *ud)
 {
     if (!method || !method[0]) return false;
+    if (disabled) return false;   /* stop 后抑制所有 RPC */
 
     size_t cap = strlen(method) + (params_json ? strlen(params_json) : 0) + 96;
     char *frame = malloc(cap);
@@ -1008,6 +1010,12 @@ static void *worker_main(void *arg)
 
     for (;;) {
         long epoch = reload_epoch;
+        if (disabled) {
+            /* moonraker_stop()：worker 不退出，原地休眠等 start 唤醒（100ms 轮询） */
+            set_state(MOONRAKER_OFFLINE);
+            while (disabled) sleep_ms(100);
+            continue;
+        }
         moonraker_conf_t conf;
         if (!settings_load_moonraker(&conf)) {
             set_state(MOONRAKER_OFFLINE);
@@ -1062,7 +1070,19 @@ static void ensure_worker(void)
 
 void moonraker_start(void)
 {
+    disabled = 0;   /* stop 之后靠 start 唤醒休眠的 worker */
     ensure_worker();
+}
+
+void moonraker_stop(void)
+{
+    if (disabled) return;   /* 幂等 */
+    disabled = 1;
+    /* 唤醒并逼退 worker：epoch 失配让 conn_read_exact（阻塞 recv ≤1s 超时）
+     * 和 wait_backoff（100ms 切片）立即退出，socket 在 worker 线程里
+     * shutdown+close，调用方（可能是 LVGL 线程）不做任何阻塞关闭。 */
+    reload_epoch++;
+    reconnect_requested = 1;
 }
 
 void moonraker_reload(void)

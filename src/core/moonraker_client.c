@@ -42,10 +42,12 @@ static moonraker_state_t state = MOONRAKER_OFFLINE;
 static moonraker_conf_t conf;
 static bool             conf_valid;
 static bool             started;            /* 客户端实例已创建 */
+static volatile bool    disabled;           /* moonraker_stop() 的 desired 态：抑制重连/心跳/RPC */
 static esp_timer_handle_t reconnect_timer;
 static esp_timer_handle_t klippy_timer;
 static esp_timer_handle_t hb_timer;
 static esp_timer_handle_t reload_timer;
+static esp_timer_handle_t stop_timer;
 static int64_t            hb_sent_us;
 static int64_t            last_rx_ms;       /* 最近一次收到任何 WS 帧（含 ping/pong），僵尸检测用 */
 static int              backoff_s = 1;
@@ -158,7 +160,7 @@ static void free_pending(int id)
 static bool send_rpc_full(const char *method, const char *params_json,
                           void (*cb)(cJSON *result), void (*cb_json)(char *, void *), void *ud)
 {
-    if (!ws || !esp_websocket_client_is_connected(ws)) return false;
+    if (disabled || !ws || !esp_websocket_client_is_connected(ws)) return false;
     int id = alloc_pending(cb, cb_json, ud);
     if (id == 0) return false;
 
@@ -290,7 +292,7 @@ static void on_heartbeat_result(cJSON *result)
 static void heartbeat_cb(void *arg)
 {
     (void)arg;
-    if (state != MOONRAKER_READY) return;
+    if (disabled || state != MOONRAKER_READY) return;
 
     /* 僵尸检测：READY 状态下单向流（订阅推送 + pong）从不该断 20s。
        esp_websocket_client 对「对端优雅 FIN」有缺陷——recv 把 EOF 当超时永远空转，
@@ -421,7 +423,7 @@ static void on_ws_message(const char *data, int len)
 static void reconnect_cb(void *arg)
 {
     (void)arg;
-    if (state == MOONRAKER_OFFLINE && started) {
+    if (state == MOONRAKER_OFFLINE && started && !disabled) {
         ESP_LOGI(TAG, "reconnecting to %s:%u", conf.host, (unsigned)conf.port);
         state = MOONRAKER_CONNECTING;
         esp_websocket_client_start(ws);
@@ -498,6 +500,7 @@ static void on_ws_event(void *arg, esp_event_base_t base, int32_t id, void *data
 
 /* ---------- 对外 ---------- */
 static void reload_cb(void *arg);   /* moonraker_reload 的实际工作，esp_timer 上下文 */
+static void stop_cb(void *arg);     /* moonraker_stop 的实际拆除，esp_timer 上下文 */
 
 static void ensure_timers(void)
 {
@@ -517,6 +520,10 @@ static void ensure_timers(void)
     if (!reload_timer) {
         esp_timer_create_args_t a4 = {.callback = reload_cb, .name = "mr_reload"};
         esp_timer_create(&a4, &reload_timer);
+    }
+    if (!stop_timer) {
+        esp_timer_create_args_t a5 = {.callback = stop_cb, .name = "mr_stop"};
+        esp_timer_create(&a5, &stop_timer);
     }
 }
 
@@ -545,6 +552,7 @@ static void force_reconnect(void)
 
 void moonraker_start(void)
 {
+    disabled = false;   /* stop 之后靠 start 恢复；stop_cb 看到 disabled 清除会放弃拆除 */
     if (started) return;
     ensure_timers();
     if (!conf_valid) {
@@ -596,7 +604,7 @@ static void reload_cb(void *arg)
     destroy_client();
     state = MOONRAKER_OFFLINE;
     post_to_lvgl(set_online_in_lvgl, (void *)0);
-    moonraker_start();
+    if (!disabled) moonraker_start();   /* disabled 期间 reload 只更新配置缓存，不起连接 */
 }
 
 void moonraker_reload(void)
@@ -604,6 +612,32 @@ void moonraker_reload(void)
     ensure_timers();
     esp_timer_stop(reload_timer);            /* 连点多次只执行最后一次 */
     esp_timer_start_once(reload_timer, 20000);   /* 20ms 后在 esp_timer 任务执行 */
+}
+
+/* 与 reload_cb 同理：destroy_client 会阻塞等 close 握手、post_to_lvgl 要拿 LVGL 锁，
+   都不能在调用方（如 printer_model 的 LVGL 轮询）栈上跑，挪到 esp_timer 任务里。 */
+static void stop_cb(void *arg)
+{
+    (void)arg;
+    if (!disabled) return;   /* stop 后 20ms 内又 start：取消拆除，连接保留 */
+    esp_timer_stop(reconnect_timer);
+    esp_timer_stop(klippy_timer);
+    esp_timer_stop(reload_timer);
+    backoff_s = 1;
+    last_rx_ms = 0;
+    destroy_client();
+    state = MOONRAKER_OFFLINE;
+    clear_pending();
+    post_to_lvgl(set_online_in_lvgl, (void *)0);
+}
+
+void moonraker_stop(void)
+{
+    if (disabled) return;   /* 幂等：tick_autostart 每 2s 都会进来一次 */
+    disabled = true;
+    ensure_timers();
+    esp_timer_stop(stop_timer);
+    esp_timer_start_once(stop_timer, 20000);   /* 20ms 后在 esp_timer 任务拆除 */
 }
 
 moonraker_state_t moonraker_state(void)
