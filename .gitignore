@@ -8,6 +8,9 @@ src/ports/esp32/dependencies.lock
 # 根目录早期构建残留（真实工程在 src/ports/esp32）
 /managed_components/
 /sdkconfig
+
+# host 端单元测试产物（tools/test-stream-parser.sh）
+/build-tests/
 /dependencies.lock
 
 # 截图产物
