@@ -14,6 +14,7 @@
 
 #include "bsp_wifi.h"
 #include "cJSON.h"
+#include "esp_heap_caps.h"
 #include "esp_http_client.h"
 #include "esp_log.h"
 
@@ -63,6 +64,15 @@ static char g_tfa_key[TFA_KEY_MAX];
 static volatile uint32_t g_generation = 1;
 static int g_outstanding;               /* guarded by g_mutex */
 static bool g_ready;
+
+static void log_resources(const char *phase, op_t op)
+{
+    ESP_LOGI(TAG, "op=%d %s: heap=%uB largest=%uB stack_free_min=%uB",
+             (int)op, phase,
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
+             (unsigned)uxTaskGetStackHighWaterMark(NULL));
+}
 
 /* ------------------------------------------------------------------ */
 
@@ -203,7 +213,8 @@ static bool resolve_user_id(bambu_cloud_region_t region, const char *token,
     if (jwt_user_id(token, out, cap)) return true;
     bambu_http_result_t r;
     bool ok = bambu_http_request(api_host(region), "/v1/user-service/my/profile",
-                                 HTTP_METHOD_GET, NULL, token, NULL, NULL, &r);
+                                 HTTP_METHOD_GET, NULL, token, NULL, NULL,
+                                 NULL, 0, &r);
     if (!ok || r.status != 200) { bambu_http_free(&r); return false; }
     cJSON *root = r.body ? cJSON_Parse(r.body) : NULL;
     cJSON *data = root ? json_data(root) : NULL;
@@ -272,7 +283,7 @@ static bool fetch_devices(bambu_cloud_region_t region, const char *token,
     bambu_http_result_t r;
     bool ok = bambu_http_request(site_host(region),
         "/api/v1/iot-service/api/user/bind", HTTP_METHOD_GET, NULL,
-        token, NULL, NULL, &r);
+        token, NULL, NULL, NULL, 0, &r);
     if (!ok || r.status != 200) {
         response_message(&r, "已登录，但打印机列表获取失败", message, message_cap);
         bambu_http_free(&r);
@@ -341,11 +352,10 @@ static void handle_login_reply(cmd_t *a, bambu_http_result_t *r)
     }
     const char *token = extract_token(root);
     if (token && token[0]) {
-        char token_copy[TOKEN_MAX];
-        copy_text(token_copy, sizeof(token_copy), token);
+        copy_text(a->token, sizeof(a->token), token);
         cJSON_Delete(root);
-        publish_signed_in(a, token_copy);
-        bambu_http_wipe(token_copy, sizeof(token_copy));
+        publish_signed_in(a, a->token);
+        bambu_http_wipe(a->token, sizeof(a->token));
         return;
     }
     cJSON *data = json_data(root);
@@ -386,6 +396,174 @@ static char *make_login_json(const char *account, const char *key,
     return json;
 }
 
+/* Keep mutually-exclusive operations in separate, non-inlined frames.  The
+ * actor is deliberately small (10 KiB on non-PSRAM boards); folding refresh,
+ * normal-code and TFA locals into one function would reserve the largest
+ * branch's stack space on every command. */
+static __attribute__((noinline)) void run_refresh(cmd_t *a)
+{
+    bambu_cloud_device_t devices[BAMBU_CLOUD_DEVICE_MAX] = {0};
+    int count = 0;
+    char message[192];
+    fetch_devices(a->region, a->token, devices, &count,
+                  message, sizeof(message));
+    if (generation_alive(a->generation)) {
+        xSemaphoreTake(g_mutex, portMAX_DELAY);
+        /* 设备列表刷新失败不会注销已经持有的云会话；保留登录态，
+           让定时刷新能够恢复。message 仍会把本次失败展示给用户。 */
+        g_snapshot.state = BAMBU_CLOUD_SIGNED_IN;
+        g_snapshot.device_count = count;
+        memcpy(g_snapshot.devices, devices, sizeof(devices));
+        copy_text(g_snapshot.message, sizeof(g_snapshot.message), message);
+        xSemaphoreGive(g_mutex);
+    }
+}
+
+static __attribute__((noinline)) void run_login_start(cmd_t *a)
+{
+    cJSON *root = cJSON_CreateObject();
+    const bool password_login = a->op == OP_PASSWORD;
+    const bool sms_code = a->op == OP_REQUEST_SMS_CODE;
+    if (root) {
+        cJSON_AddStringToObject(root, password_login ? "account" :
+                                     (sms_code ? "phone" : "email"),
+                                a->account);
+        cJSON_AddStringToObject(root, password_login ? "password" : "type",
+                                password_login ? a->password : "codeLogin");
+    }
+    char *json = root ? cJSON_PrintUnformatted(root) : NULL;
+    cJSON_Delete(root);
+    if (!json) {
+        publish_state(a->generation, BAMBU_CLOUD_FAILED,
+                      "内存不足，无法完成操作");
+        return;
+    }
+    bambu_http_result_t r = {0};
+    bool ok = bambu_http_request(api_host(a->region),
+        password_login ? "/v1/user-service/user/login" :
+        (sms_code ? "/v1/user-service/user/sendsmscode"
+                  : "/v1/user-service/user/sendemail/code"),
+        HTTP_METHOD_POST, json, NULL, NULL, NULL, NULL, 0, &r);
+    bambu_http_wipe(json, strlen(json));
+    cJSON_free(json);
+    if (!ok) {
+        char msg[192];
+        response_message(&r, "无法连接拓竹登录服务", msg, sizeof(msg));
+        publish_state(a->generation, BAMBU_CLOUD_FAILED, msg);
+    } else if (password_login) {
+        handle_login_reply(a, &r);
+    } else if (r.status == 200) {
+        publish_state(a->generation, BAMBU_CLOUD_NEED_CODE,
+                      sms_code ? "验证码已发送到手机，请输入验证码"
+                               : "验证码已发送到邮箱，请输入验证码");
+    } else {
+        char msg[192];
+        response_message(&r, "验证码发送失败", msg, sizeof(msg));
+        publish_state(a->generation, BAMBU_CLOUD_FAILED, msg);
+    }
+    bambu_http_free(&r);
+}
+
+static __attribute__((noinline)) void run_submit_login_code(cmd_t *a)
+{
+    char *json = make_login_json(a->account, "code", a->code);
+    if (!json) {
+        publish_state(a->generation, BAMBU_CLOUD_NEED_CODE,
+                      "内存不足，无法完成操作");
+        return;
+    }
+    bambu_http_result_t r = {0};
+    bool ok = bambu_http_request(api_host(a->region),
+        "/v1/user-service/user/login", HTTP_METHOD_POST, json,
+        NULL, NULL, NULL, NULL, 0, &r);
+    bambu_http_wipe(json, strlen(json));
+    cJSON_free(json);
+    if (!ok) {
+        char msg[192];
+        response_message(&r, "验证码提交失败", msg, sizeof(msg));
+        publish_state(a->generation, BAMBU_CLOUD_NEED_CODE, msg);
+    } else if (r.status == 200) {
+        handle_login_reply(a, &r);
+    } else {
+        char msg[192];
+        response_message(&r, "验证码不正确", msg, sizeof(msg));
+        publish_state(a->generation, BAMBU_CLOUD_NEED_CODE, msg);
+    }
+    bambu_http_free(&r);
+}
+
+static __attribute__((noinline)) void run_submit_tfa(cmd_t *a)
+{
+    char *cookies = calloc(1, BAMBU_HTTP_COOKIE_MAX);
+    if (!cookies) {
+        publish_state(a->generation, BAMBU_CLOUD_NEED_TFA,
+                      "内存不足，无法完成操作");
+        return;
+    }
+    bambu_http_result_t csrf_r = {0};
+    bool csrf_ok = bambu_http_request(site_host(a->region), "/api/csrf",
+                                      HTTP_METHOD_GET, NULL, NULL,
+                                      NULL, NULL, cookies,
+                                      BAMBU_HTTP_COOKIE_MAX, &csrf_r);
+    char csrf[1024] = {0};
+    bambu_http_cookie_value(cookies, "bbl_csrf_token", csrf, sizeof(csrf));
+    if (!csrf_ok || csrf_r.status != 200 || !csrf[0]) {
+        char msg[192];
+        response_message(&csrf_r, "无法建立双重验证会话", msg, sizeof(msg));
+        publish_state(a->generation, BAMBU_CLOUD_NEED_TFA, msg);
+        bambu_http_free(&csrf_r);
+        bambu_http_wipe(csrf, sizeof(csrf));
+        bambu_http_wipe(cookies, BAMBU_HTTP_COOKIE_MAX);
+        free(cookies);
+        return;
+    }
+    cJSON *root = cJSON_CreateObject();
+    if (root) {
+        cJSON_AddStringToObject(root, "tfaKey", a->tfa_key);
+        cJSON_AddStringToObject(root, "tfaCode", a->code);
+    }
+    char *json = root ? cJSON_PrintUnformatted(root) : NULL;
+    cJSON_Delete(root);
+    if (!json) {
+        bambu_http_free(&csrf_r);
+        bambu_http_wipe(csrf, sizeof(csrf));
+        bambu_http_wipe(cookies, BAMBU_HTTP_COOKIE_MAX);
+        free(cookies);
+        publish_state(a->generation, BAMBU_CLOUD_NEED_TFA,
+                      "内存不足，无法完成操作");
+        return;
+    }
+    bambu_http_result_t r = {0};
+    bool ok = bambu_http_request(site_host(a->region),
+        "/api/sign-in/tfa", HTTP_METHOD_POST, json, NULL,
+        cookies, csrf, cookies, BAMBU_HTTP_COOKIE_MAX, &r);
+    bambu_http_wipe(json, strlen(json));
+    cJSON_free(json);
+    bambu_http_free(&csrf_r);
+    bambu_http_wipe(csrf, sizeof(csrf));
+    if (!ok || r.status != 200) {
+        char msg[192];
+        response_message(&r, "验证器验证码不正确", msg, sizeof(msg));
+        publish_state(a->generation, BAMBU_CLOUD_NEED_TFA, msg);
+    } else {
+        cJSON *reply = r.body ? cJSON_Parse(r.body) : NULL;
+        const char *token = reply ? extract_token(reply) : NULL;
+        if (!token) {
+            bambu_http_cookie_value(cookies, "token", a->token,
+                                    sizeof(a->token));
+            token = a->token;
+        }
+        if (token && token[0]) publish_signed_in(a, token);
+        else publish_state(a->generation, BAMBU_CLOUD_NEED_TFA,
+                           "验证码已通过，但登录服务没有返回令牌");
+        cJSON_Delete(reply);
+        bambu_http_wipe(a->token, sizeof(a->token));
+    }
+    bambu_http_wipe(cookies, BAMBU_HTTP_COOKIE_MAX);
+    free(cookies);
+    bambu_http_free(&r);
+}
+
 static void run_command(cmd_t *a)
 {
     if (a->op == OP_ERASE_SECRET) {
@@ -423,151 +601,22 @@ static void run_command(cmd_t *a)
     }
 
     if (a->op == OP_REFRESH) {
-        bambu_cloud_device_t devices[BAMBU_CLOUD_DEVICE_MAX] = {0};
-        int count = 0;
-        char message[192];
-        fetch_devices(a->region, a->token, devices, &count,
-                      message, sizeof(message));
-        if (generation_alive(a->generation)) {
-            xSemaphoreTake(g_mutex, portMAX_DELAY);
-            /* 设备列表刷新失败不会注销已经持有的云会话；保留登录态，
-               让定时刷新能够恢复。message 仍会把本次失败展示给用户。 */
-            g_snapshot.state = BAMBU_CLOUD_SIGNED_IN;
-            g_snapshot.device_count = count;
-            memcpy(g_snapshot.devices, devices, sizeof(devices));
-            copy_text(g_snapshot.message, sizeof(g_snapshot.message), message);
-            xSemaphoreGive(g_mutex);
-        }
+        run_refresh(a);
         return;
     }
 
     if (a->op == OP_PASSWORD || a->op == OP_REQUEST_EMAIL_CODE ||
         a->op == OP_REQUEST_SMS_CODE) {
-        cJSON *root = cJSON_CreateObject();
-        const bool password_login = a->op == OP_PASSWORD;
-        const bool sms_code = a->op == OP_REQUEST_SMS_CODE;
-        if (root) {
-            cJSON_AddStringToObject(root, password_login ? "account" :
-                                         (sms_code ? "phone" : "email"),
-                                    a->account);
-            cJSON_AddStringToObject(root, password_login ? "password" : "type",
-                                    password_login ? a->password : "codeLogin");
-        }
-        char *json = root ? cJSON_PrintUnformatted(root) : NULL;
-        cJSON_Delete(root);
-        if (!json) {
-            publish_state(a->generation, BAMBU_CLOUD_FAILED,
-                          "内存不足，无法完成操作");
-            return;
-        }
-        bambu_http_result_t r = {0};
-        bool ok = bambu_http_request(api_host(a->region),
-            password_login ? "/v1/user-service/user/login" :
-            (sms_code ? "/v1/user-service/user/sendsmscode"
-                      : "/v1/user-service/user/sendemail/code"),
-            HTTP_METHOD_POST, json, NULL, NULL, NULL, &r);
-        bambu_http_wipe(json, strlen(json));
-        cJSON_free(json);
-        if (!ok) {
-            char msg[192];
-            response_message(&r, "无法连接拓竹登录服务", msg, sizeof(msg));
-            publish_state(a->generation, BAMBU_CLOUD_FAILED, msg);
-        } else if (password_login) {
-            handle_login_reply(a, &r);
-        } else if (r.status == 200) {
-            publish_state(a->generation, BAMBU_CLOUD_NEED_CODE,
-                          sms_code ? "验证码已发送到手机，请输入验证码"
-                                   : "验证码已发送到邮箱，请输入验证码");
-        } else {
-            char msg[192];
-            response_message(&r, "验证码发送失败", msg, sizeof(msg));
-            publish_state(a->generation, BAMBU_CLOUD_FAILED, msg);
-        }
-        bambu_http_free(&r);
+        run_login_start(a);
         return;
     }
 
     if (a->op == OP_SUBMIT_CODE) {
-        bambu_http_result_t r = {0};
         if (a->challenge == BAMBU_CLOUD_NEED_CODE) {
-            char *json = make_login_json(a->account, "code", a->code);
-            if (!json) {
-                publish_state(a->generation, BAMBU_CLOUD_NEED_CODE,
-                              "内存不足，无法完成操作");
-                return;
-            }
-            bool ok = bambu_http_request(api_host(a->region),
-                "/v1/user-service/user/login", HTTP_METHOD_POST, json,
-                NULL, NULL, NULL, &r);
-            cJSON_free(json);
-            if (!ok) {
-                char msg[192];
-                response_message(&r, "验证码提交失败", msg, sizeof(msg));
-                publish_state(a->generation, BAMBU_CLOUD_NEED_CODE, msg);
-            } else if (r.status == 200) {
-                handle_login_reply(a, &r);
-            } else {
-                char msg[192];
-                response_message(&r, "验证码不正确", msg, sizeof(msg));
-                publish_state(a->generation, BAMBU_CLOUD_NEED_CODE, msg);
-            }
+            run_submit_login_code(a);
         } else {
-            bambu_http_result_t csrf_r = {0};
-            bool csrf_ok = bambu_http_request(site_host(a->region), "/api/csrf",
-                                              HTTP_METHOD_GET, NULL, NULL,
-                                              "", NULL, &csrf_r);
-            char csrf[1024] = {0};
-            bambu_http_cookie_value(csrf_r.cookies, "bbl_csrf_token",
-                                    csrf, sizeof(csrf));
-            if (!csrf_ok || csrf_r.status != 200 || !csrf[0]) {
-                char msg[192];
-                response_message(&csrf_r, "无法建立双重验证会话", msg, sizeof(msg));
-                publish_state(a->generation, BAMBU_CLOUD_NEED_TFA, msg);
-                bambu_http_free(&csrf_r);
-                bambu_http_wipe(csrf, sizeof(csrf));
-                return;
-            }
-            cJSON *root = cJSON_CreateObject();
-            if (root) {
-                cJSON_AddStringToObject(root, "tfaKey", a->tfa_key);
-                cJSON_AddStringToObject(root, "tfaCode", a->code);
-            }
-            char *json = root ? cJSON_PrintUnformatted(root) : NULL;
-            cJSON_Delete(root);
-            if (!json) {
-                bambu_http_free(&csrf_r);
-                bambu_http_wipe(csrf, sizeof(csrf));
-                publish_state(a->generation, BAMBU_CLOUD_NEED_TFA,
-                              "内存不足，无法完成操作");
-                return;
-            }
-            bool ok = bambu_http_request(site_host(a->region),
-                "/api/sign-in/tfa", HTTP_METHOD_POST, json, NULL,
-                csrf_r.cookies, csrf, &r);
-            cJSON_free(json);
-            bambu_http_free(&csrf_r);
-            bambu_http_wipe(csrf, sizeof(csrf));
-            if (!ok || r.status != 200) {
-                char msg[192];
-                response_message(&r, "验证器验证码不正确", msg, sizeof(msg));
-                publish_state(a->generation, BAMBU_CLOUD_NEED_TFA, msg);
-            } else {
-                cJSON *reply = r.body ? cJSON_Parse(r.body) : NULL;
-                const char *token = reply ? extract_token(reply) : NULL;
-                char token_cookie[TOKEN_MAX] = {0};
-                if (!token) {
-                    bambu_http_cookie_value(r.cookies, "token",
-                                            token_cookie, sizeof(token_cookie));
-                    token = token_cookie;
-                }
-                if (token && token[0]) publish_signed_in(a, token);
-                else publish_state(a->generation, BAMBU_CLOUD_NEED_TFA,
-                                   "验证码已通过，但登录服务没有返回令牌");
-                cJSON_Delete(reply);
-                bambu_http_wipe(token_cookie, sizeof(token_cookie));
-            }
+            run_submit_tfa(a);
         }
-        bambu_http_free(&r);
     }
 }
 
@@ -579,7 +628,9 @@ static void actor_task(void *arg)
         if (xQueueReceive(g_queue, &cmd, portMAX_DELAY) != pdTRUE || !cmd)
             continue;
         op_t op = cmd->op;
+        log_resources("begin", op);
         run_command(cmd);
+        log_resources("end", op);
         bambu_http_wipe(cmd, sizeof(*cmd));
         free(cmd);
         if (op != OP_ERASE_SECRET) {

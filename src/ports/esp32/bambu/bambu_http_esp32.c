@@ -11,7 +11,6 @@
 static const char *TAG = "bambu_http";
 
 #define BODY_START   2048
-#define READ_CHUNK   1024
 #define URL_MAX      192
 #define TIMEOUT_MS   15000
 
@@ -88,7 +87,8 @@ static esp_err_t on_http_event(esp_http_client_event_t *evt)
         evt->header_key && evt->header_value &&
         strcasecmp(evt->header_key, "Set-Cookie") == 0) {
         header_ctx_t *ctx = evt->user_data;
-        bambu_http_cookie_put(ctx->jar, ctx->jar_cap, evt->header_value);
+        if (ctx->jar && ctx->jar_cap)
+            bambu_http_cookie_put(ctx->jar, ctx->jar_cap, evt->header_value);
     }
     return ESP_OK;
 }
@@ -104,11 +104,11 @@ static char *body_alloc(size_t n)
 
 /* Grow by allocating a fresh buffer: heap_caps_realloc cannot move a block
  * between internal RAM and PSRAM, so copy-and-free stays correct for both. */
-static char *body_grow(char *old, size_t old_cap, size_t new_cap)
+static char *body_grow(char *old, size_t used, size_t new_cap)
 {
     char *next = body_alloc(new_cap);
     if (!next) return NULL;
-    memcpy(next, old, old_cap);
+    memcpy(next, old, used);
     free(old);
     return next;
 }
@@ -116,12 +116,11 @@ static char *body_grow(char *old, size_t old_cap, size_t new_cap)
 bool bambu_http_request(const char *host, const char *path, int method,
                         const char *json, const char *bearer,
                         const char *cookie_jar, const char *csrf,
+                        char *response_cookies, size_t response_cookies_cap,
                         bambu_http_result_t *out)
 {
     memset(out, 0, sizeof(*out));
     out->esp_err = ESP_FAIL;
-    if (cookie_jar)
-        snprintf(out->cookies, sizeof(out->cookies), "%s", cookie_jar);
 
     char url[URL_MAX];
     if (snprintf(url, sizeof(url), "https://%s%s", host, path) >= (int)sizeof(url)) {
@@ -129,7 +128,7 @@ bool bambu_http_request(const char *host, const char *path, int method,
         return false;
     }
 
-    header_ctx_t hctx = { out->cookies, sizeof(out->cookies) };
+    header_ctx_t hctx = { response_cookies, response_cookies_cap };
     esp_http_client_config_t cfg = {
         .url = url,
         .method = (esp_http_client_method_t)method,
@@ -154,10 +153,22 @@ bool bambu_http_request(const char *host, const char *path, int method,
     esp_http_client_set_header(client, "User-Agent",
                                "bambu_network_agent/01.09.05.01");
     if (bearer && bearer[0]) {
-        char auth[2100];
-        snprintf(auth, sizeof(auth), "Bearer %s", bearer);
-        esp_http_client_set_header(client, "Authorization", auth);
-        bambu_http_wipe(auth, sizeof(auth));
+        size_t bearer_len = strlen(bearer);
+        char *auth = malloc(bearer_len + sizeof("Bearer "));
+        if (!auth) {
+            out->esp_err = ESP_ERR_NO_MEM;
+            goto done;
+        }
+        snprintf(auth, bearer_len + sizeof("Bearer "), "Bearer %s", bearer);
+        esp_err_t header_err = esp_http_client_set_header(client,
+                                                           "Authorization",
+                                                           auth);
+        bambu_http_wipe(auth, bearer_len + sizeof("Bearer "));
+        free(auth);
+        if (header_err != ESP_OK) {
+            out->esp_err = header_err;
+            goto done;
+        }
     }
     if (cookie_jar && cookie_jar[0])
         esp_http_client_set_header(client, "Cookie", cookie_jar);
@@ -181,26 +192,32 @@ bool bambu_http_request(const char *host, const char *path, int method,
     size_t used = 0, cap = BODY_START;
     out->body = body_alloc(cap);
     if (!out->body) { out->esp_err = ESP_ERR_NO_MEM; goto done; }
-    char chunk[READ_CHUNK];
     while (1) {
-        int got = esp_http_client_read(client, chunk, sizeof(chunk));
-        if (got < 0) { out->esp_err = ESP_FAIL; goto done; }
-        if (got == 0) break;
-        if (used + (size_t)got + 1 > BAMBU_HTTP_BODY_MAX) {
-            ESP_LOGW(TAG, "response body over %u bytes, dropping",
-                     (unsigned)BAMBU_HTTP_BODY_MAX);
-            out->esp_err = ESP_ERR_INVALID_SIZE;
-            goto done;
-        }
-        if (used + (size_t)got + 1 > cap) {
-            size_t next = cap;
-            while (next < used + (size_t)got + 1) next *= 2;
-            char *grown = body_grow(out->body, cap, next);
+        if (used + 1 == cap) {
+            if (cap >= BAMBU_HTTP_BODY_MAX) {
+                /* Preserve the old limit precisely: 65535 payload bytes plus
+                 * the trailing NUL are valid.  Probe once to distinguish an
+                 * exactly-full response from an oversized one. */
+                char extra;
+                int got = esp_http_client_read(client, &extra, 1);
+                if (got < 0) { out->esp_err = ESP_FAIL; goto done; }
+                if (got == 0) break;
+                ESP_LOGW(TAG, "response body over %u bytes, dropping",
+                         (unsigned)BAMBU_HTTP_BODY_MAX);
+                out->esp_err = ESP_ERR_INVALID_SIZE;
+                goto done;
+            }
+            size_t next = cap * 2;
+            if (next > BAMBU_HTTP_BODY_MAX) next = BAMBU_HTTP_BODY_MAX;
+            char *grown = body_grow(out->body, used, next);
             if (!grown) { out->esp_err = ESP_ERR_NO_MEM; goto done; }
             out->body = grown;
             cap = next;
         }
-        memcpy(out->body + used, chunk, (size_t)got);
+        int got = esp_http_client_read(client, out->body + used,
+                                       cap - used - 1);
+        if (got < 0) { out->esp_err = ESP_FAIL; goto done; }
+        if (got == 0) break;
         used += (size_t)got;
     }
     out->body[used] = 0;
