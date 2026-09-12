@@ -7,6 +7,7 @@
 | [EC11 旋钮最小系统](#ec11) | `ec11_knob_minimal` | 240×320 ST7789 SPI | 无，纯旋钮 | ESP32-S3 N16R8 / 16MB | ✅ 官方参考，贡献者实机验证 |
 | [EC11 旋钮 ESP32 最小系统](#ec11-旋钮-esp32-最小系统) | `ec11_knob_esp32` | 1.8" 128×160 ST7735S SPI | 无，纯旋钮 | ESP32 / 4MB | 🆕 新机型，引脚兼容 CYD |
 | [JC8048W550](#jc8048w550) | `jc8048w550` | 5" 800×480 ST7262 RGB 并口 | GT911 电容 | ESP32-S3 / 16MB | ✅ 稳定 |
+| [立创实战派 ESP32-S3](#立创实战派-esp32-s3) | `esp32s3-JLC-SZP` | 2.0" 240×320 ST7789 SPI | FT6336 电容 | ESP32-S3 N16R8 / 16MB | ✅ 已实机验证 |
 
 刷机包命名：`klipper-remote-esp32-<board>.zip`（资产名不带版本号，下面的直链永远指向最新正式版）。遇到问题请到 [Issues](https://github.com/umeiko/KlipperScreen-esp/issues) 反馈。
 
@@ -17,6 +18,7 @@
 | EC11 旋钮最小系统 | [klipper-remote-esp32-ec11_knob_minimal.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/klipper-remote-esp32-ec11_knob_minimal.zip) |
 | EC11 旋钮 ESP32 最小系统 | [klipper-remote-esp32-ec11_knob_esp32.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/klipper-remote-esp32-ec11_knob_esp32.zip) |
 | JC8048W550 | [klipper-remote-esp32-jc8048w550.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/klipper-remote-esp32-jc8048w550.zip) |
+| 立创实战派 ESP32-S3 | [klipper-remote-esp32-esp32s3-JLC-SZP.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/klipper-remote-esp32-esp32s3-JLC-SZP.zip) |
 | Windows 桌面模拟器 | [klipper-remote-desktop-win-x86_64.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/klipper-remote-desktop-win-x86_64.zip) |
 
 ---
@@ -164,3 +166,26 @@ CYD 固件默认已启用旋转编码器支持（PCNT 硬件正交解码）。�
 | LCD 背光 | 2 |
 | 触摸 SDA / SCL / RST | 19 / 20 / 38 |
 | BOOT 按键（息屏/唤醒） | 0 |
+
+## 立创实战派 ESP32-S3
+
+*立创"实战派" ESP32-S3 开发板，板载 2.0" 电容触摸屏。*
+
+逻辑分辨率 **320×240 横屏**。
+
+- 主控：ESP32-S3-WROOM-1-N16R8，16MB QIO Flash + 8MB Octal PSRAM @ 80MHz
+- 显示：ST7789（原生 240×320），SPI3 @ 80MHz **mode 3**，DMA 双缓冲（2 × 40 行）；BGR，横屏 MADCTL=0x68（MX|MV|BGR），**必须 INVON**（INVOFF 全屏反色；`bsp_disp_set_invert` 开关语义已取反）
+- **LCD CS 不是 GPIO**：在 PCA9557（I2C 0x19）P0 上，且面板要求**每笔 SPI 交易都有 CS 下降沿**（CS 常低/常高均全黑）。esp_lcd 无法经 I2C 扩展器逐笔翻 CS，故本板 BSP 不用 esp_lcd 面板驱动，直接 SPI master + 手动控 CS/DC（复刻实测可亮的 [Arduino 参考工程](https://github.com/umeiko/jlc-shizhanpai-esp32s3-arduino-lvgl) 及其 TFT_eSPI fork 的 CS 挂钩方案）；无 RST 脚，初始化必须先 SWRESET(0x01)+150ms
+- PCA9557 其余引脚按 Arduino 工程实测状态：P1 保持输入，P2=0（"摄像头电源"开启，疑似与 TFT 逻辑供电共用，P2=1 时背光亮但整屏黑）
+- 触摸：FT6336 电容屏，与 PCA9557 同一条 I2C0 总线，轮询无 INT/RST，无需校准
+- 背光：GPIO42，LEDC PWM 10bit/5kHz，**低电平点亮**（`output_invert` 方式驱动）
+- 息屏/唤醒：板载用户键（GPIO0）
+
+| 功能 | GPIO | 备注 |
+|---|---|---|
+| LCD MOSI / SCLK / DC | 40 / 41 / 39 | SPI3 @ mode 3，无 MISO |
+| LCD CS | PCA9557 P0（I2C 0x19） | 逐笔交易翻转（空闲高）；P1 保持输入，P2=0 摄像头/TFT 电源 |
+| LCD RST | — | 未连接，初始化必须 SWRESET |
+| LCD 背光 | 42 | LEDC PWM，低电平点亮 |
+| 触摸 / PCA9557 SDA / SCL | 1 / 2 | I2C0 @ 100kHz |
+| 用户键（息屏/唤醒） | 0 | 低电平有效，内部上拉 |

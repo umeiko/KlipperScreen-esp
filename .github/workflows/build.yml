@@ -55,6 +55,14 @@ jobs:
             chip: esp32s3
             flash_size: 16MB
             bl_offset: 0x0
+          - board: esp32s3-JLC-SZP    # 立创实战派 ESP32-S3 2.0" ST7789 + FT6336
+            target: esp32s3
+            bdir: build-esp32s3-jlc-szp
+            sdkcfg: sdkconfig.esp32s3-JLC-SZP
+            defs: sdkconfig.defaults;sdkconfig.defaults.esp32s3-JLC-SZP
+            chip: esp32s3
+            flash_size: 16MB
+            bl_offset: 0x0
     steps:
       - uses: actions/checkout@v4
 
@@ -105,6 +113,8 @@ jobs:
           - board: ec11_knob_esp32
             suffix: ""
           - board: jc8048w550
+            suffix: ""
+          - board: esp32s3-JLC-SZP
             suffix: ""
     steps:
       - uses: actions/checkout@v4

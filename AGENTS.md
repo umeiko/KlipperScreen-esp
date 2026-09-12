@@ -6,7 +6,7 @@ Klipper 远程显示屏：ESP32 固件（ESP-IDF 5.5.5）+ Windows 桌面端（M
 
 ## 构建/烧录
 
-- ESP32：`bash tools/build-esp32.sh <board> [flash COMx]`，board ∈ `cyd_2432s028r` / `e32r35t` / `ec11_knob_minimal` / `ec11_knob_esp32` / `jc8048w550` / `all`。烧录前必须先断开串口占用（`mcp__serial-mcp__close_port`），烧后重连（115200）。
+- ESP32：`bash tools/build-esp32.sh <board> [flash COMx]`，board ∈ `cyd_2432s028r` / `e32r35t` / `ec11_knob_minimal` / `ec11_knob_esp32` / `jc8048w550` / `esp32s3-JLC-SZP` / `all`。烧录前必须先断开串口占用（`mcp__serial-mcp__close_port`），烧后重连（115200）。
 - 桌面端：`bash tools/build-desktop.sh`。
 - **sdkconfig 大坑**：改 `sdkconfig.defaults.<board>` 对已生成的 `sdkconfig.<board>` 不生效——要改必须两个文件都改（sdkconfig 里翻 canonical 行，注意 `# CONFIG_XXX is not set` 会覆盖 defaults）。
 - IDF 源码在 `C:/esp/v5.5.5/esp-idf`。GitHub 走代理 `curl --proxy http://127.0.0.1:8635`。
@@ -32,6 +32,18 @@ Klipper 远程显示屏：ESP32 固件（ESP-IDF 5.5.5）+ Windows 桌面端（M
 - BSP 接口：`bsp_screen_off()` / `bsp_screen_wake()` / `bsp_screen_is_off()`（`src/bsp/bsp.h`），与自动超时息屏共享同一 `screen_off` 状态；desktop 端为空操作。
 - 通用驱动 `src/bsp/esp32/bsp_sleep_button.c`：多 GPIO 轮询消抖（10ms 轮询 / 30ms 消抖，最多 8 个），任意按钮按下即在息屏/唤醒间切换。各板在 `bsp_init` 里用 `bsp_sleep_button_init()` 注册自己的按钮表。
 - 现有按钮：CYD / E32R35T / JC8048 / EC11 旋钮 ESP32 最小系统 = 板载 BOOT 键（GPIO0，低电平有效）；EC11 旋钮最小系统（S3）= BOOT（GPIO0）+ 外挂息屏按钮（GPIO39──按键──GND，内部上拉、低电平有效）。
+
+---
+
+## 立创实战派（esp32s3-JLC-SZP）显示驱动——排障记录（**已解决**）
+
+现象：背光亮但整屏全黑，串口一切正常（`BSP ready`、无 abort）。根因叠加了三层：
+
+1. **教程文档（`.reff/szp.md`）的参数是错的**：spi_mode=2（下降沿采样，ST7789 要上升沿）、CS 拉低保持。实测可亮的基准是用户 Arduino 工程（`.reff/jlc-shizhanpai-esp32s3-arduino-lvgl` + 其 fork 的 TFT_eSPI，`.reff/tft_espi_umeiko`）。
+2. **面板要求每笔 SPI 交易都有 CS 下降沿**（CS 在 PCA9557 P0 上，常低/常高均全黑）。esp_lcd 面板驱动无法经 I2C 扩展器逐笔翻 CS → 本板 BSP **不用 esp_lcd 面板驱动**，直接 SPI master + 手动控 CS/DC（`src/bsp/esp32/bsp_esp32s3_jlc_szp.c`），ST7789 初始化序列照抄 TFT_eSPI `ST7789_Init.h`（含 SWRESET+150ms，本板无 RST 脚）。
+3. **PCA9557 其余脚位必须对齐 Arduino 实测状态**：config=0xFA（P1 保持输入）、空闲 output=0xFB（P2=0"摄像头电源"开，疑似与 TFT 逻辑供电共用，P2=1 整屏黑）。
+
+最终可用配置：SPI3 mode 3 @ 80MHz、BGR、横屏 MADCTL=0x68（180°=0xC8）、**必须 INVON**（INVOFF 全屏反色；`bsp_disp_set_invert` 语义取反，同 ec11_knob_esp32）、像素高字节先发。诊断手法：I2C 扫描 + PCA9557 寄存器回读 + 触摸初始化前整屏推红区分 LCD 链路与外设。
 
 ---
 

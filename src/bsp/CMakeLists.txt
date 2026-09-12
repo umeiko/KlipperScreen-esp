@@ -7,6 +7,7 @@ idf_component_register(SRCS "bsp_screen_power.c"
                             "esp32/bsp_cyd_2432s028r.c"
                             "esp32/bsp_e32r35t.c"
                             "esp32/bsp_ec11_knob_minimal.c"
+                            "esp32/bsp_esp32s3_jlc_szp.c"
                             "esp32/bsp_ec11_knob_esp32.c"
                             "esp32/bsp_jc8048w550.c"
                             "esp32/bsp_wifi_esp32.c"
@@ -19,6 +20,7 @@ idf_component_register(SRCS "bsp_screen_power.c"
                        REQUIRES lvgl esp_lcd
                                 esp_lcd_ili9341 esp_lcd_st7796 esp_lcd_touch_xpt2046
                                 espressif__esp_lcd_touch_gt911
+                                espressif__esp_lcd_touch_ft5x06
                                 esp_timer driver esp_common esp_wifi esp_event esp_netif nvs_flash
                                 esp_http_client littlefs json
                                 hal soc esp_mm esp_psram esp_hw_support esp_driver_gpio esp_driver_pcnt)

@@ -7,6 +7,7 @@
 | [EC11 Knob Minimal System](#ec11-knob-minimal-system) | `ec11_knob_minimal` | 240×320 ST7789 SPI | None, rotary only | ESP32-S3 N16R8 / 16MB | ✅ Official reference, contributor tested |
 | [EC11 Knob ESP32 Minimal](#ec11-knob-esp32-minimal) | `ec11_knob_esp32` | 1.8" 128×160 ST7735S SPI | None, rotary only | ESP32 / 4MB | 🆕 New, CYD-compatible pinout |
 | [JC8048W550](#jc8048w550) | `jc8048w550` | 5" 800×480 ST7262 RGB parallel | GT911 capacitive | ESP32-S3 / 16MB | ✅ Stable |
+| [JLC SZP ESP32-S3](#jlc-szp-esp32-s3) | `esp32s3-JLC-SZP` | 2.0" 240×320 ST7789 SPI | FT6336 capacitive | ESP32-S3 N16R8 / 16MB | ✅ Verified |
 
 Flash packages are named `klipper-remote-esp32-<board>.zip` (asset names carry no version, so the links below always point to the latest stable release). Please report problems in [Issues](https://github.com/umeiko/KlipperScreen-esp/issues).
 
@@ -17,6 +18,7 @@ Flash packages are named `klipper-remote-esp32-<board>.zip` (asset names carry n
 | EC11 Knob Minimal System | [klipper-remote-esp32-ec11_knob_minimal.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/klipper-remote-esp32-ec11_knob_minimal.zip) |
 | EC11 Knob ESP32 Minimal | [klipper-remote-esp32-ec11_knob_esp32.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/klipper-remote-esp32-ec11_knob_esp32.zip) |
 | JC8048W550 | [klipper-remote-esp32-jc8048w550.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/klipper-remote-esp32-jc8048w550.zip) |
+| JLC SZP ESP32-S3 | [klipper-remote-esp32-esp32s3-JLC-SZP.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/klipper-remote-esp32-esp32s3-JLC-SZP.zip) |
 | Windows desktop simulator | [klipper-remote-desktop-win-x86_64.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/klipper-remote-desktop-win-x86_64.zip) |
 
 ---
@@ -164,3 +166,26 @@ Logical resolution **800×480**. The full RGB-parallel tearing/underflow investi
 | LCD backlight | 2 |
 | Touch SDA / SCL / RST | 19 / 20 / 38 |
 | BOOT button (screen off / wake) | 0 |
+
+## JLC SZP ESP32-S3
+
+*LCSC "ShiZhanPai" (立创实战派) ESP32-S3 development board with an on-board 2.0" capacitive display.*
+
+Logical resolution **320×240 landscape**.
+
+- MCU: ESP32-S3-WROOM-1-N16R8, 16MB QIO flash + 8MB Octal PSRAM @ 80MHz
+- Display: ST7789 (240×320 native), SPI3 @ 80MHz **mode 3**, DMA double buffering (2 × 40 lines); BGR, landscape MADCTL=0x68 (MX|MV|BGR), **INVON required** (INVOFF inverts the whole screen; `bsp_disp_set_invert` semantics flipped accordingly)
+- **LCD CS is not a GPIO**: it sits on a PCA9557 (I2C 0x19) P0, and the panel requires a **CS falling edge on every SPI transaction** (CS stuck low or high both yield a black screen). Since esp_lcd cannot toggle CS over an I2C expander, this BSP bypasses the esp_lcd panel driver and bit-bangs CS/DC around plain SPI-master transfers — mirroring the proven [Arduino reference project](https://github.com/umeiko/jlc-shizhanpai-esp32s3-arduino-lvgl) whose TFT_eSPI fork hooks CS_L/CS_H to the PCA9557. No RST pin: the init sequence must start with SWRESET (0x01) + 150ms
+- Remaining PCA9557 pins follow the Arduino project's proven state: P1 left as input, P2=0 ("camera power" on — apparently shared with TFT logic power; P2=1 gives a lit backlight with a black screen)
+- Touch: FT6336 capacitive, on the same I2C0 bus as the PCA9557, polled without INT/RST, no calibration needed
+- Backlight: GPIO42, LEDC PWM 10bit/5kHz, **active low** (driven with `output_invert`)
+- Screen off / wake: on-board user button (GPIO0)
+
+| Function | GPIO | Notes |
+|---|---|---|
+| LCD MOSI / SCLK / DC | 40 / 41 / 39 | SPI3 @ mode 3, no MISO |
+| LCD CS | PCA9557 P0 (I2C 0x19) | Toggled per transaction (idle high); P1 left as input, P2=0 camera/TFT power |
+| LCD RST | — | Not connected; init must issue SWRESET |
+| LCD backlight | 42 | LEDC PWM, active low |
+| Touch / PCA9557 SDA / SCL | 1 / 2 | I2C0 @ 100kHz |
+| User button (screen off / wake) | 0 | Active low, internal pull-up |

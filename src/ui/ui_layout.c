@@ -65,7 +65,7 @@ static int big(void)   { return scale_f >= 2.0f; }
 static int small(void) { return scale_f < 1.0f; }
 
 /* 字号档选择：ESP32 按板型在预处理期定死，未用的全表字体直接被链接器丢掉
-   （CYD 只链 14/16，JC8048 只链 28/32，ec11_knob_esp32 只链 10/12 ——
+   （CYD/SZP 只链 14/16，JC8048 只链 28/32，ec11_knob_esp32 只链 10/12 ——
    4MB/16MB flash 都放得下 GB2312 全表）；desktop 走运行时 big()/small()
    （KLIPPER_RES 可切分辨率，三档都要）。 */
 #if defined(CONFIG_BOARD_CYD_2432S028R)
@@ -74,6 +74,8 @@ static int small(void) { return scale_f < 1.0f; }
 #define UI_FONT_BIG 0
 #elif defined(CONFIG_BOARD_EC11_KNOB_MINIMAL)
 #define UI_FONT_BIG 0
+#elif defined(CONFIG_BOARD_ESP32S3_JLC_SZP)
+#define UI_FONT_BIG 0   /* 320x240 同 CYD：只链 14/16 压缩档全表 */
 #elif defined(CONFIG_BOARD_EC11_KNOB_ESP32)
 #define UI_FONT_SMALL 1   /* 160x128：几何等比缩小，字体走 10/12 小屏档 */
 #elif defined(CONFIG_BOARD_JC8048W550)
