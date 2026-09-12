@@ -245,6 +245,7 @@ static const dict_entry_t dict[] = {
     {"正在刷新打印机列表…", "Refreshing printer list…", "正在重新整理印表機清單…", "Actualisation des imprimantes…", "Aggiornamento elenco stampanti…"},
     {"正在连接拓竹云服务…", "Connecting to Bambu Cloud…", "正在連線拓竹雲端服務…", "Connexion au cloud Bambu…", "Connessione a Bambu Cloud…"},
     {"无法启动登录任务", "Could not start the sign-in task", "無法啟動登入工作", "Impossible de démarrer la connexion", "Impossibile avviare l'accesso"},
+    {"内存不足，无法完成操作", "Out of memory; could not finish", "記憶體不足，無法完成操作", "Mémoire insuffisante, opération impossible", "Memoria insufficiente, operazione non riuscita"},
     {"账号登录目前只在 Windows 桌面版提供", "Account sign-in is currently available on Windows desktop only", "帳號登入目前僅在 Windows 桌面版提供", "Connexion disponible uniquement sous Windows", "Accesso disponibile solo su Windows"},
     {"已连接，正在读取打印机状态…", "Connected, reading printer status…", "已連線，正在讀取印表機狀態…", "Connecté, lecture de l'état…", "Connesso, lettura stato…"},
     {"无法取得云端实时监视身份，请重新登录", "Cloud monitor credentials unavailable; sign in again", "無法取得雲端即時監視身分，請重新登入", "Identifiants cloud indisponibles ; reconnectez-vous", "Credenziali cloud non disponibili; accedi di nuovo"},
