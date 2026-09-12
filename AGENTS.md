@@ -22,10 +22,11 @@ Klipper 远程显示屏：ESP32 固件（ESP-IDF 5.5.5）+ Windows 桌面端（M
 ## UI 约定
 
 - 小屏（160x128，`ui_scale() < 1.0f`）专属待遇：标题栏用 ≤2 字短标题——面板注册时在 `panel_def_t` 里填 `.title_s`（NULL 则用 `.title`），新增词条要同步补 `src/ui/lang.c` 五语言 dict；子面板标题栏不显示温度（panel_mgr.c show() 里按 ui_scale 判断）；SVG 图标统一 `lv_image_set_scale` 到 0.45x（theme.c `theme_img()` 里做，`panel_printers.c` 槽位 logo 有自己的 scale 需单独乘 0.45）。
+- **面板不常驻**：非主面板离开时屏幕+导航组即销毁（panel_mgr.c `destroy_left_panel()`，CYD 无 PSRAM 扛不住 17 个面板全缓存，曾是 OOM 卡死根因）。面板每次进入都重跑 `create()`，静态对象指针不得假设跨访问存活；标题长/与打印控制无关的面板在 `panel_def_t` 置 `.hide_temps = 1`。
 
 ## 串口 CLI（JC8048 / esp32 端）
 
-`help|scan|wifi|wifioff|wifion|mr|mrstart|status|ps|printer|gc|ls|cd|pwd|cat|rm`，实现在 `src/ports/esp32/entry/debug_cli.c`。
+`help|scan|wifi|wifioff|wifion|mr|mrstart|status|ps|printer|gc|ls|cd|pwd|cat|rm|mem|ht`，实现在 `src/ports/esp32/entry/debug_cli.c`（`mem` 查堆水位、`ht` heap trace 抓未释放块）。
 
 ## 息屏/唤醒按钮（ESP32 端）
 
