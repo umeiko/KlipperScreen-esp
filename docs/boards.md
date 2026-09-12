@@ -171,6 +171,8 @@ Logical resolution **800×480**. The full RGB-parallel tearing/underflow investi
 
 *LCSC "ShiZhanPai" (立创实战派) ESP32-S3 development board with an on-board 2.0" capacitive display.*
 
+![JLC SZP ESP32-S3](screenshots/boards/esp32s3_jlc_szp.jpg)
+
 Logical resolution **320×240 landscape**.
 
 - MCU: ESP32-S3-WROOM-1-N16R8, 16MB QIO flash + 8MB Octal PSRAM @ 80MHz

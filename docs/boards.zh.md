@@ -171,6 +171,8 @@ CYD 固件默认已启用旋转编码器支持（PCNT 硬件正交解码）。�
 
 *立创"实战派" ESP32-S3 开发板，板载 2.0" 电容触摸屏。*
 
+![立创实战派 ESP32-S3](screenshots/boards/esp32s3_jlc_szp.jpg)
+
 逻辑分辨率 **320×240 横屏**。
 
 - 主控：ESP32-S3-WROOM-1-N16R8，16MB QIO Flash + 8MB Octal PSRAM @ 80MHz
