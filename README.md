@@ -36,8 +36,8 @@ The gallery includes fresh English screenshots from the current desktop simulato
 
 - **ESP32-2432S028R** ("Cheap Yellow Display"): 320×240 ILI9341 TFT + XPT2046 resistive touch, WiFi
 - **ESP32-32E E32R35T** (3.5"): 480×320 ST7796 TFT + XPT2046 resistive touch (shared SPI bus) — stable since v0.2.0
-- **EC11 Knob Minimal System**: ESP32-S3 DevKitC-1 N16R8 + 240×320 ST7789 SPI TFT + EC11 module, no touch (`ec11_knob_minimal`) — [breadboard wiring and editable Fritzing source](docs/boards.md#ec11-knob-minimal-system)
-- **EC11 Knob ESP32 Minimal**: same ESP32 MCU as the CYD + 1.8" 128×160 ST7735S SPI TFT + EC11, no touch (`ec11_knob_esp32`), all pins aligned with the CYD — [wiring](docs/boards.md#ec11-knob-esp32-minimal)
+- **esp32s3-st7789-320_240-ec11**: ESP32-S3 DevKitC-1 N16R8 + 240×320 ST7789 SPI TFT + EC11 module, no touch — [breadboard wiring and editable Fritzing source](docs/boards.md#esp32s3-st7789-320_240-ec11)
+- **esp32-st7735s-128_160-ec11**: same ESP32 MCU as the CYD + 1.8" 128×160 ST7735S SPI TFT + EC11, no touch, all pins aligned with the CYD — [wiring](docs/boards.md#esp32-st7735s-128_160-ec11)
 - **JC8048W550** (Guition 5"): 800×480 ST7262 RGB TFT + GT911 capacitive touch, ESP32-S3 — stable since v0.2.0 (the tearing hunt is documented in [docs/jc8048w550-rgb-display-guide.md](docs/jc8048w550-rgb-display-guide.md))
 - **JLC SZP** (立创实战派 ESP32-S3): 2.0" 320×240 ST7789 SPI TFT + FT6336 capacitive touch, 16MB flash + 8MB Octal PSRAM (`esp32s3-JLC-SZP`) — [pinout](docs/boards.md#jlc-szp-esp32-s3)
 - Same LAN as the Klipper host (Moonraker reachable at `host:7125`)

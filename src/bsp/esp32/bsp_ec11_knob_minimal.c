@@ -1,5 +1,5 @@
 /*
- * Official "EC11 Knob Minimal System" breadboard reference:
+ * Official "esp32s3-st7789-320_240-ec11" breadboard reference:
  *   ESP32-S3-DevKitC-1 N16R8 + 240x320 ST7789 SPI display + EC11 module.
  *
  * The pinout follows the hardware validated in contributor PR #6. This BSP
@@ -302,7 +302,7 @@ void bsp_init(void)
         lvgl_task, "lvgl", 12288, NULL, 4, NULL, 1);
     ESP_ERROR_CHECK(task_ok == pdPASS ? ESP_OK : ESP_ERR_NO_MEM);
 
-    ESP_LOGI(TAG, "BSP ready (EC11 Knob Minimal System, %dx%d)",
+    ESP_LOGI(TAG, "BSP ready (esp32s3-st7789-320_240-ec11, %dx%d)",
              LCD_H_RES, LCD_V_RES);
 }
 

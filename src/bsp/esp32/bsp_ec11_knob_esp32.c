@@ -1,5 +1,5 @@
 /*
- * BSP: EC11 Knob ESP32 Minimal —— CYD 同款主控（ESP32）的最小旋钮系统：
+ * BSP: esp32-st7735s-128_160-ec11 —— CYD 同款主控（ESP32）的最小旋钮系统：
  * 1.8" 128x160 ST7735S SPI 屏 + EC11 旋转编码器，无触摸。
  *
  * 引脚全部对齐 CYD 2432S028R 的板载资源分配，方便直接用 CYD 底板/排针引出：
@@ -312,7 +312,7 @@ void bsp_init(void)
         lvgl_task, "lvgl", 12288, NULL, 4, NULL, 1);
     ESP_ERROR_CHECK(task_ok == pdPASS ? ESP_OK : ESP_ERR_NO_MEM);
 
-    ESP_LOGI(TAG, "BSP ready (EC11 Knob ESP32 Minimal, ST7735S %dx%d)",
+    ESP_LOGI(TAG, "BSP ready (esp32-st7735s-128_160-ec11, ST7735S %dx%d)",
              LCD_H_RES, LCD_V_RES);
 }
 

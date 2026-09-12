@@ -4,8 +4,8 @@
 |---|---|---|---|---|---|
 | [CYD 2432S028R](#cyd-2432s028r) | `cyd_2432s028r` | 2.8" 240×320 ILI9341 SPI | XPT2046 resistive | ESP32 / 4MB | ✅ Stable |
 | [E32R35T](#e32r35t) | `e32r35t` | 3.5" 320×480 ST7796U SPI | XPT2046 resistive | ESP32-32E / 4MB | ✅ Stable |
-| [EC11 Knob Minimal System](#ec11-knob-minimal-system) | `ec11_knob_minimal` | 240×320 ST7789 SPI | None, rotary only | ESP32-S3 N16R8 / 16MB | ✅ Official reference, contributor tested |
-| [EC11 Knob ESP32 Minimal](#ec11-knob-esp32-minimal) | `ec11_knob_esp32` | 1.8" 128×160 ST7735S SPI | None, rotary only | ESP32 / 4MB | 🆕 New, CYD-compatible pinout |
+| [esp32s3-st7789-320_240-ec11](#esp32s3-st7789-320_240-ec11) | `esp32s3-st7789-320_240-ec11` | 240×320 ST7789 SPI | None, rotary only | ESP32-S3 N16R8 / 16MB | ✅ Official reference, contributor tested |
+| [esp32-st7735s-128_160-ec11](#esp32-st7735s-128_160-ec11) | `esp32-st7735s-128_160-ec11` | 1.8" 128×160 ST7735S SPI | None, rotary only | ESP32 / 4MB | 🆕 New, CYD-compatible pinout |
 | [JC8048W550](#jc8048w550) | `jc8048w550` | 5" 800×480 ST7262 RGB parallel | GT911 capacitive | ESP32-S3 / 16MB | ✅ Stable |
 | [JLC SZP ESP32-S3](#jlc-szp-esp32-s3) | `esp32s3-JLC-SZP` | 2.0" 240×320 ST7789 SPI | FT6336 capacitive | ESP32-S3 N16R8 / 16MB | ✅ Verified |
 
@@ -15,8 +15,8 @@ Flash packages are named `klipper-remote-esp32-<board>.zip` (asset names carry n
 |---|---|
 | CYD 2432S028R | [klipper-remote-esp32-cyd_2432s028r.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/klipper-remote-esp32-cyd_2432s028r.zip) |
 | E32R35T | [klipper-remote-esp32-e32r35t.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/klipper-remote-esp32-e32r35t.zip) |
-| EC11 Knob Minimal System | [klipper-remote-esp32-ec11_knob_minimal.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/klipper-remote-esp32-ec11_knob_minimal.zip) |
-| EC11 Knob ESP32 Minimal | [klipper-remote-esp32-ec11_knob_esp32.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/klipper-remote-esp32-ec11_knob_esp32.zip) |
+| esp32s3-st7789-320_240-ec11 | [klipper-remote-esp32-esp32s3-st7789-320_240-ec11.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/klipper-remote-esp32-esp32s3-st7789-320_240-ec11.zip) |
+| esp32-st7735s-128_160-ec11 | [klipper-remote-esp32-esp32-st7735s-128_160-ec11.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/klipper-remote-esp32-esp32-st7735s-128_160-ec11.zip) |
 | JC8048W550 | [klipper-remote-esp32-jc8048w550.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/klipper-remote-esp32-jc8048w550.zip) |
 | JLC SZP ESP32-S3 | [klipper-remote-esp32-esp32s3-JLC-SZP.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/klipper-remote-esp32-esp32s3-JLC-SZP.zip) |
 | Windows desktop simulator | [klipper-remote-desktop-win-x86_64.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/klipper-remote-desktop-win-x86_64.zip) |
@@ -84,9 +84,9 @@ Logical resolution **480×320 landscape**.
 | Battery voltage ADC | 34 | input |
 | BOOT button | 0 | Screen off / wake |
 
-## EC11 Knob Minimal System
+## esp32s3-st7789-320_240-ec11
 
-![EC11 Knob Minimal System Fritzing reference wiring](screenshots/boards/ec11_knob_minimal_breadboard.en.png)
+![esp32s3-st7789-320_240-ec11 Fritzing reference wiring](screenshots/boards/ec11_knob_minimal_breadboard.en.png)
 
 This official reference can be assembled directly with jumper wires: **ESP32-S3-DevKitC-1 N16R8 + an 8-pin 240×320 ST7789 SPI display + a KY-040/EC11 encoder module**. It follows the display and encoder pins tested by the contributor in [PR #6](https://github.com/umeiko/KlipperScreen-esp/pull/6) and [Issue #5](https://github.com/umeiko/KlipperScreen-esp/issues/5), while keeping only the two peripherals required by the minimal system. Logical resolution is **320×240 landscape**.
 
@@ -113,7 +113,7 @@ Power the DevKit from USB-C. Many SPI display boards label clock and data as `SC
 
 **Screen-off / wake buttons.** Wire a momentary button between GPIO39 and GND (the firmware enables the internal pull-up; the press pulls the pin low, release returns high). Press once to blank the screen, press again to wake. The DevKit's on-board BOOT key (GPIO0) works the same way — both buttons are active in parallel, and either one toggles the screen.
 
-## EC11 Knob ESP32 Minimal
+## esp32-st7735s-128_160-ec11
 
 ![1.8" ST7735S module](screenshots/boards/ec11_knob_esp32_st7735s.png)
 

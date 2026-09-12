@@ -1,4 +1,4 @@
-# EC11 Knob Minimal System: ESP32-S3-DevKitC-1 N16R8 + ST7789 + EC11
+# esp32s3-st7789-320_240-ec11: ESP32-S3-DevKitC-1 N16R8 + ST7789 + EC11
 CONFIG_BOARD_EC11_KNOB_MINIMAL=y
 
 # Match the contributor-validated ESP32-S3-WROOM-1 N16R8 module.
@@ -18,8 +18,8 @@ CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=16384
 # that compiler bug and is also the setting used by the supported S3 RGB board.
 CONFIG_COMPILER_OPTIMIZATION_PERF=y
 
-CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_ec11_knob_minimal.csv"
-CONFIG_PARTITION_TABLE_FILENAME="partitions_ec11_knob_minimal.csv"
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_esp32s3-st7789-320_240-ec11.csv"
+CONFIG_PARTITION_TABLE_FILENAME="partitions_esp32s3-st7789-320_240-ec11.csv"
 
 # PR #6 reference EC11 wiring: A=13, B=14, push=46, common/GND active-low.
 CONFIG_INPUT_ROTARY_ENCODER=y

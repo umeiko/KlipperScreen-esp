@@ -13,10 +13,10 @@ CONFIG_SPIRAM_USE_MALLOC=y
 CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=16384
 # CONFIG_SPIRAM_XIP_FROM_PSRAM is not set
 
-# 同 ec11_knob_minimal：ESP-IDF 5.5.5 的 GCC14 在 -Og 下编译 esp_lcd RGB 代码会 ICE，
+# 同 esp32s3-st7789-320_240-ec11：ESP-IDF 5.5.5 的 GCC14 在 -Og 下编译 esp_lcd RGB 代码会 ICE，
 # 性能档避开该编译器 bug，也是 S3 板型的统一设置
 CONFIG_COMPILER_OPTIMIZATION_PERF=y
 
-# 16MB flash 分区表（与 ec11_knob_minimal 同布局：factory ~10MB + 6MB littlefs）
+# 16MB flash 分区表（与 esp32s3-st7789-320_240-ec11 同布局：factory ~10MB + 6MB littlefs）
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_esp32s3_jlc_szp.csv"
 CONFIG_PARTITION_TABLE_FILENAME="partitions_esp32s3_jlc_szp.csv"

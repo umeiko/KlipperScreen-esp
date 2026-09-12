@@ -20,10 +20,10 @@ menu "Board selection"
             bool "立创实战派 ESP32-S3 (ESP32-S3 N16R8, 2.0\" 320x240 ST7789 + FT6336)"
 
         config BOARD_EC11_KNOB_MINIMAL
-            bool "EC11 Knob Minimal System / EC11 旋钮最小系统 (ESP32-S3 + ST7789)"
+            bool "esp32s3-st7789-320_240-ec11 (ESP32-S3 + 240x320 ST7789 + EC11)"
 
         config BOARD_EC11_KNOB_ESP32
-            bool "EC11 Knob ESP32 Minimal (ESP32 + 1.8\" 128x160 ST7735S, 引脚对齐 CYD)"
+            bool "esp32-st7735s-128_160-ec11 (ESP32 + 1.8\" 128x160 ST7735S + EC11, 引脚对齐 CYD)"
     endchoice
 
 endmenu

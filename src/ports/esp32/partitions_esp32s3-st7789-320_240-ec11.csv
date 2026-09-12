@@ -1,4 +1,4 @@
-# EC11 Knob Minimal System reference board: 16MB flash, large app + 6MB LittleFS.
+# esp32s3-st7789-320_240-ec11 reference board: 16MB flash, large app + 6MB LittleFS.
 # Name,    Type, SubType, Offset,   Size,      Flags
 nvs,       data, nvs,     0x9000,   0x6000,
 phy_init,  data, phy,     0xf000,   0x1000,

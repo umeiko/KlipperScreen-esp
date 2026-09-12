@@ -31,19 +31,19 @@ jobs:
             chip: esp32
             flash_size: 4MB
             bl_offset: 0x1000
-          - board: ec11_knob_minimal       # EC11 Knob Minimal System: ESP32-S3 + ST7789 + EC11
+          - board: esp32s3-st7789-320_240-ec11  # ESP32-S3 + 240x320 ST7789 + EC11（无触摸）
             target: esp32s3
             bdir: build-ec11-knob-minimal
-            sdkcfg: sdkconfig.ec11_knob_minimal
-            defs: sdkconfig.defaults;sdkconfig.defaults.ec11_knob_minimal
+            sdkcfg: sdkconfig.esp32s3-st7789-320_240-ec11
+            defs: sdkconfig.defaults;sdkconfig.defaults.esp32s3-st7789-320_240-ec11
             chip: esp32s3
             flash_size: 16MB
             bl_offset: 0x0
-          - board: ec11_knob_esp32        # EC11 Knob ESP32 Minimal: ESP32 + 128x160 ST7735S + EC11
+          - board: esp32-st7735s-128_160-ec11  # ESP32 + 128x160 ST7735S + EC11（无触摸，引脚对齐 CYD）
             target: esp32
             bdir: build-ec11-knob-esp32
-            sdkcfg: sdkconfig.ec11_knob_esp32
-            defs: sdkconfig.defaults;sdkconfig.defaults.ec11_knob_esp32
+            sdkcfg: sdkconfig.esp32-st7735s-128_160-ec11
+            defs: sdkconfig.defaults;sdkconfig.defaults.esp32-st7735s-128_160-ec11
             chip: esp32
             flash_size: 4MB
             bl_offset: 0x1000
@@ -108,9 +108,9 @@ jobs:
             suffix: ""
           - board: e32r35t
             suffix: ""
-          - board: ec11_knob_minimal
+          - board: esp32s3-st7789-320_240-ec11
             suffix: ""
-          - board: ec11_knob_esp32
+          - board: esp32-st7735s-128_160-ec11
             suffix: ""
           - board: jc8048w550
             suffix: ""
@@ -149,8 +149,8 @@ jobs:
         run: |
           cp tools/release/flash.bat tools/release/flash.sh dist/
           chmod +x dist/flash.sh
-          if [ "${{ matrix.board }}" = "ec11_knob_minimal" ]; then
-            cp tools/release/README-ec11_knob_minimal.md dist/README.md
+          if [ "${{ matrix.board }}" = "esp32s3-st7789-320_240-ec11" ]; then
+            cp tools/release/README-esp32s3-st7789-320_240-ec11.md dist/README.md
             cp docs/hardware/ec11_knob_minimal.fzz dist/
             cp docs/screenshots/boards/ec11_knob_minimal_breadboard.zh.png dist/
             cp docs/screenshots/boards/ec11_knob_minimal_breadboard.en.png dist/
@@ -312,6 +312,11 @@ jobs:
             klipper-remote-esp32-*.zip
             klipper-remote-desktop-win-x86_64*.zip
             klipper-remote-desktop-macos-arm64*.zip
+          # 板型产物说明（引脚/接线/刷机地址）见文档站，自动生成 notes 会附加在其后
+          body: |
+            **Supported boards / 支持的板型**: https://umeiko.github.io/KlipperScreen-esp/boards/
+
+            每个 `klipper-remote-esp32-<board>.zip` 对应一种板型，刷机前请先在上方页面确认你板子的产物名称、接线与刷机说明。
           generate_release_notes: true
           # 标签含 wip（如 v0.2.0-wip.1）时标为预发布，不抢占 latest
           prerelease: ${{ contains(github.ref_name, 'wip') }}

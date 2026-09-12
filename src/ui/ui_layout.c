@@ -65,7 +65,7 @@ static int big(void)   { return scale_f >= 2.0f; }
 static int small(void) { return scale_f < 1.0f; }
 
 /* 字号档选择：ESP32 按板型在预处理期定死，未用的全表字体直接被链接器丢掉
-   （CYD/SZP 只链 14/16，JC8048 只链 28/32，ec11_knob_esp32 只链 10/12 ——
+   （CYD/SZP 只链 14/16，JC8048 只链 28/32，esp32-st7735s-128_160-ec11 只链 10/12 ——
    4MB/16MB flash 都放得下 GB2312 全表）；desktop 走运行时 big()/small()
    （KLIPPER_RES 可切分辨率，三档都要）。 */
 #if defined(CONFIG_BOARD_CYD_2432S028R)

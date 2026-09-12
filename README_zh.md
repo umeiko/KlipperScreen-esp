@@ -43,7 +43,7 @@ ESP-IDF v5.5.5 · LVGL v9.3 · 多后端（ESP32 四个正式板型 / desktop SD
 - **Windows**：`flash.bat COM6`（zip 内含 esptool.exe，无需装 Python）
 - **macOS / Linux**：`./flash.sh /dev/ttyUSB0`（需 `pip install esptool`）
 
-支持板型：**CYD 2432S028R**（2.8" 电阻屏）；**E32R35T**（ESP32-32E 3.5" 480×320 ST7796 电阻屏）；**EC11 旋钮最小系统**（ESP32-S3 + 240×320 ST7789 + EC11，无触摸，构建目标 `ec11_knob_minimal`）；**EC11 旋钮 ESP32 最小系统**（CYD 同款 ESP32 + 1.8" 128×160 ST7735S + EC11，无触摸，引脚对齐 CYD，构建目标 `ec11_knob_esp32`）；**JC8048W550**（Guition 5" 800×480 RGB 电容屏，ESP32-S3）；**立创实战派 ESP32-S3**（2.0" 320×240 ST7789 + FT6336 电容触摸，16MB Flash + 8MB Octal PSRAM，构建目标 `esp32s3-JLC-SZP`）。面包板接线与 Fritzing 源文件见[支持的板子](docs/boards.zh.md#ec11-旋钮最小系统)，RGB 屏排坑记录见 [docs/jc8048w550-rgb-display-guide.md](docs/jc8048w550-rgb-display-guide.md)。
+支持板型：**CYD 2432S028R**（2.8" 电阻屏）；**E32R35T**（ESP32-32E 3.5" 480×320 ST7796 电阻屏）；**esp32s3-st7789-320_240-ec11**（ESP32-S3 + 240×320 ST7789 + EC11，无触摸）；**esp32-st7735s-128_160-ec11**（CYD 同款 ESP32 + 1.8" 128×160 ST7735S + EC11，无触摸，引脚对齐 CYD）；**JC8048W550**（Guition 5" 800×480 RGB 电容屏，ESP32-S3）；**立创实战派 ESP32-S3**（2.0" 320×240 ST7789 + FT6336 电容触摸，16MB Flash + 8MB Octal PSRAM，构建目标 `esp32s3-JLC-SZP`）。面包板接线与 Fritzing 源文件见[支持的板子](docs/boards.zh.md#esp32s3-st7789-320_240-ec11)，RGB 屏排坑记录见 [docs/jc8048w550-rgb-display-guide.md](docs/jc8048w550-rgb-display-guide.md)。
 
 首次启动会自动格式化 LittleFS。电阻触摸板有出厂参数时直接加载，否则进入校准；电容触摸和纯旋钮板不会运行校准流程。
 
