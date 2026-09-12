@@ -188,7 +188,7 @@ static void open_text_dialog(const char *title, char *target, size_t cap,
 
 static lv_obj_t *make_field(lv_obj_t *parent, const char *key,
                             lv_obj_t **key_label, lv_obj_t **value,
-                            int y, lv_event_cb_t cb)
+                            int y, lv_event_cb_t cb, lv_obj_t **arrow_out)
 {
     lv_obj_t *row = theme_action_card(parent);
     lv_obj_set_size(row, ui_content_w(), ui_px(32));
@@ -199,6 +199,7 @@ static lv_obj_t *make_field(lv_obj_t *parent, const char *key,
     if (key_label) *key_label = k;
     lv_obj_t *arrow = theme_label(row, LV_SYMBOL_RIGHT, THEME_FONT_ICON, THEME_COL_ACCENT);
     lv_obj_align(arrow, LV_ALIGN_RIGHT_MID, 0, 0);
+    if (arrow_out) *arrow_out = arrow;
     *value = theme_label(row, TR("未设置"), THEME_FONT_S, THEME_COL_TEXT_DIM);
     lv_obj_set_width(*value, ui_px(178));
     lv_label_set_long_mode(*value, LV_LABEL_LONG_DOT);
@@ -442,18 +443,29 @@ static void refresh(void)
     lv_label_set_text(lbl_account_type, account_phone ? TR("手机号") : "Email");
     lv_label_set_text(lbl_account_key, account_phone ? TR("手机号") : "Email");
     lv_label_set_text(lbl_code_icon, account_phone ? LV_SYMBOL_CALL : LV_SYMBOL_ENVELOPE);
-    lv_label_set_text(lbl_code_button, account_phone ? TR("短信验证码") : TR("邮箱验证码"));
+    lv_label_set_text(lbl_code_button, account_phone ? TR("获取短信验证码") : TR("邮箱验证码"));
     if (now.region == BAMBU_CLOUD_REGION_CHINA)
         lv_obj_remove_state(form_account_type, LV_STATE_DISABLED);
     else
         lv_obj_add_state(form_account_type, LV_STATE_DISABLED);
-
     set_hidden(form_region, !form);
     set_hidden(form_account_type, !form);
     set_hidden(form_account, !form);
-    set_hidden(form_password, !form);
-    set_hidden(btn_code, !form);
-    set_hidden(btn_password, !form);
+    /* 手机号走短信验证码登录：整个密码框直接隐藏，避免灰化禁用引起误解 */
+    set_hidden(form_password, !form || account_phone);
+    /* 底部只留一个整宽主按钮：手机号=获取短信验证码，邮箱=确认登录（密码） */
+    bool show_code = form && !busy && account_phone;
+    bool show_pass = form && !busy && !account_phone;
+    set_hidden(btn_code, !show_code);
+    set_hidden(btn_password, !show_pass);
+    if (show_code) {
+        lv_obj_set_size(btn_code, ui_content_w(), ui_px(34));
+        lv_obj_align(btn_code, LV_ALIGN_BOTTOM_MID, 0, -ui_px(6));
+    }
+    if (show_pass) {
+        lv_obj_set_size(btn_password, ui_content_w(), ui_px(34));
+        lv_obj_align(btn_password, LV_ALIGN_BOTTOM_MID, 0, -ui_px(6));
+    }
     set_hidden(code_row, !challenge);
     set_hidden(btn_submit_code, !challenge);
     set_hidden(btn_restart, !challenge);
@@ -467,8 +479,6 @@ static void refresh(void)
         set_hidden(form_account_type, true);
         set_hidden(form_account, true);
         set_hidden(form_password, true);
-        set_hidden(btn_code, true);
-        set_hidden(btn_password, true);
     }
     shown = now;
     shown_valid = 1;
@@ -512,9 +522,9 @@ static lv_obj_t *create(void)
     lv_obj_center(lbl_account_type);
     lv_obj_add_event_cb(form_account_type, on_account_type, LV_EVENT_CLICKED, NULL);
     form_account = make_field(scr, "Email", &lbl_account_key, &lbl_account,
-                              110, on_account);
+                              110, on_account, NULL);
     form_password = make_field(scr, TR("密码"), NULL, &lbl_password,
-                               145, on_password);
+                               145, on_password, NULL);
 
     btn_code = theme_button(scr, NULL, NULL, 0);
     lv_obj_set_size(btn_code, half, ui_px(34));
@@ -537,9 +547,9 @@ static lv_obj_t *create(void)
                           LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_column(btn_password, ui_px(4), 0);
     theme_img(btn_password, ui_icon(&img_link, &img_link_32), THEME_COL_TEXT);
-    theme_label(btn_password, TR("密码登录"), THEME_FONT_S, THEME_COL_TEXT);
+    theme_label(btn_password, TR("确认登录"), THEME_FONT_S, THEME_COL_TEXT);
 
-    code_row = make_field(scr, TR("验证码"), NULL, &lbl_code, 115, on_code);
+    code_row = make_field(scr, TR("验证码"), NULL, &lbl_code, 115, on_code, NULL);
     btn_submit_code = theme_button(scr, LV_SYMBOL_OK, TR("确认登录"), 1);
     lv_obj_set_size(btn_submit_code, ui_content_w(), ui_px(36));
     lv_obj_align(btn_submit_code, LV_ALIGN_TOP_MID, 0, ui_px(154));

@@ -203,6 +203,7 @@ static const dict_entry_t dict[] = {
     {"邮箱验证码",      "Email code",          "信箱驗證碼",        "Code e-mail",              "Codice e-mail"},
     {"手机号",          "Phone number",        "手機號碼",          "Numéro de téléphone",      "Numero di telefono"},
     {"短信验证码",      "SMS code",            "簡訊驗證碼",        "Code SMS",                 "Codice SMS"},
+    {"获取短信验证码",  "Get SMS code",        "取得簡訊驗證碼",    "Recevoir le code SMS",     "Ottieni codice SMS"},
     {"密码登录",        "Password sign-in",    "密碼登入",          "Connexion par mot de passe", "Accesso con password"},
     {"验证码",          "Verification code",   "驗證碼",            "Code de vérification",     "Codice di verifica"},
     {"确认登录",        "Sign in",             "確認登入",          "Se connecter",             "Accedi"},
