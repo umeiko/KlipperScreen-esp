@@ -13,8 +13,9 @@ board-specific workarounds and are examples to consult, not bases to clone.
    touch, copy `touch_input_board_template.c/.h`. For resistive touch, follow
    the porting guide and create an adapter that includes its calibration map.
 5. Replace every `BOARD_TEMPLATE`, `board_template`, and `TODO(board)` marker.
-6. Register the board using the checklist in
-   [`docs/contributing-board.md`](../../docs/contributing-board.md).
+6. Register the board in the build script, CI matrix, and the boards
+   documentation, following the checklist at the end of
+   [`docs/porting.md`](../../docs/porting.md).
 7. Build the new board, then build one existing board as a shared-code check.
 
 The C template is specifically a small **SPI command-panel + ST7789** example.

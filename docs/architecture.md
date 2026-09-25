@@ -2,7 +2,7 @@
 
 > 项目：**KlipperScreen-esp**（Klipper-Remote-ESP32-Displays），MIT 协议。
 > 状态：v0.5.0（2026-09）——本文描述当前代码的真实架构，只写已落地的内容。
-> 相关文档：[从源码构建](building.md) · [支持的板子](boards.md) · [移植新板型](porting.md) · [贡献板型](contributing-board.md) · [Moonraker API 细节](klipper-moonraker-api.md) · [JC8048W550 RGB 屏排障指南](jc8048w550-rgb-display-guide.md)
+> 相关文档：[从源码构建](building.md) · [支持的板子](boards.md) · [移植新板型](porting.md) · [Moonraker API 细节](klipper-moonraker-api.md) · [JC8048W550 RGB 屏排障指南](jc8048w550-rgb-display-guide.md)
 
 ---
 
@@ -138,7 +138,7 @@ BSP 还有两个配套抽象：
 - **SenseCAP Indicator**：与 JC8048 共用同一套 rgb44 + LVGL DIRECT 双缓冲渲染路径（PCLK 12MHz，480×480 方形屏），差异在面板初始化（ST7701S 位 bang 3 线 9-bit SPI，CS/RST 挂 TCA9535 I²C 扩展器）和触摸（FT5x06，GX 批次地址 0x48）。详见 [boards.md](boards.md#sensecap-indicator)。
 - **esp32s3-JLC-SZP（立创实战派）**：不用 esp_lcd 面板驱动——CS 在 PCA9557 I²C 扩展器上，面板要求每笔交易都有 CS 下降沿，BSP 直接 SPI master + 手动控 CS/DC，初始化序列照抄 TFT_eSPI。
 
-新增板型的完整流程见 [porting.md](porting.md) 与 [contributing-board.md](contributing-board.md)。
+新增板型的完整流程与登记清单见 [porting.md](porting.md)。
 
 ---
 

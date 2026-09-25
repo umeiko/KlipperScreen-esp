@@ -48,7 +48,6 @@
 
 - [支持的板子](boards.zh.md) — 现有板型的硬件信息与引脚定义
 - [移植到自己的开发板](porting.zh.md) — BSP 接口契约与实现要点
-- [贡献新板型（PR 指南）](contributing-board.zh.md) — 提交 PR 需要改哪些文件、验证什么
 - [界面展示](screenshots.zh.md) — 当前桌面模拟器英文界面截图
 - [架构说明](architecture.md) — 共享 UI、BSP、桌面控制端与模拟器结构
 - [拓竹接入说明](bambu-integration-architecture.md) — 当前只读云端边界与后续局域网路线

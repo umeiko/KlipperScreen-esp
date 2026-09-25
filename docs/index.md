@@ -48,7 +48,6 @@ For self-compiling see the repo README; to run the firmware on your own board se
 
 - [Supported boards](boards.md) — hardware info and pinouts of existing boards
 - [Porting to your own board](porting.md) — the BSP contract and implementation notes
-- [Contributing a new board](contributing-board.md) — what a board-support PR must change and verify
 - [Screenshots](screenshots.md) — current English desktop simulator screens
 - [Architecture](architecture.md) — shared UI, BSP, desktop controller, and simulator structure
 - [Bambu integration notes](bambu-integration-architecture.md) — current read-only cloud boundary and planned LAN path

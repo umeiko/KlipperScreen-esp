@@ -507,6 +507,37 @@ Deliberately avoided pins: GPIO8 (Super Mini on-board LED), GPIO12/13 (LuatOS on
 
 ![KlipperScreen-esp on a Redmi 4 running Ubuntu](screenshots/boards/linux_redmi4.jpg)
 
-*No ESP32 at all — run the same UI directly on the printer's Linux host (shown: a retired Redmi 4 phone, aarch64 Ubuntu 24.04, weston kiosk backend).*
+*No ESP32 at all — run the same UI directly on the printer's Linux host (shown: a retired Redmi 4 phone, aarch64 Ubuntu 24.04, weston kiosk backend). A phone/tablet running a Linux chroot/proot works too.*
 
-The desktop build targets Debian/Ubuntu-family Linux hosts (glibc ≥ 2.35, x86_64 and arm64) as a lightweight KlipperScreen alternative: prebuilt static binaries, one-line installer, systemd fullscreen service (weston/X11) or a plain desktop app. See [Linux host](linux.md) for the install command and details.
+The desktop build targets Debian/Ubuntu-family Linux hosts (glibc ≥ 2.35, x86_64 and arm64) as a lightweight KlipperScreen alternative — prebuilt binaries that statically link SDL2/cJSON, no compilation on the host.
+
+### One-line install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/umeiko/KlipperScreen-esp/main/scripts/linux/install.sh | bash
+```
+
+The installer detects your architecture, downloads the matching prebuilt package from the latest release, then asks how you want it installed:
+
+- **Dedicated display service (default)** — a `KlipperScreen-esp.service` systemd unit starts the UI fullscreen on boot through a Wayland (weston kiosk shell) or X11 (bare xinit) backend of your choice; the required packages (`weston` or `xinit`) are installed automatically. If `KlipperScreen.service` is detected, the installer offers to disable it so the two don't fight over the screen
+- **Desktop app** — just the binary plus a launcher shortcut in the applications menu
+
+Files land in `~/.local/share/KlipperScreen-esp/`, configuration in `~/.config/KlipperScreen-esp/`.
+
+### Manual install
+
+Download `desktop-linux-x86_64.tar.gz` or `desktop-linux-arm64.tar.gz` from [Releases](https://github.com/umeiko/KlipperScreen-esp/releases/latest), extract, and run `./install.sh`. Non-interactive usage for scripted deployments:
+
+```bash
+SERVICE=n ./install.sh                  # desktop app only
+KR_BACKEND=x11 ./install.sh             # service mode, force X11
+KR_BACKEND=wayland KR_START=0 ./install.sh
+```
+
+Uninstall with the bundled `./uninstall.sh`.
+
+### Notes
+
+- At 720p and above the UI switches to the large-font/icon tier automatically, and the boot animation is skipped on high-resolution Linux hosts for a faster start.
+- Touch input works through the kernel's evdev/libinput stack — both weston and xinit backends forward it transparently.
+- Building from source instead: see [Building from source](building.md).
