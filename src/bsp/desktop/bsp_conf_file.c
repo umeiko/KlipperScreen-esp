@@ -14,6 +14,10 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <wchar.h>
+#else
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
 #endif
 
 static FILE *open_override(const char *name, const char *mode)
@@ -48,6 +52,30 @@ static FILE *open_conf(const char *name, const char *mode)
     /* Read-only fallback migrates settings from older portable builds. */
     if (mode[0] == 'r') return fopen(name, mode);
     return NULL;
+#elif !defined(KLIPPER_DESKTOP_SIMULATOR)
+    /* Linux/macOS 产品端：$XDG_CONFIG_HOME/KlipperScreen-esp 或 ~/.config/KlipperScreen-esp，
+       安装位置/工作目录变化不影响已连接的打印机配置。 */
+    const char *base = getenv("XDG_CONFIG_HOME");
+    const char *home = getenv("HOME");
+    char dir[1024], path[1152];
+    if (base && base[0])
+        snprintf(dir, sizeof(dir), "%s/KlipperScreen-esp", base);
+    else {
+        if (!home || !home[0]) return fopen(name, mode);
+        snprintf(dir, sizeof(dir), "%s/.config/KlipperScreen-esp", home);
+    }
+    mkdir(dir, 0700);   /* 父目录 ~/.config 由系统保证；失败则由 fopen 报错 */
+    snprintf(path, sizeof(path), "%s/%s", dir, name);
+    FILE *f = fopen(path, mode);
+    if (f || mode[0] != 'r') return f;
+    /* 只读回退迁移：旧 klipper-remote 目录 → 更旧的 cwd 便携存放 */
+    if (base && base[0])
+        snprintf(path, sizeof(path), "%s/klipper-remote/%s", base, name);
+    else
+        snprintf(path, sizeof(path), "%s/.config/klipper-remote/%s", home, name);
+    f = fopen(path, mode);
+    if (f) return f;
+    return fopen(name, mode);
 #else
     return fopen(name, mode);
 #endif

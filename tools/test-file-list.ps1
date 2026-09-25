@@ -16,7 +16,7 @@ try {
     & "$testDir/stream.exe"
     if ($LASTEXITCODE) { throw 'Stream test failed' }
     # Use Ninja's actual link inputs, not stale .obj files left by older configurations.
-    $link = (Select-String -Path "$build/build.ninja" -Pattern '^build klipper_remote_desktop.exe:').Line
+    $link = (Select-String -Path "$build/build.ninja" -Pattern '^build KlipperScreen-esp.exe:').Line
     $objects = [regex]::Matches($link, 'CMakeFiles/\S+\.obj') | ForEach-Object { $_.Value } |
         Where-Object { (Split-Path $_ -Leaf) -notin @('main.c.obj','printer_model.c.obj','panel_files.c.obj') } |
         ForEach-Object { Join-Path $build $_ }

@@ -21,7 +21,7 @@ For developers: toolchain setup, desktop and per-board firmware builds, and rege
 ```bash
 # Desktop (Windows: real controller + dev simulator; Linux/macOS: desktop targets)
 bash tools/build-desktop.sh
-./src/ports/desktop/build/klipper_remote_desktop.exe              # real Moonraker controller
+./src/ports/desktop/build/KlipperScreen-esp.exe              # real Moonraker controller
 ./src/ports/desktop/build/klipper_remote_simulator.exe            # layout simulator
 ./src/ports/desktop/build/klipper_remote_simulator.exe 3000 x.bmp # screenshot after 3s (dev)
 

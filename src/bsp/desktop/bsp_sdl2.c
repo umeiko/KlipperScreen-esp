@@ -127,6 +127,23 @@ void bsp_init(void)
         }
     }
 
+    /* 独占显示服务（Linux systemd 单元设置 KLIPPER_FULLSCREEN=1）：
+       以屏幕原生分辨率建窗并隐藏光标——weston kiosk-shell 会自动全屏化
+       xdg-toplevel；裸 X11（xinit 无 WM）下原生分辨率窗口即铺满全屏。
+       SDL_Init 幂等，提前调只为读显示模式。 */
+    const bool fullscreen = !res && getenv("KLIPPER_FULLSCREEN") &&
+                            getenv("KLIPPER_FULLSCREEN")[0] == '1';
+    if (fullscreen) {
+        SDL_Init(SDL_INIT_VIDEO);
+        SDL_DisplayMode mode;
+        if (SDL_GetCurrentDisplayMode(0, &mode) == 0 &&
+            mode.w >= 128 && mode.h >= 96) {
+            scr_w = mode.w;
+            scr_h = mode.h;
+        }
+        SDL_ShowCursor(SDL_DISABLE);
+    }
+
     lv_init();
 
     lv_display_t *disp = lv_sdl_window_create(scr_w, scr_h);
@@ -139,8 +156,9 @@ void bsp_init(void)
         lv_display_add_event_cb(disp, preview_color_flush, LV_EVENT_FLUSH_FINISH, NULL);
     }
 #endif
-    /* 小屏放大看：160x128 → 3x，320x240 → 2x，800x480 → 1x */
-    lv_sdl_window_set_zoom(disp, scr_w <= 200 ? 3 : (scr_w <= 320 ? 2 : 1));
+    /* 小屏放大看：160x128 → 3x，320x240 → 2x，800x480 → 1x；全屏服务不缩放 */
+    if (!fullscreen)
+        lv_sdl_window_set_zoom(disp, scr_w <= 200 ? 3 : (scr_w <= 320 ? 2 : 1));
 #ifdef KLIPPER_DESKTOP_SIMULATOR
 #if defined(KR_DISPLAY_SETTINGS_PREVIEW)
     lv_sdl_window_set_title(disp, "Display Settings Preview - RGB/BGR + Encoder");

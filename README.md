@@ -38,6 +38,22 @@ Download the flash package `*.zip` for your board from [Releases](../../releases
 
 Supported boards: the common yellow CYD ESP32 dev boards and ESP32-S3 boards. Prebuilt firmware per board: **[Supported boards](https://umeiko.github.io/KlipperScreen-esp/boards/)**
 
+## Linux host (prebuilt, KlipperScreen-style deployment)
+
+One-line install (downloads the latest release for your architecture, asks how you want it installed):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/umeiko/KlipperScreen-esp/main/scripts/linux/install.sh | bash
+```
+
+Or download `desktop-linux-x86_64.tar.gz` / `desktop-linux-arm64.tar.gz` from [Releases](../../releases), extract, then run `./install.sh`:
+
+- Choose between a **dedicated display service** (systemd autostart, fullscreen via Wayland-weston or X11) or a regular **desktop app**.
+- If `KlipperScreen.service` is detected, the installer offers to disable it to avoid contention for the screen.
+- The binary statically links SDL2/cJSON (X11/Wayland libraries are loaded at runtime) and only needs glibc ≥ 2.35 (Debian 12 / Ubuntu 22.04+, aarch64 or x86_64).
+- Config lives in `~/.config/KlipperScreen-esp/`; uninstall with `uninstall.sh`.
+
+
 ## First-time setup
 
 1. Settings → WiFi: scan → pick an AP → enter the password. WiFi credentials are saved and auto-connect on next boot.
@@ -53,10 +69,12 @@ Serial CLI commands (115200 8N1): `help` / `wifi` / `mr` / `printer <1-6>` / `mr
 Toolchain: **ESP-IDF v5.5.5** · **LVGL v9.3** · SDL2 (desktop).
 
 ```bash
-bash tools/build-desktop.sh                       # desktop (controller + simulator)
-bash tools/build-esp32.sh <board> build           # ESP32 firmware (13 boards)
+bash tools/build-desktop.sh                       # desktop (KlipperScreen-esp controller + simulator)
+bash tools/build-esp32.sh <board> build           # ESP32 firmware (16 boards)
 bash tools/build-esp32.sh <board> flash COMx      # build and flash
 ```
+
+Linux hosts can also build from source: `sudo apt install cmake libsdl2-dev libcjson-dev`, then in `src/ports/desktop` run `cmake -S . -B build && cmake --build build`.
 
 Portable MSYS2 toolchain setup, LVGL checkout, multi-board build details, and regenerating CJK font subsets and icons: **[Building from source](https://umeiko.github.io/KlipperScreen-esp/building/)**
 

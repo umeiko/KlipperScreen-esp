@@ -112,6 +112,25 @@ void panel_mgr_init(void)
     ui_nav_refocus_visible(nav_stack[0]->nav_group);
 }
 
+/* 桌面端切语言免重启用：销毁全部已建面板树后回到主面板重建。
+   必须先切到临时空屏再删旧树——不能删正在显示的屏幕；
+   不能在面板事件回调里同步调用（用 lv_async_call 推迟到回调返回后）。 */
+void panel_mgr_reload(void)
+{
+    lv_obj_t *tmp = lv_obj_create(NULL);
+    lv_screen_load(tmp);
+    for (unsigned i = 0; i < REG_COUNT; i++) {
+        panel_def_t *p = registry[i];
+        if (!p->scr) continue;
+        ui_nav_group_destroy(p->scr, p->nav_group);
+        lv_obj_delete(p->scr);
+        p->scr = NULL;
+        p->nav_group = NULL;
+    }
+    panel_mgr_init();               /* 重置 nav 栈、重建主面板并加载 */
+    lv_obj_delete(tmp);             /* 已不是活动屏，可删 */
+}
+
 void panel_mgr_open(const char *name)
 {
     panel_def_t *p = find(name);

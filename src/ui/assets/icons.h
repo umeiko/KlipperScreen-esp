@@ -45,6 +45,28 @@ LV_IMAGE_DECLARE(img_klipper_logo_112); /* 大屏 2x 变体 */
 LV_IMAGE_DECLARE(img_bambu_logo_56);    /* Bambu 标志：机器模式 */
 LV_IMAGE_DECLARE(img_bambu_logo_112);   /* 大屏 2x 变体 */
 
+/* 桌面端 720p+（ui_scale()>=3）变体：big 档的 2x，ui_icon() huge 档自动映射。
+   ESP32 不引用这些描述符（icon_lg_map 整段 #ifndef ESP_PLATFORM），链接器裁掉。 */
+LV_IMAGE_DECLARE(img_heater_112);
+LV_IMAGE_DECLARE(img_move_112);
+LV_IMAGE_DECLARE(img_extrude_112);
+LV_IMAGE_DECLARE(img_files_112);
+LV_IMAGE_DECLARE(img_printer_112);
+LV_IMAGE_DECLARE(img_settings_112);
+LV_IMAGE_DECLARE(img_nozzle_64);
+LV_IMAGE_DECLARE(img_bed_64);
+LV_IMAGE_DECLARE(img_link_64);
+LV_IMAGE_DECLARE(img_link_off_64);
+LV_IMAGE_DECLARE(img_alert_circle_64);
+LV_IMAGE_DECLARE(img_globe_64);
+LV_IMAGE_DECLARE(img_swap_64);
+LV_IMAGE_DECLARE(img_wifi_4_48);
+LV_IMAGE_DECLARE(img_wifi_3_48);
+LV_IMAGE_DECLARE(img_wifi_2_48);
+LV_IMAGE_DECLARE(img_wifi_1_48);
+LV_IMAGE_DECLARE(img_klipper_logo_224);   /* RGB565A8 真彩 */
+LV_IMAGE_DECLARE(img_bambu_logo_224);     /* RGB565A8 真彩 */
+
 /* 小屏(160x128) 0.45x 变体，ui_icon() 小屏时自动映射 */
 LV_IMAGE_DECLARE(img_heater_sm);
 LV_IMAGE_DECLARE(img_nozzle_16_sm);

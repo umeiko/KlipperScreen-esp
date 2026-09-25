@@ -29,7 +29,8 @@ Klipper 远程显示屏：ESP32 固件（ESP-IDF 5.5.5）+ Windows 桌面端（M
 
 - 版本号维护在 `src/core/version.h`（`KR_VERSION`，设置页和 Moonraker identify 都用它）；发版 = 改它 + 打同名 `vX.Y.Z` tag 推送。
 - CI 固件按 esp32 / esp32s3 两个 shard 在同一 IDF 容器内顺序合并构建（共享按 shard 分开的 ccache，单板失败不中断其余板型），package 统一为单 Job 聚合产物。
-- CI  release 资产名**不带版本号**：固件 `ESP-IDFv5.5-<board>.zip`、桌面 `desktop-win-x86_64.zip` / `desktop-macos-arm64.zip`（`ESP-IDFv5.5` 是构建框架版本，不表示目标芯片都是 ESP32）；文档站下载直链走 `releases/latest/download/...`；tag 含 `wip` 标为预发布。旧 `klipper-remote-*` 遗留资产由 release job 在新资产上传成功后自动按 id 清理。
+- CI  release 资产名**不带版本号**：固件 `ESP-IDFv5.5-<board>.zip`、桌面 `desktop-win-x86_64.zip` / `desktop-macos-arm64.zip`、Linux 上位机 `desktop-linux-x86_64.tar.gz` / `desktop-linux-arm64.tar.gz`（ubuntu-22.04 / ubuntu-22.04-arm runner 静态编译 SDL2+cJSON，glibc≥2.35；tarball 内含 bin/KlipperScreen-esp + scripts/linux 的 install/uninstall/systemd/启动脚本）（`ESP-IDFv5.5` 是构建框架版本，不表示目标芯片都是 ESP32）；文档站下载直链走 `releases/latest/download/...`；tag 含 `wip` 标为预发布。旧 `klipper-remote-*` 遗留资产由 release job 在新资产上传成功后自动按 id 清理。
+- **命名约定**：产品二进制与 systemd 服务统一叫 `KlipperScreen-esp`（`KlipperScreen-esp.exe` / `bin/KlipperScreen-esp` / `KlipperScreen-esp.service`），`klipper-remote` 一名已停用；Moonraker identify 的 client_name 同步为 `KlipperScreen-esp[-平台]`。开发模拟器仍叫 `klipper_remote_simulator`。
 - CI 会强推移动标签 `latest` 到最新正式版提交。
 - `src/ui/CMakeLists.txt` 是 GLOB 收集源文件：新增面板/字体文件后若链接报 undefined，先 touch 它触发 CMake 重配（不能加 CONFIGURE_DEPENDS，IDF script 模式会报错）。
 
@@ -37,6 +38,8 @@ Klipper 远程显示屏：ESP32 固件（ESP-IDF 5.5.5）+ Windows 桌面端（M
 
 - 小屏（160x128，`ui_scale() < 1.0f`）专属待遇：标题栏用 ≤2 字短标题——面板注册时在 `panel_def_t` 里填 `.title_s`（NULL 则用 `.title`），新增词条要同步补 `src/ui/lang.c` 五语言 dict；子面板标题栏不显示温度（panel_mgr.c show() 里按 ui_scale 判断）；SVG 图标统一用 0.45x 预生成变体（tools/icongen 生成 `_sm` 图标，`ui_layout.c` 的 `icon_sm()` 按映射表替换，新图标要同步进 `icon_sm_map`；`panel_printers.c` 槽位 logo 有自己的 scale 需单独乘 0.45）。
 - **面板不常驻**：非主面板离开时屏幕+导航组即销毁（panel_mgr.c `destroy_left_panel()`，CYD 无 PSRAM 扛不住 17 个面板全缓存，曾是 OOM 卡死根因）。面板每次进入都重跑 `create()`，静态对象指针不得假设跨访问存活；标题长/与打印控制无关的面板在 `panel_def_t` 置 `.hide_temps = 1`。
+- **切语言**：ESP32 保存后渐暗重启重建 UI；桌面端免重启——`panel_mgr_reload()`（异步调用，先切临时空屏再销毁全部面板树重建）后回语言页。
+- **大字档（desktop only）**：`ui_scale() >= 3.0`（720p+，如红米4 5寸 293dpi）走 huge 档——字体 40/48（`font_cjk_40/48.c`，gen_fonts.py `DESKTOP_ONLY_SIZES`，文件体带 `#ifndef ESP_PLATFORM` 守卫，ESP32 GLOB 编进工程也是空文件）、图标经 `icon_lg_map` 映射到 2x 变体（`_64`/`_112`/`_48`，ESP32 不编译该表，不引用不链接）。
 - **方向键导航白名单**（分派在 `ui_buttons.c`，实现在 `ui_nav.c`，ESP32 实体键与桌面键盘共用）：未标记组保持原生——上下=LVGL 线性 NEXT/PREV、左右原样送达控件、回车确认、Esc 返回。面板在 `create()` 里对默认组标记：`ui_nav_group_set_list()`（纯列表页：左=返回、右=进入/确定）或 `ui_nav_group_set_spatial()`（网格布局：四方向按屏幕坐标几何就近聚焦；禁用/隐藏项始终跳过，两轮扫描——严格正交邻居找不到时放宽到该方向最近可选项，防灰色项困死焦点）。当前 spatial：主界面/温度/机器模式/切换打印机/挤出/打印状态/拓竹设置/数字键盘（keypad.c）；list：设置/语言/显示/WiFi/文件/文件详情/Moonraker/拓竹连接。屏幕键盘（lv_keyboard 焦点）与展开的下拉框自动四键原样送达，无需标记；组编辑态（`lv_group_get_editing`，如温度调值、IP 段）左右自动原样。桌面端文本输入会话中方向键+回车归导航（回车=按虚拟键盘高亮键=输入字符），**F1=提交表单**；确认框（confirm.c）上下左右都切换按钮。
 
 ## 串口 CLI（JC8048 / esp32 端）

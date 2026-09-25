@@ -32,7 +32,11 @@ DEFAULT_FONT = r"C:\Windows\Fonts\simhei.ttf"
 # Latin-1 补充区(0xA0-0xFF，法语/意语重音字母)全部由它提供，界面西文风格统一；
 # 主字体 simhei 只负责 CJK 等非 ASCII 字符。
 DEFAULT_LATIN_FONT = str(ROOT / "tools" / "fontgen" / "fonts" / "Lato-Regular.ttf")
-SIZES = (10, 12, 14, 16, 28, 32)   # 10/12: 160x128 小屏档；14/16: 320x240 基准；28/32: 800x480 双倍档
+SIZES = (10, 12, 14, 16, 28, 32, 40, 48)
+# 10/12: 160x128 小屏档；14/16: 320x240 基准；28/32: 800x480 双倍档；
+# 40/48: 桌面端 720p+（scale>=3）大字档——ESP32 用不到，文件体包
+# #if !defined(ESP_PLATFORM)，GLOB 编译进固件工程时整文件为空，不占 flash/编译时间。
+DESKTOP_ONLY_SIZES = (40, 48)
 
 
 def iter_literals(path: Path):
@@ -160,10 +164,17 @@ def gen_font(font: str, latin_font: str, size: int, symbols: str, compress: bool
     for attempt in range(3):
         last = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
         if last.returncode == 0:
-            return out
+            break
         print(f"[gen] 第 {attempt + 1} 次失败 rc={last.returncode}: "
               f"{(last.stderr or last.stdout or '').strip()[-300:]}", file=sys.stderr)
-    raise RuntimeError(f"lv_font_conv 连续失败（size={size} compress={compress}）")
+    else:
+        raise RuntimeError(f"lv_font_conv 连续失败（size={size} compress={compress}）")
+    if size in DESKTOP_ONLY_SIZES and not suffix:
+        # 桌面大字档：包平台守卫，ESP32 GLOB 编译时整文件为空（见 DESKTOP_ONLY_SIZES）
+        text = out.read_text(encoding="utf-8")
+        out.write_text("#if !defined(ESP_PLATFORM)\n" + text
+                       + "\n#endif /* !ESP_PLATFORM */\n", encoding="utf-8")
+    return out
 
 
 def main() -> int:

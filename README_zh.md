@@ -40,6 +40,21 @@ ESP-IDF v5.5.5 · LVGL v9.3 · 多后端（ESP32, Windows, Linux, MacOS）
 
 支持板型：最常见的各种CYD黄色esp32开发板，以及esp32s3开发板。预编译固件详见 **[支持的板子](https://umeiko.github.io/KlipperScreen-esp/zh/boards/)**
 
+## Linux 上位机（免编译，对标 KlipperScreen 部署）
+
+一行安装（自动下载匹配架构的最新 release，交互式选择安装形态）：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/umeiko/KlipperScreen-esp/main/scripts/linux/install.sh | bash
+```
+
+也可以从 [Releases](../../releases) 下载 `desktop-linux-x86_64.tar.gz` 或 `desktop-linux-arm64.tar.gz`，解压后运行 `./install.sh`：
+
+- 安装时可选**独占显示服务**（systemd 开机自启全屏，Wayland-weston 或 X11 后端）或普通**桌面 App**。
+- 检测到 `KlipperScreen.service` 时会询问是否停用，避免抢屏。
+- 二进制静态链接 SDL2/cJSON（X11/Wayland 库运行时加载），仅需 glibc ≥ 2.35（Debian 12 / Ubuntu 22.04 及以上，aarch64 与 x86_64）。
+- 配置存 `~/.config/KlipperScreen-esp/`；卸载运行 `uninstall.sh`。
+
 
 ## 首次配置
 
@@ -57,10 +72,12 @@ ESP-IDF v5.5.5 · LVGL v9.3 · 多后端（ESP32, Windows, Linux, MacOS）
 工具链：**ESP-IDF v5.5.5** · **LVGL v9.3** · SDL2（桌面端）。
 
 ```bash
-bash tools/build-desktop.sh                       # 桌面端（控制端 + 模拟器）
-bash tools/build-esp32.sh <board> build           # ESP32 固件（13 种板型）
+bash tools/build-desktop.sh                       # 桌面端（控制端 KlipperScreen-esp + 模拟器）
+bash tools/build-esp32.sh <board> build           # ESP32 固件（16 种板型）
 bash tools/build-esp32.sh <board> flash COMx      # 构建并烧录
 ```
+
+Linux 上位机也可从源码构建：`sudo apt install cmake libsdl2-dev libcjson-dev` 后进 `src/ports/desktop` 执行 `cmake -S . -B build && cmake --build build`。
 
 便携 MSYS2 工具链安装、LVGL 克隆、多板型构建细节、中文字体子集与图标的重新生成，见文档站 **[从源码构建](https://umeiko.github.io/KlipperScreen-esp/zh/building/)**。
 

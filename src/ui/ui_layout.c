@@ -24,6 +24,11 @@ LV_FONT_DECLARE(font_cjk_32);
 LV_FONT_DECLARE(font_cjk_28_min);
 LV_FONT_DECLARE(font_cjk_32_min);
 LV_FONT_DECLARE(font_latin_24);   /* 纯西文 Lato 24（ui_font_latin24，2x 屏拉丁语缩档用） */
+#ifndef ESP_PLATFORM
+/* 桌面端 720p+（scale>=3）大字档（gen_fonts.py DESKTOP_ONLY_SIZES，文件体带平台守卫） */
+LV_FONT_DECLARE(font_cjk_40);
+LV_FONT_DECLARE(font_cjk_48);
+#endif
 
 static int   scr_w = 320;
 static int   scr_h = 240;
@@ -64,11 +69,15 @@ int ui_content_w(void)
 
 static int big(void)   { return scale_f >= 2.0f; }
 static int small(void) { return scale_f < 1.0f; }
+#ifndef ESP_PLATFORM
+/* 桌面端 720p+（红米4 等 5 寸 720p 面板 DPI 高，28/32 档物理尺寸仅 ~3mm） */
+static int huge(void)  { return scale_f >= 3.0f; }
+#endif
 
 /* 字号档选择：ESP32 按板型在预处理期定死，未用的全表字体直接被链接器丢掉
    （CYD/SZP 只链 14/16，JC8048 只链 28/32，esp32-st7735s-128_160-ec11 只链 10/12 ——
-   4MB/16MB flash 都放得下 GB2312 全表）；desktop 走运行时 big()/small()
-   （KLIPPER_RES 可切分辨率，三档都要）。 */
+   4MB/16MB flash 都放得下 GB2312 全表）；desktop 走运行时 small()/big()/huge()
+   （KLIPPER_RES 可切分辨率；huge=720p+ 用 40/48 档，ESP32 永不引用）。 */
 #if defined(CONFIG_BOARD_CYD_2432S028R)
 #define UI_FONT_BIG 0
 #elif defined(CONFIG_BOARD_CYD_2432S028R_PLUS)
@@ -120,8 +129,11 @@ const lv_font_t *ui_font_s(void)
     return &font_cjk_10_cmp;
 #elif defined(UI_FONT_BIG)
     return UI_FONT_BIG ? &UI_FONT_28 : &font_cjk_14_cmp;
-#else
+#elif defined(ESP_PLATFORM)
     return small() ? &font_cjk_10 : big() ? &font_cjk_28 : &font_cjk_14;
+#else
+    return small() ? &font_cjk_10 : huge() ? &font_cjk_40
+         : big()   ? &font_cjk_28 : &font_cjk_14;
 #endif
 }
 
@@ -131,8 +143,11 @@ const lv_font_t *ui_font_m(void)
     return &font_cjk_12_cmp;
 #elif defined(UI_FONT_BIG)
     return UI_FONT_BIG ? &UI_FONT_32 : &font_cjk_16_cmp;
-#else
+#elif defined(ESP_PLATFORM)
     return small() ? &font_cjk_12 : big() ? &font_cjk_32 : &font_cjk_16;
+#else
+    return small() ? &font_cjk_12 : huge() ? &font_cjk_48
+         : big()   ? &font_cjk_32 : &font_cjk_16;
 #endif
 }
 
@@ -166,8 +181,12 @@ const lv_font_t *ui_font_icon(void)
     return &lv_font_montserrat_12;
 #elif defined(UI_FONT_BIG)
     return UI_FONT_BIG ? &lv_font_montserrat_32 : &lv_font_montserrat_16;
+#elif defined(ESP_PLATFORM)
+    return small() ? &lv_font_montserrat_12
+         : big()   ? &lv_font_montserrat_32 : &lv_font_montserrat_16;
 #else
     return small() ? &lv_font_montserrat_12
+         : huge()  ? &lv_font_montserrat_48
          : big()   ? &lv_font_montserrat_32 : &lv_font_montserrat_16;
 #endif
 }
@@ -180,8 +199,12 @@ const lv_font_t *ui_font_latin24(void)
     return &font_cjk_12_cmp;
 #elif defined(UI_FONT_BIG)
     return UI_FONT_BIG ? &font_latin_24 : &font_cjk_14_cmp;
-#else
+#elif defined(ESP_PLATFORM)
     return big() ? &font_latin_24 : (small() ? &font_cjk_12 : &font_cjk_14);
+#else
+    /* huge 档没有独立西文字体：font_cjk_40 的拉丁区就是 Lato 40 */
+    return huge() ? &font_cjk_40
+         : big()  ? &font_latin_24 : (small() ? &font_cjk_12 : &font_cjk_14);
 #endif
 }
 
@@ -217,6 +240,39 @@ static const lv_image_dsc_t *icon_sm(const lv_image_dsc_t *base)
     return base;
 }
 
+#ifndef ESP_PLATFORM
+/* 桌面端 720p+（huge 档）图标映射：big 档返回值 → 2x 变体（tools/icongen 生成）。
+   ESP32 不编译此表，_lg/_36/_64/_112 图标全部不进固件。 */
+static const struct { const lv_image_dsc_t *big, *lg; } icon_lg_map[] = {
+    { &img_heater_56,        &img_heater_112 },
+    { &img_move_56,          &img_move_112 },
+    { &img_extrude_56,       &img_extrude_112 },
+    { &img_files_56,         &img_files_112 },
+    { &img_printer_56,       &img_printer_112 },
+    { &img_settings_56,      &img_settings_112 },
+    { &img_nozzle_32,        &img_nozzle_64 },
+    { &img_bed_32,           &img_bed_64 },
+    { &img_link_32,          &img_link_64 },
+    { &img_link_off_32,      &img_link_off_64 },
+    { &img_alert_circle_32,  &img_alert_circle_64 },
+    { &img_globe_32,         &img_globe_64 },
+    { &img_swap_32,          &img_swap_64 },
+    { &img_wifi_4,           &img_wifi_4_48 },
+    { &img_wifi_3,           &img_wifi_3_48 },
+    { &img_wifi_2,           &img_wifi_2_48 },
+    { &img_wifi_1,           &img_wifi_1_48 },
+    { &img_klipper_logo_112, &img_klipper_logo_224 },
+    { &img_bambu_logo_112,   &img_bambu_logo_224 },
+};
+
+static const lv_image_dsc_t *icon_lg(const lv_image_dsc_t *big_icon)
+{
+    for (size_t i = 0; i < sizeof(icon_lg_map) / sizeof(icon_lg_map[0]); i++)
+        if (icon_lg_map[i].big == big_icon) return icon_lg_map[i].lg;
+    return big_icon;
+}
+#endif
+
 const lv_image_dsc_t *ui_icon(const lv_image_dsc_t *i16, const lv_image_dsc_t *i32)
 {
 #if defined(UI_FONT_SMALL)
@@ -224,8 +280,12 @@ const lv_image_dsc_t *ui_icon(const lv_image_dsc_t *i16, const lv_image_dsc_t *i
     return icon_sm(i16);   /* 小屏恒用 0.45x 变体（无映射则用原图） */
 #elif defined(UI_FONT_BIG)
     return (UI_FONT_BIG && i32) ? i32 : i16;
-#else
+#elif defined(ESP_PLATFORM)
     if (small()) return icon_sm(i16);
     return (big() && i32) ? i32 : i16;
+#else
+    if (small()) return icon_sm(i16);
+    const lv_image_dsc_t *sel = (big() && i32) ? i32 : i16;
+    return huge() ? icon_lg(sel) : sel;
 #endif
 }

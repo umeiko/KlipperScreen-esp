@@ -33,4 +33,11 @@ bool bsp_wifi_connected(void)
     return false;
 }
 
+bool bsp_wifi_current(char *ssid, size_t ssid_len, char *ip, size_t ip_len)
+{
+    if (ssid && ssid_len) ssid[0] = 0;
+    if (ip && ip_len) ip[0] = 0;
+    return false;
+}
+
 #endif /* __APPLE__ */

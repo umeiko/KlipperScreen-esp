@@ -9,6 +9,8 @@
 #ifdef _WIN32
 
 #include <windows.h>
+#include <ws2tcpip.h>
+#include <iphlpapi.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -24,6 +26,8 @@ static struct {
     int               ap_count;
     volatile bsp_wifi_state_t conn_state;
     volatile int      net_connected; /* 后台轮询缓存：接口当前是否连着任意 AP */
+    char              cur_ssid[BSP_WIFI_SSID_MAX + 1]; /* 轮询缓存：当前 AP（lock 保护） */
+    char              cur_ip[40];                      /* 轮询缓存：当前 IPv4 */
     int               inited;
     char              target_ssid[BSP_WIFI_SSID_MAX + 1];
 } W = { .scan_state = 0, .conn_state = BSP_WIFI_IDLE };
@@ -308,7 +312,31 @@ static DWORD WINAPI connect_thread(void *password)
 
 /* ---------- 接口 ---------- */
 
-/* 后台轮询接口真实状态（标题栏图标用），5 秒一次 */
+/* 当前 WiFi 接口的 IPv4（GetAdaptersAddresses，iphlpapi） */
+static void query_ipv4(char *out, size_t out_sz)
+{
+    out[0] = 0;
+    ULONG sz = 0;
+    ULONG flags = GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER;
+    if (GetAdaptersAddresses(AF_INET, flags, NULL, NULL, &sz) != ERROR_BUFFER_OVERFLOW)
+        return;
+    IP_ADAPTER_ADDRESSES *aa = malloc(sz);
+    if (!aa) return;
+    if (GetAdaptersAddresses(AF_INET, flags, NULL, aa, &sz) == NO_ERROR) {
+        for (IP_ADAPTER_ADDRESSES *p = aa; p && !out[0]; p = p->Next) {
+            if (p->IfType != IF_TYPE_IEEE80211 || p->OperStatus != IfOperStatusUp) continue;
+            for (IP_ADAPTER_UNICAST_ADDRESS *ua = p->FirstUnicastAddress; ua; ua = ua->Next) {
+                struct sockaddr_in *sa = (struct sockaddr_in *)ua->Address.lpSockaddr;
+                if (sa->sin_family != AF_INET) continue;
+                inet_ntop(AF_INET, &sa->sin_addr, out, (int)out_sz);
+                break;
+            }
+        }
+    }
+    free(aa);
+}
+
+/* 后台轮询接口真实状态（标题栏图标 + WiFi 面板状态卡用），5 秒一次 */
 static DWORD WINAPI poll_thread(void *unused)
 {
     (void)unused;
@@ -316,6 +344,7 @@ static DWORD WINAPI poll_thread(void *unused)
         char *output = NULL;
         int queried = run_netsh_hidden(L"wlan show interfaces", &output);
         int ok = 0;
+        char ssid[BSP_WIFI_SSID_MAX + 1] = "", ip[40] = "";
         if (queried) {
             char line[512], *cursor = output, *raw;
             while ((raw = next_output_line(&cursor)) != NULL) {
@@ -323,10 +352,23 @@ static DWORD WINAPI poll_thread(void *unused)
                 if ((strstr(line, "State") || strstr(line, "状态")) && strchr(line, ':')) {
                     char *v = trim(strchr(line, ':') + 1);
                     if (strstr(v, "connected") || strstr(v, "已连接")) ok = 1;
+                } else if (strstr(line, "SSID") && !strstr(line, "BSSID") && strchr(line, ':')) {
+                    char *v = trim(strchr(line, ':') + 1);
+                    strncpy(ssid, v, sizeof(ssid) - 1);
+                    ssid[sizeof(ssid) - 1] = 0;
                 }
             }
         }
         free(output);
+        if (!ok) ssid[0] = 0;
+        if (ok) query_ipv4(ip, sizeof(ip));
+
+        EnterCriticalSection(&W.lock);
+        strncpy(W.cur_ssid, ssid, sizeof(W.cur_ssid) - 1);
+        W.cur_ssid[sizeof(W.cur_ssid) - 1] = 0;
+        strncpy(W.cur_ip, ip, sizeof(W.cur_ip) - 1);
+        W.cur_ip[sizeof(W.cur_ip) - 1] = 0;
+        LeaveCriticalSection(&W.lock);
         W.net_connected = ok;
         Sleep(5000);
     }
@@ -378,6 +420,21 @@ bsp_wifi_state_t bsp_wifi_status(void)
 
 bool bsp_wifi_connected(void)
 {
+    return W.net_connected != 0;
+}
+
+bool bsp_wifi_current(char *ssid, size_t ssid_len, char *ip, size_t ip_len)
+{
+    EnterCriticalSection(&W.lock);
+    if (ssid && ssid_len) {
+        strncpy(ssid, W.cur_ssid, ssid_len - 1);
+        ssid[ssid_len - 1] = 0;
+    }
+    if (ip && ip_len) {
+        strncpy(ip, W.cur_ip, ip_len - 1);
+        ip[ip_len - 1] = 0;
+    }
+    LeaveCriticalSection(&W.lock);
     return W.net_connected != 0;
 }
 

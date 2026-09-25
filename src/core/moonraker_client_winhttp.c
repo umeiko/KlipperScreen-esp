@@ -317,7 +317,7 @@ static void on_heartbeat_result(cJSON *result)
 static void handshake_begin(void)
 {
     send_rpc_cb("server.connection.identify",
-                "{\"client_name\":\"klipper-remote-windows\","
+                "{\"client_name\":\"KlipperScreen-esp-windows\","
                 "\"version\":\"" KR_VERSION "\",\"type\":\"display\","
                 "\"url\":\"https://github.com/umeiko/KlipperScreen-esp\"}",
                 NULL);

@@ -237,3 +237,22 @@ bool bsp_wifi_connected(void)
 {
     return W.connected;
 }
+
+bool bsp_wifi_current(char *ssid, size_t ssid_len, char *ip, size_t ip_len)
+{
+    if (ssid && ssid_len) ssid[0] = 0;
+    if (ip && ip_len) ip[0] = 0;
+    if (!W.connected) return false;
+
+    wifi_ap_record_t ap;
+    if (esp_wifi_sta_get_ap_info(&ap) != ESP_OK) return false;
+    if (ssid && ssid_len) strlcpy(ssid, (const char *)ap.ssid, ssid_len);
+
+    esp_netif_t *sta = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+    if (sta && ip && ip_len) {
+        esp_netif_ip_info_t ii;
+        if (esp_netif_get_ip_info(sta, &ii) == ESP_OK && ii.ip.addr != 0)
+            snprintf(ip, ip_len, IPSTR, IP2STR(&ii.ip));
+    }
+    return true;
+}

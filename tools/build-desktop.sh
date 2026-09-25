@@ -13,5 +13,5 @@ cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 cp -f /ucrt64/bin/SDL2.dll build/ 2>/dev/null || true
 echo BUILD_OK
-ls -la build/klipper_remote_desktop.exe build/klipper_remote_simulator.exe 2>/dev/null || ls -la build/klipper_remote_desktop
+ls -la build/KlipperScreen-esp.exe build/klipper_remote_simulator.exe 2>/dev/null || ls -la build/KlipperScreen-esp
 '

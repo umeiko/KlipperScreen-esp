@@ -23,6 +23,7 @@ typedef struct {
 } panel_def_t;
 
 void panel_mgr_init(void);
+void panel_mgr_reload(void);             /* 销毁全部面板并重建（桌面端切语言用，须异步调用） */
 void panel_mgr_open(const char *name);   /* 入栈 + 左滑转场 */
 void panel_mgr_back(void);               /* 出栈 + 右滑转场 */
 void panel_mgr_home(void);               /* 直接回主面板（清空导航栈） */

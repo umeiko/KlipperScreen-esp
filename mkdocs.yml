@@ -1,5 +1,5 @@
 site_name: KlipperScreen-esp 文档 / Docs
-site_description: 跨平台 3D 打印机显示与控制软件（ESP32 / Windows / macOS，Klipper / Moonraker + 拓竹云端监视）— board porting & contribution guides
+site_description: 跨平台 3D 打印机显示与控制软件（ESP32 / Windows / Linux / macOS，Klipper / Moonraker + 拓竹云端监视）— board porting & contribution guides
 site_url: https://umeiko.github.io/KlipperScreen-esp/
 repo_url: https://github.com/umeiko/KlipperScreen-esp
 edit_uri: edit/main/docs/
@@ -42,6 +42,7 @@ plugins:
             Home: 首页
             Screenshots: 界面展示
             Supported boards: 支持的板子
+            Linux host: Linux 上位机
             Display and encoder settings: 显示与编码器设置
             Porting to your own board: 移植到自己的开发板
             Contributing a new board: 贡献新板型（PR 指南）
@@ -57,6 +58,7 @@ nav:
   - Home: index.md
   - Screenshots: screenshots.md
   - Supported boards: boards.md
+  - Linux host: linux.md
   - Display and encoder settings: display-settings.md
   - Porting to your own board: porting.md
   - Contributing a new board: contributing-board.md

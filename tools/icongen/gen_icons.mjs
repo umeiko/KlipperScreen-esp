@@ -73,6 +73,26 @@ const ICONS = [
   ['bambu_logo',     56, 'bambu_logo_56'],    // 机器模式；槽位页缩至约 32px
   ['bambu_logo',     25, 'bambu_logo_56_sm'],
   ['bambu_logo',    112, 'bambu_logo_112'],   // 大屏 2x 变体
+  // 桌面端 720p+（ui_scale()>=3）大字档变体：big 档的 2x，ui_icon() huge 档自动映射
+  ['heater',        112, 'heater_112'],
+  ['move',          112, 'move_112'],
+  ['extrude',       112, 'extrude_112'],
+  ['files',         112, 'files_112'],
+  ['printer',       112, 'printer_112'],
+  ['settings',      112, 'settings_112'],
+  ['extruder',       64, 'nozzle_64'],
+  ['bed',            64, 'bed_64'],
+  ['link',           64, 'link_64'],
+  ['link_off',       64, 'link_off_64'],
+  ['alert_circle',   64, 'alert_circle_64'],
+  ['web',            64, 'globe_64'],
+  ['toolchanger',    64, 'swap_64'],
+  ['wifi_excellent', 48, 'wifi_4_48'],
+  ['wifi_good',      48, 'wifi_3_48'],
+  ['wifi_fair',      48, 'wifi_2_48'],
+  ['wifi_weak',      48, 'wifi_1_48'],
+  ['klipper_logo',  224, 'klipper_logo_224', 'RGB565A8'],
+  ['bambu_logo',    224, 'bambu_logo_224',   'RGB565A8'],
 ];
 
 mkdirSync(OUT_PNG, { recursive: true });

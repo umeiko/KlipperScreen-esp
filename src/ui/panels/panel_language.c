@@ -1,6 +1,7 @@
 /*
  * 语言选择：每种语言使用一整行，兼顾触摸和旋钮操作。
- * 选择后写入配置并渐暗重启，让所有已创建面板统一应用新语言。
+ * ESP32：写入配置后渐暗重启，让所有面板统一应用新语言。
+ * 桌面端：免重启，异步销毁重建全部面板（事件回调里不能同步删活动屏幕）。
  */
 #include "../theme.h"
 #include "../lang.h"
@@ -32,6 +33,17 @@ static void refresh(void)
     }
 }
 
+#ifndef ESP_PLATFORM
+/* 桌面端免重启：重建面板后回到本页（此时界面已是新语言） */
+static void reload_panels(void *unused)
+{
+    (void)unused;
+    panel_mgr_reload();
+    panel_mgr_open("settings");
+    panel_mgr_open("language");
+}
+#endif
+
 static void on_language_click(lv_event_t *e)
 {
     ui_lang_t selected = (ui_lang_t)(uintptr_t)lv_event_get_user_data(e);
@@ -42,10 +54,14 @@ static void on_language_click(lv_event_t *e)
     }
 
     ui_lang_set(selected);
+#ifdef ESP_PLATFORM
     refresh();
     lv_refr_now(NULL);
     bsp_fade_out(1000);
     bsp_restart();
+#else
+    lv_async_call(reload_panels, NULL);
+#endif
 }
 
 static lv_obj_t *create(void)

@@ -40,6 +40,8 @@
 | esp32s3-retro-go | [ESP-IDFv5.5-esp32s3-retro-go.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/ESP-IDFv5.5-esp32s3-retro-go.zip) |
 | esp32c3-st7789-320_240-ec11 | [ESP-IDFv5.5-esp32c3-st7789-320_240-ec11.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/ESP-IDFv5.5-esp32c3-st7789-320_240-ec11.zip) |
 | Windows 桌面模拟器 | [desktop-win-x86_64.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/desktop-win-x86_64.zip) |
+| Linux 上位机（x86_64） | [desktop-linux-x86_64.tar.gz](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/desktop-linux-x86_64.tar.gz) |
+| Linux 上位机（arm64） | [desktop-linux-arm64.tar.gz](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/desktop-linux-arm64.tar.gz) |
 
 ---
 
@@ -500,3 +502,11 @@ ESP32-C3 与其它目标芯片有三点差异，固件已全部处理：**单核
 | EC11 C / GND | GND | A/B/SW 公共端接地 |
 
 刻意避开的引脚：GPIO8（Super Mini 板载 LED）、GPIO12/13（合宙板载 LED，且 flash 为 DIO 模式用 QIO 无法启动）、GPIO18/19（USB）、GPIO20/21（UART0）。不同卖家的 ST7789 模组有差异：若画面镜像或边缘出现彩色偏移带，调整 `src/bsp/esp32/bsp_esp32c3_st7789_ec11.c` 顶部的 `LCD_MIRROR_X/Y` 与 `LCD_GAP_X/Y` 后重新编译。旋转与按下承担全部导航，息屏后任一动作均可唤醒。
+
+## Linux 上位机
+
+![红米4 上的 Ubuntu 运行 KlipperScreen-esp](screenshots/boards/linux_redmi4.jpg)
+
+*不用 ESP32——直接在打印机的 Linux 上位机上跑同一套 UI（图：退役红米4 手机，aarch64 Ubuntu 24.04，weston kiosk 后端）。*
+
+桌面构建面向 Debian/Ubuntu 系 Linux 上位机（glibc ≥ 2.35，x86_64 与 arm64），是 KlipperScreen 的轻量替代：预编译静态二进制、一行安装命令、systemd 全屏服务（weston/X11）或普通桌面 App。安装命令与细节见 [Linux 上位机](linux.md)。

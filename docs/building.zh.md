@@ -21,7 +21,7 @@
 ```bash
 # 桌面端（Windows：真实控制端 + 开发模拟器；Linux/macOS：桌面目标）
 bash tools/build-desktop.sh
-./src/ports/desktop/build/klipper_remote_desktop.exe              # 真实 Moonraker 控制端
+./src/ports/desktop/build/KlipperScreen-esp.exe              # 真实 Moonraker 控制端
 ./src/ports/desktop/build/klipper_remote_simulator.exe            # 布局模拟器
 ./src/ports/desktop/build/klipper_remote_simulator.exe 3000 x.bmp # 运行 3 秒后截图（开发用）
 

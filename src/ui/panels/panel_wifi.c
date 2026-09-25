@@ -15,18 +15,49 @@
 
 static lv_obj_t *list;              /* AP 列表容器 */
 static lv_obj_t *lbl_hint;          /* 扫描中/失败/空列表提示（挂在 scr 上，不被 list 清掉） */
+static lv_obj_t *lbl_state;         /* 状态卡：已连接 <ssid> + IP 单行滚动 */
 static lv_obj_t *pwd_overlay;       /* 密码输入弹层 */
 static lv_obj_t *conn_overlay;      /* 连接中转圈弹层 */
 static lv_group_t *pwd_nav_group;
 static lv_group_t *conn_nav_group;
 static lv_obj_t *ta_pwd;
 static char      sel_ssid[BSP_WIFI_SSID_MAX + 1];
+static char      cur_ssid[BSP_WIFI_SSID_MAX + 1];   /* 当前连接的 AP（状态卡/打勾用） */
 static char      pwd_buf[BSP_WIFI_PASS_MAX + 1];   /* windows 实现要求密码在连接期间保持有效 */
 static int       scanning;          /* 等待扫描结果中 */
 static int       connecting;        /* 处于连接流程，tick 里轮询状态 */
 static int       connect_ticks;     /* 连接超时兜底：30s 无结果视为失败 */
 
 static bsp_wifi_ap_t aps[16];       /* 静态：行点击事件要引用，不能放栈上 */
+
+/* 状态卡刷新：已连接显示 "已连接 <ssid>  IP: <addr>"（单行滚动，绿）；未连接灰字。
+   只在文本变化时写 label，避免无效重绘 */
+static void refresh_status(void)
+{
+    static char prev[160] = "\x01";
+    char ssid[BSP_WIFI_SSID_MAX + 1], ip[40], state[160];
+
+    bool conn = bsp_wifi_current(ssid, sizeof(ssid), ip, sizeof(ip));
+    strncpy(cur_ssid, conn ? ssid : "", sizeof(cur_ssid) - 1);
+    cur_ssid[sizeof(cur_ssid) - 1] = 0;
+
+    if (conn) {
+        snprintf(state, sizeof(state), TR("已连接 %s"), ssid);
+        if (ip[0]) {
+            size_t used = strlen(state);
+            snprintf(state + used, sizeof(state) - used, "    IP: %s", ip);
+        }
+    } else {
+        snprintf(state, sizeof(state), "%s", TR("未连接"));
+    }
+
+    if (strcmp(state, prev) != 0) {
+        strcpy(prev, state);
+        lv_label_set_text(lbl_state, state);
+        lv_obj_set_style_text_color(lbl_state,
+            theme_col(conn ? THEME_COL_OK : THEME_COL_TEXT_DIM), 0);
+    }
+}
 
 static void show_hint(const char *text)
 {
@@ -196,8 +227,14 @@ static void add_ap_row(int idx)
     lv_obj_set_height(row, ui_px(44));
     lv_obj_add_event_cb(row, on_ap_clicked, LV_EVENT_CLICKED, (void *)ap);
 
+    /* 当前连接的 AP：左侧绿勾标注 */
+    if (cur_ssid[0] && strcmp(ap->ssid, cur_ssid) == 0) {
+        lv_obj_t *ok = theme_label(row, LV_SYMBOL_OK, THEME_FONT_ICON, THEME_COL_OK);
+        lv_obj_align(ok, LV_ALIGN_LEFT_MID, ui_px(2), 0);
+    }
+
     lv_obj_t *ssid = theme_label(row, ap->ssid, THEME_FONT_M, THEME_COL_TEXT);
-    lv_obj_align(ssid, LV_ALIGN_LEFT_MID, ui_px(2), 0);
+    lv_obj_align(ssid, LV_ALIGN_LEFT_MID, ui_px(20), 0);   /* 左侧留出勾位 */
     lv_obj_set_width(ssid, ui_px(190));
     lv_label_set_long_mode(ssid, LV_LABEL_LONG_SCROLL_CIRCULAR);
 
@@ -208,7 +245,7 @@ static void add_ap_row(int idx)
     const lv_image_dsc_t *ic = ap->rssi > -55 ? &img_wifi_4 :
                                ap->rssi > -62 ? &img_wifi_3 :
                                ap->rssi > -72 ? &img_wifi_2 : &img_wifi_1;
-    lv_obj_t *sig = theme_img(row, ic, THEME_COL_TEXT);
+    lv_obj_t *sig = theme_img(row, ui_icon(ic, NULL), THEME_COL_TEXT);
     lv_obj_align(sig, LV_ALIGN_RIGHT_MID, -ui_px(6), 0);
 }
 
@@ -250,6 +287,8 @@ static void tick(void)
             wc.valid = true;
             settings_save_wifi(&wc);
             conn_overlay_close();
+            refresh_status();
+            start_scan();            /* 重建列表：给新连上的 AP 打勾 */
             break;
         }
         case BSP_WIFI_FAILED:
@@ -265,8 +304,10 @@ static void tick(void)
         int n = bsp_wifi_scan_poll(aps, 16);
         if (n == BSP_WIFI_SCAN_RUNNING) return;
         scanning = 0;
+        refresh_status();          /* 先更新 cur_ssid，列表才能给当前 AP 打勾 */
         build_list_from(n);
     }
+    if (!connecting && lbl_state) refresh_status();   /* 状态卡跟随后台轮询缓存 */
 }
 
 static lv_obj_t *create(void)
@@ -276,10 +317,21 @@ static lv_obj_t *create(void)
     lv_obj_t *scr = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(scr, theme_col(THEME_COL_BG), 0);
 
+    /* 顶部固定状态卡：当前连接 + 本机 IP 单行滚动（不随 AP 列表滚动） */
+    lv_obj_t *card = theme_card(scr);
+    lv_obj_set_size(card, ui_content_w(), ui_px(30));
+    lv_obj_align(card, LV_ALIGN_TOP_MID, 0, THEME_TITLEBAR_H + ui_px(4));
+    lv_obj_clear_flag(card, LV_OBJ_FLAG_CLICKABLE);
+    lbl_state = theme_label(card, "", THEME_FONT_S, THEME_COL_TEXT_DIM);
+    lv_obj_align(lbl_state, LV_ALIGN_LEFT_MID, ui_px(2), 0);
+    lv_obj_set_width(lbl_state, ui_content_w() - ui_px(16));
+    lv_label_set_long_mode(lbl_state, LV_LABEL_LONG_SCROLL_CIRCULAR);
+
+    int list_y = THEME_TITLEBAR_H + ui_px(4) + ui_px(30) + ui_px(4);
     list = lv_obj_create(scr);
     lv_obj_remove_style_all(list);
-    lv_obj_set_size(list, ui_content_w(), ui_scr_h() - THEME_TITLEBAR_H - ui_px(10));
-    lv_obj_align(list, LV_ALIGN_TOP_MID, 0, THEME_TITLEBAR_H + ui_px(4));
+    lv_obj_set_size(list, ui_content_w(), ui_scr_h() - list_y - ui_px(6));
+    lv_obj_align(list, LV_ALIGN_TOP_MID, 0, list_y);
     lv_obj_set_flex_flow(list, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(list, ui_px(6), 0);
     lv_obj_set_scroll_dir(list, LV_DIR_VER);
@@ -287,8 +339,9 @@ static lv_obj_t *create(void)
     lbl_hint = theme_label(scr, "扫描中…", THEME_FONT_M, THEME_COL_TEXT_DIM);
     lv_obj_set_width(lbl_hint, ui_content_w());
     lv_obj_set_style_text_align(lbl_hint, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(lbl_hint, LV_ALIGN_TOP_MID, 0, THEME_TITLEBAR_H + ui_px(90));
+    lv_obj_align(lbl_hint, LV_ALIGN_TOP_MID, 0, list_y + ui_px(86));
 
+    refresh_status();
     /* 纯列表页：左 = 返回、右 = 进入/确定（ui_nav 白名单） */
     ui_nav_group_set_list(lv_group_get_default(), true);
     return scr;

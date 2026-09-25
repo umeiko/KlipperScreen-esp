@@ -1,9 +1,9 @@
 /*
  * desktop 后端入口：bsp_init + 共享 UI + 主循环，与 ESP32 后端的 app_main.c 对称。
  * 用法:
- *   klipper_remote_desktop[.exe]                  真实 Moonraker 控制端
+ *   KlipperScreen-esp[.exe]                     真实 Moonraker 控制端
  *   klipper_remote_simulator[.exe]                开发/布局模拟器
- *   klipper_remote_desktop[.exe] --panel <name>   交互式打开指定面板
+ *   KlipperScreen-esp[.exe] --panel <name>        交互式打开指定面板
  *   klipper_remote_simulator[.exe] <毫秒> <out.bmp> 运行指定毫秒后截图保存并退出
  */
 #include "bsp.h"
@@ -143,7 +143,11 @@ int main(int argc, char **argv)
 #if BSP_HAS_ENCODER_SETTINGS
     bsp_encoder_set_counts_per_detent(settings_load_encoder_counts());
 #endif
-    boot_anim_play(bsp_lcd_push, bsp_delay_ms);   /* 「Umeko」开机动画（~2.5s） */
+    /* 高分辨率下逐帧整屏 canvas 推流的开机动画太慢（1080p 每帧全屏重绘），
+       480p 以上直接跳过；ESP32 各机型有自己的入口，不受影响。 */
+    if (bsp_get_display() &&
+        lv_display_get_vertical_resolution(bsp_get_display()) <= 480)
+        boot_anim_play(bsp_lcd_push, bsp_delay_ms);   /* 「Umeko」开机动画（~2.5s） */
     ui_app_create();
     bsp_set_brightness(settings_load_brightness());
     bsp_set_screen_timeout(settings_load_screen_off());

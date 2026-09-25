@@ -252,7 +252,7 @@ UI 触摸/旋钮 ──▶ klipper_api_* 拼 RPC ──▶ esp_websocket_client_
 
 ### 7.5 Windows 桌面端
 
-真实控制端与 simulator 是**两个构建目标**（`klipper_remote_desktop` / `klipper_remote_simulator`），mock 状态不会进入实际控制链路。Windows 网络在独立 worker 线程收发与路由 JSON-RPC，状态更新同样经 `lv_async_call` 投回持锁的 LVGL 主线程。配置存 `%APPDATA%\KlipperRemote`。macOS/Linux 构建桌面目标（POSIX sockets 客户端）。
+真实控制端与 simulator 是**两个构建目标**（`KlipperScreen-esp` / `klipper_remote_simulator`），mock 状态不会进入实际控制链路。Windows 网络在独立 worker 线程收发与路由 JSON-RPC，状态更新同样经 `lv_async_call` 投回持锁的 LVGL 主线程。配置存 `%APPDATA%\KlipperRemote`。macOS/Linux 构建桌面目标（POSIX sockets 客户端）。
 
 ---
 

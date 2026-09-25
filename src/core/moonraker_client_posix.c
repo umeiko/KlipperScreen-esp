@@ -424,9 +424,9 @@ static void on_heartbeat_result(cJSON *result)
 static void handshake_begin(void)
 {
 #ifdef __APPLE__
-    const char *client_name = "klipper-remote-macos";
+    const char *client_name = "KlipperScreen-esp-macos";
 #else
-    const char *client_name = "klipper-remote-linux";
+    const char *client_name = "KlipperScreen-esp-linux";
 #endif
     char params[256];
     snprintf(params, sizeof(params),

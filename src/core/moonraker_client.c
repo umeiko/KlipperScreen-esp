@@ -369,8 +369,8 @@ static void handshake_begin(void)
     /* client_name 等字段对齐 server.connection.identify 约定（type=display）；
        版本号来自 version.h（KR_VERSION），与设置页显示一致 */
     send_rpc_cb("server.connection.identify",
-                "{\"client_name\":\"klipper-remote-esp32\",\"version\":\"" KR_VERSION "\","
-                "\"type\":\"display\",\"url\":\"https://github.com/klipper-remote\"}",
+                "{\"client_name\":\"KlipperScreen-esp\",\"version\":\"" KR_VERSION "\","
+                "\"type\":\"display\",\"url\":\"https://github.com/umeiko/KlipperScreen-esp\"}",
                 NULL);
     query_server_info();
 }
