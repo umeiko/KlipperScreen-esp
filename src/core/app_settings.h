@@ -61,6 +61,7 @@ bool settings_save_wifi(const wifi_conf_t *in);
 
 bool settings_load_moonraker(moonraker_conf_t *out);              /* 当前槽 */
 bool settings_save_moonraker(const moonraker_conf_t *in);         /* 当前槽 */
+void settings_seed_defaults(void);   /* 首次开机播种平台默认打印机（仅 Linux） */
 bool settings_load_moonraker_slot(int slot, moonraker_conf_t *out);
 bool settings_save_moonraker_slot(int slot, const moonraker_conf_t *in);
 bool settings_save_printer_name(const char *name);              /* 当前槽 */

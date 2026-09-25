@@ -53,7 +53,8 @@ curl -fsSL https://raw.githubusercontent.com/umeiko/KlipperScreen-esp/main/scrip
 - 安装时可选**独占显示服务**（systemd 开机自启全屏，Wayland-weston 或 X11 后端）或普通**桌面 App**。
 - 检测到 `KlipperScreen.service` 时会询问是否停用，避免抢屏。
 - 二进制静态链接 SDL2/cJSON（X11/Wayland 库运行时加载），仅需 glibc ≥ 2.35（Debian 12 / Ubuntu 22.04 及以上，aarch64 与 x86_64）。
-- 配置存 `~/.config/KlipperScreen-esp/`；卸载运行 `uninstall.sh`。
+- Klipper 上位机上配置落在 `~/printer_data/config/KlipperScreen-esp/`（fluidd/mainsail 可直接编辑），日志在 `~/printer_data/logs/`（网页端可下载）；写配置会同步 `.bak` 检查点，手改损坏自动还原。首次开机自动把打印机槽 1 预填为本机 Moonraker（`127.0.0.1`）。
+- 非 Klipper 桌面环境配置存 `~/.config/KlipperScreen-esp/`；卸载运行 `uninstall.sh`。
 
 
 ## 首次配置

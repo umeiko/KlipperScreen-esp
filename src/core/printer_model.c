@@ -516,6 +516,7 @@ static void tick_autostart(lv_timer_t *tm)
 void printer_init(void)
 {
     M.online = 0;
+    settings_seed_defaults();   /* moonraker.conf 不存在时播种平台默认槽 0 */
     evaluate_state();
     bambu_monitor_init();
     lv_timer_create(tick_1s, 1000, NULL);

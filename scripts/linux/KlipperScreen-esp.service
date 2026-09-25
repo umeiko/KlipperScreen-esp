@@ -19,6 +19,11 @@ User=KR_USER
 SupplementaryGroups=tty video input render
 WorkingDirectory=KR_DIR
 Environment=BACKEND=KR_BACKEND
+# TTYPath 会把 stdout/stderr 默认打到 tty7；显式收进 journal，
+# 方便 systemctl/journalctl 排查（Klipper 上位机上 start 脚本还会落
+# printer_data/logs/KlipperScreen-esp.log 供 fluidd/mainsail 下载）。
+StandardOutput=journal
+StandardError=journal
 ExecStart=KR_DIR/KlipperScreen-esp-start.sh
 ExecStartPost=+chvt 7
 

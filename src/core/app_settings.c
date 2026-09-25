@@ -187,6 +187,21 @@ bool settings_load_moonraker(moonraker_conf_t *out)
     return settings_load_moonraker_slot(settings_load_active_printer(), out);
 }
 
+/* 首次启动播种：moonraker.conf 不存在时，用平台默认（目前只有 Linux 上位机
+ * 提供：127.0.0.1 + 本机用户名）预填打印机槽 0。文件已存在就原样返回——
+ * 用户手动清空槽位也不会被复活。 */
+void settings_seed_defaults(void)
+{
+    char probe[8];
+    if (bsp_conf_read("moonraker.conf", probe, sizeof(probe)) >= 0) return;
+    moonraker_conf_t conf;
+    memset(&conf, 0, sizeof(conf));
+    conf.port = 7125;
+    if (!bsp_conf_default_printer(conf.host, sizeof(conf.host),
+                                  conf.name, sizeof(conf.name))) return;
+    settings_save_moonraker_slot(0, &conf);
+}
+
 bool settings_save_printer_name_slot(int slot, const char *name)
 {
     if (slot < 0 || slot >= PRINTER_SLOTS || !name) return false;

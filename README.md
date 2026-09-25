@@ -51,7 +51,8 @@ Or download `desktop-linux-x86_64.tar.gz` / `desktop-linux-arm64.tar.gz` from [R
 - Choose between a **dedicated display service** (systemd autostart, fullscreen via Wayland-weston or X11) or a regular **desktop app**.
 - If `KlipperScreen.service` is detected, the installer offers to disable it to avoid contention for the screen.
 - The binary statically links SDL2/cJSON (X11/Wayland libraries are loaded at runtime) and only needs glibc ≥ 2.35 (Debian 12 / Ubuntu 22.04+, aarch64 or x86_64).
-- Config lives in `~/.config/KlipperScreen-esp/`; uninstall with `uninstall.sh`.
+- On Klipper hosts, config lands in `~/printer_data/config/KlipperScreen-esp/` (editable from fluidd/mainsail) and logs in `~/printer_data/logs/` (downloadable); a `.bak` checkpoint restores known-good config if a hand edit breaks it. First boot pre-fills printer slot 1 with the local Moonraker (`127.0.0.1`).
+- Config lives in `~/.config/KlipperScreen-esp/` on non-Klipper desktops; uninstall with `uninstall.sh`.
 
 
 ## First-time setup
