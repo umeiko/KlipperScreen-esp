@@ -32,9 +32,11 @@ if ! command -v apt >/dev/null 2>&1; then
     exit 1
 fi
 
-# curl|bash 管道安装时 stdin 是脚本本身：交互问答改从 /dev/tty 读
+# curl|bash 管道安装时 stdin 是脚本本身：交互问答改从 /dev/tty 读。
+# 注意不能用 -r/-w 判断：无控制终端的会话里 /dev/tty 存在但打不开，
+# 必须真的打开一次才算数。
 TTY=/dev/stdin
-if [ ! -t 0 ] && [ -r /dev/tty ] && [ -w /dev/tty ]; then
+if [ ! -t 0 ] && (exec 3<>/dev/tty) 2>/dev/null; then
     TTY=/dev/tty
 fi
 
@@ -72,7 +74,8 @@ if [ -z "${SERVICE:-}" ]; then
     echo_text "Say no to install as a regular desktop app instead."
     echo_text ""
     echo "Press enter for default (Yes)"
-    read -r -e -p "[Y/n] " SERVICE < "$TTY" || true
+    # 重定向失败时 read 不会执行，必须显式置空，否则 set -u 下引用即死
+    read -r -e -p "[Y/n] " SERVICE < "$TTY" || SERVICE=
 fi
 
 if [[ "$SERVICE" =~ ^[nN]$ ]]; then
@@ -89,7 +92,7 @@ if [ "$SERVICE" = y ] && [ -z "$BACKEND" ]; then
     echo_text "Wayland (weston kiosk) is recommended; X11 uses a bare xinit session."
     echo_text ""
     echo "Press enter for default (Wayland)"
-    read -r -e -p "Backend Wayland or X11? [W/x] " BACKEND < "$TTY" || true
+    read -r -e -p "Backend Wayland or X11? [W/x] " BACKEND < "$TTY" || BACKEND=
 fi
 if [[ "$BACKEND" =~ ^[xX]$ ]]; then
     BACKEND=X
@@ -130,7 +133,7 @@ handle_klipperscreen() {
         echo_text "Detected KlipperScreen.service (it owns the screen via weston/tty7)."
         if [ -z "${KR_REPLACE_KS:-}" ]; then
             echo "Press enter for default (Yes)"
-            read -r -e -p "Disable and stop it? [Y/n] " KR_REPLACE_KS < "$TTY" || true
+            read -r -e -p "Disable and stop it? [Y/n] " KR_REPLACE_KS < "$TTY" || KR_REPLACE_KS=
         fi
         if [[ ! "$KR_REPLACE_KS" =~ ^[nN]$ ]]; then
             sudo systemctl disable --now KlipperScreen.service \
