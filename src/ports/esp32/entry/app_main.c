@@ -31,6 +31,7 @@ void debug_cli_start(void);
 void app_main(void)
 {
     bsp_init();            /* 显示 + 触摸 + LVGL 任务（核 1） */
+    settings_seed_defaults();   /* 与 desktop 对称；ESP32 的 bsp 实现为空操作 */
 
     bsp_lvgl_lock();
     bsp_input_init();      /* 可选附加输入（Kconfig 旋转编码器），可与触摸并存 */

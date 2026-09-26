@@ -137,6 +137,9 @@ static int save_bmp(const char *path)
 int main(int argc, char **argv)
 {
     bsp_init();
+    /* 播种平台默认打印机必须在任何 settings 读取之前：machine_mode 的旧版
+       兼容写会顺手创建 moonraker.conf，抢在播种前面会让"文件不存在"判据失效 */
+    settings_seed_defaults();
     bsp_input_init();       /* 鼠标滚轮 + 中键模拟旋转编码器 */
     if (bsp_disp_can_color_order())
         bsp_disp_set_color_order(settings_load_display_color_order());
