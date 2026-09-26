@@ -25,7 +25,7 @@ Environment=BACKEND=KR_BACKEND
 StandardOutput=journal
 StandardError=journal
 ExecStart=KR_DIR/KlipperScreen-esp-start.sh
-ExecStartPost=+chvt 7
+ExecStartPost=-+chvt 7   # 最小化系统可能没有 chvt（kbd 包），失败不致命
 
 # Log this user with utmp, letting it show up with commands 'w' and
 # 'who'. This is needed since we replace (a)getty.
