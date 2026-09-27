@@ -30,7 +30,7 @@ static void files_worker(void *arg)
         .host = job->conf.host, .port = job->conf.port,
         .path = "/server/files/list?root=gcodes",
         .transport_type = HTTP_TRANSPORT_OVER_TCP,
-        .timeout_ms = 1500, .buffer_size = 1024, .buffer_size_tx = 512,
+        .timeout_ms = 10000, .buffer_size = 1024, .buffer_size_tx = 512,
         .disable_auto_redirect = true,
     };
     esp_http_client_handle_t http = esp_http_client_init(&cfg);
