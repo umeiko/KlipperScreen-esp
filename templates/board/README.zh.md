@@ -10,7 +10,7 @@
 4. 只有产品带触摸时才添加触摸适配器。使用 CST816S 电容触摸可复制
    `touch_input_board_template.c/.h`；电阻触摸则按移植教程创建带校准映射的适配器。
 5. 替换所有 `BOARD_TEMPLATE`、`board_template` 和 `TODO(board)` 标记。
-6. 按 [`docs/contributing-board.zh.md`](../../docs/contributing-board.zh.md) 的清单登记板型。
+6. 按 [`docs/porting.zh.md`](../../docs/porting.zh.md) 末尾的清单登记板型（构建脚本、CI 矩阵、boards 文档）。
 7. 先构建新板型，再构建一个现有板型检查共享代码。
 
 C 模板是最小的 **SPI 命令屏 + ST7789** 示例。只有同类 SPI 屏才能在它上面逐项修改。

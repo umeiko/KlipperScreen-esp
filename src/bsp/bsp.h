@@ -10,8 +10,19 @@ extern "C" {
 /* 板级初始化：显示 + 板载主输入 + LVGL 节拍任务 */
 void bsp_init(void);
 
+/* 当前板型的构建名（tools/build-esp32.sh 的板型代号，如 esp32s3-sensecap-indicator；
+   desktop 返回 "desktop"）。About 页展示用。 */
+const char *bsp_board_name(void);
+
 /* 可选附加输入：ESP32 按 Kconfig 建旋钮；desktop 建鼠标滚轮模拟器。 */
 void bsp_input_init(void);
+
+/* 编码器每格正交计数（不是每圈格数）。0 = 编译时板型默认，1..8 = 覆盖。
+ * 运行时调用须持 LVGL 锁；切换会丢弃未完成的一格，避免焦点突然跳动。
+ * 无编码器后端：getter 返回 0，setter 返回 false。 */
+int  bsp_encoder_get_counts_per_detent(void);
+int  bsp_encoder_default_counts_per_detent(void);
+bool bsp_encoder_set_counts_per_detent(int counts);
 
 lv_display_t *bsp_get_display(void);
 
@@ -59,9 +70,31 @@ bool bsp_disp_can_invert(void);
 void bsp_disp_set_invert(bool en);
 bool bsp_disp_can_rotate180(void);
 void bsp_disp_set_rotate180(bool en);
+/* 水平镜像（左右翻转）：与 180° 旋转自由组合，触摸坐标同步翻转；
+   支持面与 rotate180 相同（SPI 屏），RGB 屏与桌面端隐藏 */
+bool bsp_disp_can_mirror_x(void);
+void bsp_disp_set_mirror_x(bool en);
 
-/* 内网时间兜底：从 Moonraker 主机的 HTTP Date 头同步系统时间。
-   SNTP 已同步则跳过；异步执行不阻塞调用方（desktop 空操作）。 */
+/* 面板色序，与反色、RGB565 字节序独立；DEFAULT 保留板型实测默认。
+ * 注册成功的后端才展示设置。调用须持 LVGL 锁，false 表示应用失败。
+ * SPI LCD 后端及显式桌面预览注册；RGB 并口屏保持原显示路径。 */
+typedef enum {
+    BSP_COLOR_ORDER_DEFAULT = 0,
+    BSP_COLOR_ORDER_RGB = 1,
+    BSP_COLOR_ORDER_BGR = 2,
+} bsp_color_order_t;
+typedef bool (*bsp_color_order_apply_t)(bool bgr);
+void bsp_disp_color_order_register(bool default_bgr, bsp_color_order_apply_t apply);
+bool bsp_disp_can_color_order(void);
+bsp_color_order_t bsp_disp_get_color_order(void);
+bool bsp_disp_set_color_order(bsp_color_order_t order);
+
+/* 用标准 HTTP Date（GMT）同步系统时间；供 Moonraker 与云端传输复用。
+   返回 Date 是否有效并已应用（desktop 为无操作成功）。 */
+bool bsp_time_sync_from_http_date(const char *http_date);
+
+/* 内网时间兜底：异步请求 Moonraker 主机，再把 Date 头交给上面的通用入口。
+   调用方不阻塞（desktop 空操作）。 */
 void bsp_time_sync_from_host(const char *host, uint16_t port);
 
 /* 电池电压（mV）与电量百分比（0-100）；未接电池/读取失败返回 -1。 */

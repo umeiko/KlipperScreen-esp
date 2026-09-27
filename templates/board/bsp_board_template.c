@@ -144,6 +144,7 @@ bool bsp_disp_can_rotate180(void) { return false; }
 void bsp_disp_set_invert(bool enabled) { (void)enabled; }
 void bsp_disp_set_rotate180(bool enabled) { (void)enabled; }
 void bsp_time_sync_from_host(const char *host, uint16_t port) { (void)host; (void)port; }
+bool bsp_time_sync_from_http_date(const char *http_date) { (void)http_date; return true; }
 
 static void lvgl_task(void *arg)
 {

@@ -62,4 +62,3 @@ const lv_image_dsc_t img_bed_32 = {
   .data = img_bed_32_map,
   .reserved = NULL,
 };
-

@@ -24,3 +24,7 @@ typedef struct {
 esp_err_t bsp_rotary_encoder_create(const bsp_rotary_encoder_config_t *config,
                                     lv_display_t *display,
                                     lv_indev_t **out_indev);
+
+/* 仅用于本驱动创建的 indev；须在 LVGL 线程/锁内调用。 */
+int bsp_rotary_encoder_get_counts(lv_indev_t *indev);
+bool bsp_rotary_encoder_set_counts(lv_indev_t *indev, int counts);

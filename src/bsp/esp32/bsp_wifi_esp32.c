@@ -25,26 +25,30 @@
 #define SCAN_MAX 16
 #define RECONNECT_DELAY_US (2 * 1000 * 1000)
 
-/* 时间来源完全走内网：Moonraker（Tornado）HTTP 响应自带 Date 头（GMT），
-   不依赖外网 NTP。时区固定 CST-8（中国标准时间）。 */
+/* Moonraker 与 Bambu Cloud 都提供标准 HTTP Date（GMT），无需额外 NTP
+   连接。显示时区沿用项目现有的 CST-8（中国标准时间）。 */
+bool bsp_time_sync_from_http_date(const char *http_date)
+{
+    if (!http_date || !http_date[0]) return false;
+    struct tm tmv = {0};
+    /* "Wed, 04 Sep 2026 01:35:22 GMT" */
+    if (!strptime(http_date, "%a, %d %b %Y %H:%M:%S", &tmv)) return false;
+    /* newlib 无 timegm：临时切 UTC 求 epoch 再切回 CST-8 */
+    setenv("TZ", "UTC0", 1); tzset();
+    time_t t = mktime(&tmv);
+    setenv("TZ", "CST-8", 1); tzset();
+    if (t <= 0) return false;
+    struct timeval tv = { .tv_sec = t, .tv_usec = 0 };
+    if (settimeofday(&tv, NULL) != 0) return false;
+    ESP_LOGI(TAG, "time synced from HTTP Date: %s", http_date);
+    return true;
+}
+
 static esp_err_t http_date_cb(esp_http_client_event_t *evt)
 {
     if (evt->event_id == HTTP_EVENT_ON_HEADER && evt->header_key &&
-        strcasecmp(evt->header_key, "Date") == 0) {
-        struct tm tmv = {0};
-        /* "Wed, 04 Sep 2026 01:35:22 GMT" */
-        if (strptime(evt->header_value, "%a, %d %b %Y %H:%M:%S", &tmv)) {
-            /* newlib 无 timegm：临时切 UTC 求 epoch 再切回 CST-8 */
-            setenv("TZ", "UTC0", 1); tzset();
-            time_t t = mktime(&tmv);
-            setenv("TZ", "CST-8", 1); tzset();
-            if (t > 0) {
-                struct timeval tv = { .tv_sec = t, .tv_usec = 0 };
-                settimeofday(&tv, NULL);
-                ESP_LOGI(TAG, "time synced from moonraker: %s", evt->header_value);
-            }
-        }
-    }
+        evt->header_value && strcasecmp(evt->header_key, "Date") == 0)
+        bsp_time_sync_from_http_date(evt->header_value);
     return ESP_OK;
 }
 
@@ -104,7 +108,7 @@ static void ensure_init(void)
 {
     if (W.inited) return;
 
-    setenv("TZ", "CST-8", 1);   /* 显示时区：中国标准时间（时间源见 bsp_time_sync_from_host） */
+    setenv("TZ", "CST-8", 1);   /* 显示时区：中国标准时间 */
     tzset();
 
     /* nvs 可能被写满/版本变更，抹掉重来（KlipperScreen 同款处理） */
@@ -232,4 +236,23 @@ bsp_wifi_state_t bsp_wifi_status(void)
 bool bsp_wifi_connected(void)
 {
     return W.connected;
+}
+
+bool bsp_wifi_current(char *ssid, size_t ssid_len, char *ip, size_t ip_len)
+{
+    if (ssid && ssid_len) ssid[0] = 0;
+    if (ip && ip_len) ip[0] = 0;
+    if (!W.connected) return false;
+
+    wifi_ap_record_t ap;
+    if (esp_wifi_sta_get_ap_info(&ap) != ESP_OK) return false;
+    if (ssid && ssid_len) strlcpy(ssid, (const char *)ap.ssid, ssid_len);
+
+    esp_netif_t *sta = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+    if (sta && ip && ip_len) {
+        esp_netif_ip_info_t ii;
+        if (esp_netif_get_ip_info(sta, &ii) == ESP_OK && ii.ip.addr != 0)
+            snprintf(ip, ip_len, IPSTR, IP2STR(&ii.ip));
+    }
+    return true;
 }

@@ -1,9 +1,31 @@
 #include "bsp.h"
+#include "bsp_caps.h"
 #include "bsp_rotary_encoder.h"
 #include "sdkconfig.h"
 #include "esp_log.h"
 
 static const char *TAG = "bsp_input";
+static lv_indev_t *rotary_indev;
+
+int bsp_encoder_get_counts_per_detent(void)
+{
+    return bsp_rotary_encoder_get_counts(rotary_indev);
+}
+
+int bsp_encoder_default_counts_per_detent(void)
+{
+#if BSP_HAS_ROTARY_ENCODER
+    return CONFIG_INPUT_ROTARY_COUNTS_PER_DETENT;
+#else
+    return 0;
+#endif
+}
+
+bool bsp_encoder_set_counts_per_detent(int counts)
+{
+    if (counts == 0) counts = bsp_encoder_default_counts_per_detent();
+    return bsp_rotary_encoder_set_counts(rotary_indev, counts);
+}
 
 void bsp_input_init(void)
 {
@@ -31,7 +53,7 @@ void bsp_input_init(void)
         .button_active_low = false,
 #endif
     };
-    esp_err_t err = bsp_rotary_encoder_create(&config, bsp_get_display(), NULL);
+    esp_err_t err = bsp_rotary_encoder_create(&config, bsp_get_display(), &rotary_indev);
     if (err != ESP_OK)
         ESP_LOGE(TAG, "optional rotary encoder init failed: %s", esp_err_to_name(err));
 #else

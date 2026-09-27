@@ -1,0 +1,4 @@
+# Windows 批处理必须 CRLF（LF 会破坏 cmd 的 goto/标签解析，CI 在 Linux 容器检出默认 LF）
+*.bat text eol=crlf
+# shell 脚本必须 LF（Windows 检出不转换）
+*.sh text eol=lf

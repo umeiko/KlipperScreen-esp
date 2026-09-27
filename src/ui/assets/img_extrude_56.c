@@ -86,4 +86,3 @@ const lv_image_dsc_t img_extrude_56 = {
   .data = img_extrude_56_map,
   .reserved = NULL,
 };
-

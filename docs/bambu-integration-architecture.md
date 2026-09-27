@@ -3,6 +3,11 @@
 > 调研日期：2026-09-11
 > BambuHelper 参考快照：`a3d8ba46b7e58d5ab05f88ec9ce0cf1d6c9b0c2d`
 > 本文是开发前的设计依据，不表示这些非官方协议得到 Bambu Lab 的兼容性承诺。
+>
+> **实施更新（2026-09-13）**：ESP32 Cloud Monitor 的当前落地边界、单一网络
+> actor、无 PSRAM 大包处理及分阶段任务，以
+> [`bambu-esp32-kimi-handoff.md`](bambu-esp32-kimi-handoff.md) 为准。本文中的完整
+> backend 重构、LAN Developer 和桌面配对仍是后续方向，不作为本轮前置条件。
 
 ## 1. 先说结论
 

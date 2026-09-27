@@ -1,5 +1,5 @@
 /*
- * Official "EC11 Knob Minimal System" breadboard reference:
+ * Official "esp32s3-st7789-320_240-ec11" breadboard reference:
  *   ESP32-S3-DevKitC-1 N16R8 + 240x320 ST7789 SPI display + EC11 module.
  *
  * The pinout follows the hardware validated in contributor PR #6. This BSP
@@ -13,8 +13,11 @@
 #if CONFIG_BOARD_EC11_KNOB_MINIMAL
 
 #include "bsp.h"
+#include "bsp_lcd_color_io.h"
 #include "bsp_screen_power.h"
 #include "bsp_sleep_button.h"
+
+#include <string.h>
 
 #include "driver/ledc.h"
 #include "driver/spi_master.h"
@@ -146,18 +149,37 @@ void bsp_disp_set_invert(bool enabled)
     ESP_ERROR_CHECK(esp_lcd_panel_invert_color(panel_handle, enabled));
 }
 
+static bool disp_rot180, disp_mirrorx;
+
 bool bsp_disp_can_rotate180(void)
 {
     return true;
 }
 
+bool bsp_disp_can_mirror_x(void)
+{
+    return true;
+}
+
+/* Baseline is swap_xy + mirror(true, false), matching PR #6.
+   swap_xy 下屏幕水平轴对应面板 Y 轴：mx = 基线 ^ rot180；my = 基线 ^ rot180 ^ mirror_x */
+static void panel_mirror_apply(void)
+{
+    ESP_ERROR_CHECK(esp_lcd_panel_mirror(panel_handle,
+                                         !disp_rot180,
+                                         disp_rot180 != disp_mirrorx));
+}
+
 void bsp_disp_set_rotate180(bool enabled)
 {
-    /* Baseline is swap_xy + mirror(true, false), matching PR #6. */
-    if (enabled)
-        ESP_ERROR_CHECK(esp_lcd_panel_mirror(panel_handle, false, true));
-    else
-        ESP_ERROR_CHECK(esp_lcd_panel_mirror(panel_handle, true, false));
+    disp_rot180 = enabled;
+    panel_mirror_apply();
+}
+
+void bsp_disp_set_mirror_x(bool enabled)
+{
+    disp_mirrorx = enabled;
+    panel_mirror_apply();
 }
 
 void bsp_fade_out(uint32_t ms)
@@ -172,9 +194,10 @@ void bsp_fade_out(uint32_t ms)
     ESP_ERROR_CHECK(ledc_fade_start(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0,
                                     LEDC_FADE_WAIT_DONE));
 
-    static uint16_t black[LCD_H_RES * DRAW_BUF_LINES];
-    for (int y = 0; y < LCD_V_RES; y += DRAW_BUF_LINES)
-        draw_wait(0, y, LCD_H_RES, y + DRAW_BUF_LINES, black);
+    uint16_t black[LCD_H_RES];
+    memset(black, 0, sizeof(black));   /* 栈上现场填一行全 0，逐行推，不留常驻缓冲 */
+    for (int y = 0; y < LCD_V_RES; y++)
+        draw_wait(0, y, LCD_H_RES, y + 1, black);
 }
 
 static void lvgl_task(void *arg)
@@ -260,6 +283,7 @@ void bsp_init(void)
     ESP_ERROR_CHECK(esp_lcd_panel_io_register_event_callbacks(
         io, &callbacks, NULL));
 
+    ESP_ERROR_CHECK(bsp_lcd_color_io_wrap(&io, true));
     esp_lcd_panel_dev_config_t panel_config = {
         .reset_gpio_num = PIN_LCD_RST,
         .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_BGR,
@@ -299,7 +323,7 @@ void bsp_init(void)
         lvgl_task, "lvgl", 12288, NULL, 4, NULL, 1);
     ESP_ERROR_CHECK(task_ok == pdPASS ? ESP_OK : ESP_ERR_NO_MEM);
 
-    ESP_LOGI(TAG, "BSP ready (EC11 Knob Minimal System, %dx%d)",
+    ESP_LOGI(TAG, "BSP ready (esp32s3-st7789-320_240-ec11, %dx%d)",
              LCD_H_RES, LCD_V_RES);
 }
 

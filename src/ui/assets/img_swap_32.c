@@ -62,4 +62,3 @@ const lv_image_dsc_t img_swap_32 = {
   .data = img_swap_32_map,
   .reserved = NULL,
 };
-

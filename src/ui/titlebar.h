@@ -12,6 +12,8 @@ void titlebar_init(void);
 lv_obj_t *titlebar_back_button(void);
 void titlebar_set(const char *title, int show_back);
 void titlebar_show_temps(int show);   /* 隐藏/显示右侧温度（标题长的面板用） */
+void titlebar_show_motoroff(int show);   /* 隐藏/显示右上角关闭电机按钮（移动面板用） */
+lv_obj_t *titlebar_motoroff_button(void);
 void titlebar_tick(void);   /* 刷新右侧温度 */
 
 #ifdef __cplusplus

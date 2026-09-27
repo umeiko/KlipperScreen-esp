@@ -46,7 +46,7 @@ static lv_obj_t *create(void)
     update_label(pct);
 
     lv_obj_t *slider = lv_slider_create(card);
-    lv_obj_set_size(slider, ui_px(264), ui_px(16));
+    lv_obj_set_size(slider, LV_MIN(ui_px(264), ui_content_w() - ui_px(16)), ui_px(16));   /* 方屏 2x 换算 528px 超屏宽 */
     lv_obj_align(slider, LV_ALIGN_BOTTOM_MID, 0, ui_px(-30));
     lv_slider_set_range(slider, 0, 100);
     lv_slider_set_value(slider, pct, LV_ANIM_OFF);
@@ -66,4 +66,5 @@ panel_def_t panel_brightness_def = {
     .create = create,
     .on_show = NULL,
     .on_tick = NULL,
+    .hide_temps = 1,
 };

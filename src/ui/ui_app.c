@@ -6,6 +6,8 @@
 #include "theme.h"
 #include "lang.h"
 #include "ui_nav.h"
+#include "ui_buttons.h"
+
 
 void ui_app_create(void)
 {
@@ -13,6 +15,7 @@ void ui_app_create(void)
     ui_lang_load();        /* klipperscreen.conf 的语言偏好，须先于任何 UI 构建 */
     theme_load();          /* klipperscreen.conf 的主题偏好，须先于任何 UI 构建 */
     ui_nav_init();         /* 编码器/键盘焦点域；触摸输入不受影响 */
+    ui_buttons_init();     /* 语义实体按钮层的共享 keypad indev（物理后端在 BSP 侧接入） */
     titlebar_init();       /* 常驻标题栏（layer_top），必须先于 panel_mgr_init */
     panel_mgr_init();      /* 加载主面板 */
     printer_set_refresh_hook(panel_mgr_tick);   /* 数据层 → UI 刷新回调 */

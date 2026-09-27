@@ -10,6 +10,7 @@
  */
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -51,6 +52,10 @@ bsp_wifi_state_t bsp_wifi_status(void);
 
 /* 当前是否真的连着 WiFi（不依赖本 UI 的连接流程；桌面端为后台轮询缓存） */
 bool bsp_wifi_connected(void);
+
+/* 当前连接信息（WiFi 面板顶部状态卡用）：返回 true=已连接，ssid/ip 尽量填充；
+   未连接返回 false（ssid/ip 为空串）。任一出参可传 NULL。 */
+bool bsp_wifi_current(char *ssid, size_t ssid_len, char *ip, size_t ip_len);
 
 #ifdef __cplusplus
 }

@@ -86,4 +86,3 @@ const lv_image_dsc_t img_printer_56 = {
   .data = img_printer_56_map,
   .reserved = NULL,
 };
-

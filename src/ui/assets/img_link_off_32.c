@@ -62,4 +62,3 @@ const lv_image_dsc_t img_link_off_32 = {
   .data = img_link_off_32_map,
   .reserved = NULL,
 };
-
