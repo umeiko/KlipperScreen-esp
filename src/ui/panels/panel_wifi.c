@@ -101,6 +101,7 @@ static void start_connect(const char *ssid, const char *pwd)
 static void pwd_overlay_close(void)
 {
     if (pwd_overlay) {
+        ui_desktop_input_end();
         ui_nav_detach_scope(pwd_overlay);
         lv_obj_delete(pwd_overlay);
         pwd_overlay = NULL;
@@ -150,8 +151,11 @@ static void open_password_dialog(const char *ssid)
     ta_pwd = lv_textarea_create(pwd_overlay);
     lv_obj_set_style_text_font(ta_pwd, THEME_FONT_S, 0);   /* 占位符是中文，默认 montserrat 会变方框 */
     lv_textarea_set_one_line(ta_pwd, true);
+    lv_textarea_set_max_length(ta_pwd, BSP_WIFI_PASS_MAX);
     /* 不回显掩码：电阻屏点按本来就难，明文便于确认输没输对 */
     lv_textarea_set_placeholder_text(ta_pwd, TR("密码"));
+    lv_obj_add_event_cb(ta_pwd, on_kb_ready, LV_EVENT_READY, NULL);
+    lv_obj_add_event_cb(ta_pwd, on_kb_cancel, LV_EVENT_CANCEL, NULL);
     lv_obj_set_width(ta_pwd, ui_px(300));
     lv_obj_align(ta_pwd, LV_ALIGN_TOP_MID, 0, ui_px(34));
 
@@ -169,6 +173,7 @@ static void open_password_dialog(const char *ssid)
     theme_focusable(kb);
     lv_group_focus_obj(kb);
     lv_group_set_editing(pwd_nav_group, true);
+    ui_desktop_textarea_begin(ta_pwd);
 }
 
 /* ---------- AP 列表 ---------- */

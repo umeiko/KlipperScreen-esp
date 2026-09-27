@@ -97,3 +97,16 @@ void bsp_screen_power_poll(void)
     if (elapsed_ms >= (uint64_t)state.timeout_s * 1000)
         bsp_screen_off();
 }
+
+uint64_t bsp_screen_idle_ms(void)
+{
+    if (!state.initialized) return 0;
+    return now_ms() - state.last_activity_ms;
+}
+
+/* ---------- 仅特定板型实现的函数：其他板型的弱空实现 ---------- */
+__attribute__((weak)) int bsp_battery_mv(void)      { return -1; }
+__attribute__((weak)) int bsp_battery_percent(void)  { return -1; }
+__attribute__((weak)) void bsp_hotkey_set_printer_handler(void (*handler)(int slot)) { (void)handler; }
+__attribute__((weak)) void bsp_hotkey_set_select_handler(void (*handler)(int slot)) { (void)handler; }
+__attribute__((weak)) lv_indev_t *bsp_encoder_indev(void) { return NULL; }

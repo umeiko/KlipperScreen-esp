@@ -35,3 +35,10 @@ tmp/
 
 # desktop 后端运行时产生的本机配置（勿入库）
 src/ports/desktop/*.conf
+
+# 本地构建/烧录辅助脚本与日志（本机路径，勿入库）
+*.bak
+/build_live.log
+/flash_com5.log
+/build_st7789.bat
+/flash_com5.bat

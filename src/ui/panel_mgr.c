@@ -15,11 +15,16 @@ extern panel_def_t panel_extrude_def;
 extern panel_def_t panel_files_def;
 extern panel_def_t panel_file_detail_def;
 extern panel_def_t panel_settings_def;
+extern panel_def_t panel_language_def;
 extern panel_def_t panel_display_def;
 extern panel_def_t panel_wifi_def;
 extern panel_def_t panel_moonraker_def;
+extern panel_def_t panel_machine_mode_def;
+extern panel_def_t panel_bambu_link_def;
+extern panel_def_t panel_bambu_setup_def;
 extern panel_def_t panel_printers_def;
 extern panel_def_t panel_brightness_def;
+extern panel_def_t panel_saver_def;
 
 static panel_def_t *registry[] = {
     &panel_main_def,
@@ -30,11 +35,16 @@ static panel_def_t *registry[] = {
     &panel_files_def,
     &panel_file_detail_def,
     &panel_settings_def,
+    &panel_language_def,
     &panel_display_def,
     &panel_wifi_def,
     &panel_moonraker_def,
+    &panel_machine_mode_def,
+    &panel_bambu_link_def,
+    &panel_bambu_setup_def,
     &panel_printers_def,
     &panel_brightness_def,
+    &panel_saver_def,
 };
 
 #define REG_COUNT (sizeof(registry) / sizeof(registry[0]))
@@ -69,6 +79,7 @@ static void show(panel_def_t *p, int push)
     ui_nav_activate(p->nav_group);
     ui_nav_set_global_obj(titlebar_back_button(), nav_top > 0);
     if (p->on_show) p->on_show();
+    ui_nav_refocus_visible(p->nav_group);
 }
 
 void panel_mgr_init(void)
@@ -81,6 +92,7 @@ void panel_mgr_init(void)
     ui_nav_activate(nav_stack[0]->nav_group);
     ui_nav_set_global_obj(titlebar_back_button(), false);
     if (nav_stack[0]->on_show) nav_stack[0]->on_show();
+    ui_nav_refocus_visible(nav_stack[0]->nav_group);
 }
 
 void panel_mgr_open(const char *name)
@@ -123,10 +135,4 @@ void panel_mgr_tick(void)
     if (nav_top >= 0 && nav_stack[nav_top]->on_tick)
         nav_stack[nav_top]->on_tick();
     titlebar_tick();
-}
-
-/* 兼容接口（上游 ui_nav 显式注册）：动态行创建经 theme_focusable 自动入组、
-   删除自动出组，无需重建焦点组，保持空实现以兼容旧面板调用 */
-void panel_mgr_nav_refresh(void)
-{
 }

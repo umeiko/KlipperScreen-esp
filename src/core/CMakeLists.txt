@@ -4,6 +4,9 @@ idf_component_register(SRCS "app_settings.c"
                             "printer_model.c"
                             "moonraker_client.c"
                             "klipper_api.c"
+                            "bambu_status.c"
+                            "bambu_monitor_stub.c"
+                            "bambu_cloud_stub.c"
                        INCLUDE_DIRS "."
                        REQUIRES lvgl json esp_websocket_client esp_timer
                        PRIV_REQUIRES bsp)

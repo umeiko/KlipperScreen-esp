@@ -67,11 +67,19 @@ static void style_card(lv_obj_t *obj)
 
 void theme_focusable(lv_obj_t *obj)
 {
-    /* 选中高亮 = 整块变色（背景填充强调色），不用描边线 */
-    lv_obj_set_style_bg_color(obj, theme_col(THEME_COL_ACCENT), LV_STATE_FOCUS_KEY);
-    lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, LV_STATE_FOCUS_KEY);
-    lv_obj_set_style_outline_width(obj, 0, LV_STATE_FOCUS_KEY);
+    /* 淡色填充标出整个焦点范围，实色轮廓与页面本身的强调色控件区分。 */
+    theme_focus_bg(obj, THEME_COL_ACCENT, LV_OPA_30);
+    lv_obj_set_style_outline_color(obj, theme_col(THEME_COL_ACCENT), LV_STATE_FOCUS_KEY);
+    lv_obj_set_style_outline_width(obj, ui_px(2), LV_STATE_FOCUS_KEY);
+    lv_obj_set_style_outline_pad(obj, 0, LV_STATE_FOCUS_KEY);
+    lv_obj_set_style_outline_opa(obj, LV_OPA_COVER, LV_STATE_FOCUS_KEY);
     ui_nav_register_obj(obj);
+}
+
+void theme_focus_bg(lv_obj_t *obj, uint32_t col_hex, lv_opa_t opa)
+{
+    lv_obj_set_style_bg_color(obj, theme_col(col_hex), LV_STATE_FOCUS_KEY);
+    lv_obj_set_style_bg_opa(obj, opa, LV_STATE_FOCUS_KEY);
 }
 
 lv_obj_t *theme_card(lv_obj_t *parent)
@@ -102,6 +110,8 @@ lv_obj_t *theme_button(lv_obj_t *parent, const char *icon, const char *text, int
        ESP32 堆紧张时该分配失败会让 lvgl 任务死循环（看门狗卡死 UI） */
     lv_obj_set_style_bg_opa(btn, LV_OPA_70, LV_STATE_PRESSED);
     theme_focusable(btn);
+    if (accent)
+        theme_focus_bg(btn, THEME_COL_ACCENT, LV_OPA_COVER);
 
     if ((icon && icon[0]) || (text && text[0])) {
         lv_obj_set_flex_flow(btn, LV_FLEX_FLOW_ROW);
@@ -200,7 +210,6 @@ lv_obj_t *theme_row_link(lv_obj_t *scr, const char *key, const char *val, int y,
     lv_obj_t *row = theme_action_card(scr);
     lv_obj_set_size(row, ui_content_w(), ui_px(38));
     lv_obj_align(row, LV_ALIGN_TOP_MID, 0, y);
-    lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_USER_1);   /* USER_1：进编码器焦点组 */
     lv_obj_add_event_cb(row, cb, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t *k = theme_label(row, key, THEME_FONT_M, THEME_COL_TEXT);

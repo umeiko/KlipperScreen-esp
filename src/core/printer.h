@@ -23,11 +23,34 @@ typedef enum {
     PRINTER_STATE_ERROR,          /* klippy shutdown/error */
 } printer_state_t;
 
+/* 后端实际可执行的操作。面板按能力开放入口，同一套 UI 因而可同时承载
+ * Klipper、拓竹云端只读监视和拓竹局域网控制。 */
+typedef uint32_t printer_capabilities_t;
+enum {
+    PRINTER_CAP_TEMP_CONTROL     = 1u << 0,
+    PRINTER_CAP_MOVE             = 1u << 1,
+    PRINTER_CAP_EXTRUDE          = 1u << 2,
+    PRINTER_CAP_FILES            = 1u << 3,
+    PRINTER_CAP_PRINT_START      = 1u << 4,
+    PRINTER_CAP_PAUSE            = 1u << 5,
+    PRINTER_CAP_RESUME           = 1u << 6,
+    PRINTER_CAP_CANCEL           = 1u << 7,
+    PRINTER_CAP_EMERGENCY_STOP   = 1u << 8,
+    PRINTER_CAP_FIRMWARE_RESTART = 1u << 9,
+};
+
+#define PRINTER_CAP_KLIPPER_ALL ((printer_capabilities_t)((1u << 10) - 1u))
+
 /* 初始化并启动 1s 数据节拍（内部创建 LVGL timer，驱动 panel_mgr_tick） */
 void printer_init(void);
 
 /* UI 层注入数据刷新回调（panel_mgr_tick），避免 core 反向依赖 ui */
 void printer_set_refresh_hook(void (*fn)(void));
+printer_capabilities_t printer_capabilities(void);
+static inline bool printer_has_capability(printer_capabilities_t cap)
+{
+    return (printer_capabilities() & cap) == cap;
+}
 
 /* ---- 读 ---- */
 printer_state_t printer_state(void);
@@ -41,6 +64,8 @@ int  printer_progress_permille(void);   /* 0~1000 千分比 */
 const char *printer_filename(void);
 uint32_t printer_print_elapsed_s(void);
 uint32_t printer_print_eta_s(void);
+int  printer_layer_current(void);       /* 0=后端未提供 */
+int  printer_layer_total(void);
 float printer_flow_pct(void);      /* 打印流量 % */
 int  printer_rtt_ms(void);         /* 到 Moonraker 的应用层心跳延迟 ms，0=未知/离线 */
 

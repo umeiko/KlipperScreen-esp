@@ -4,6 +4,8 @@ This tutorial is for someone connecting an ESP32 display for the first time. The
 
 Start from `templates/board/`. Its display section is a **common SPI + ST7789 example**, not a universal display implementation. A board using ILI9341, ST7796, I80 parallel, RGB parallel, QSPI, or MIPI needs the matching display path described below.
 
+Input is a separate first decision in Step 5: choose the **no-touch** route for a rotary-only board, or the **touch** route and then match the controller as **resistive** or **capacitive**. A rotary encoder can be added to either touch route, so touch and rotary hardware can coexist.
+
 ![Porting on a breadboard: the main UI running on a ZJY-1.54IPS 240×240 display](screenshots/porting_breadboard.png)
 
 The port now has seven stages, each with a clear pass condition:

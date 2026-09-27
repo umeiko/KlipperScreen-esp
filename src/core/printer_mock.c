@@ -3,6 +3,7 @@
  * 由 mock_printer.c 改名而来，逻辑不变。
  */
 #include "printer.h"
+#include "app_settings.h"
 #include "lvgl.h"
 #include <stdlib.h>
 #include <string.h>
@@ -30,6 +31,17 @@ static struct {
 };
 
 printer_state_t printer_state(void) { return P.state; }
+
+printer_capabilities_t printer_capabilities(void)
+{
+    if (settings_load_machine_mode() == MACHINE_MODE_KLIPPER)
+        return PRINTER_CAP_KLIPPER_ALL;
+    if (settings_load_bambu_link() == BAMBU_LINK_CLOUD_MONITOR)
+        return 0;   /* 云端接口只监视状态 */
+    return PRINTER_CAP_TEMP_CONTROL | PRINTER_CAP_MOVE | PRINTER_CAP_EXTRUDE |
+           PRINTER_CAP_FILES | PRINTER_CAP_PRINT_START | PRINTER_CAP_PAUSE |
+           PRINTER_CAP_RESUME | PRINTER_CAP_CANCEL;
+}
 
 /* 截图演示用：直接注入状态（desktop 端 main.c 调用） */
 void printer_mock_set_state(printer_state_t s) { P.state = s; }
@@ -62,6 +74,9 @@ uint32_t printer_print_eta_s(void)
     uint32_t el = printer_print_elapsed_s();
     return el * (1000 - P.progress) / P.progress;
 }
+
+int printer_layer_current(void) { return 0; }
+int printer_layer_total(void) { return 0; }
 
 void printer_set_target_ext(float t) { P.ext_t = t; }
 void printer_set_target_bed(float t) { P.bed_t = t; }

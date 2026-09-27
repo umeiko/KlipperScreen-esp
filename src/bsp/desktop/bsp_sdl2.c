@@ -29,6 +29,8 @@ static int SDLCALL screen_input_filter(void *userdata, SDL_Event *event)
 {
     (void)userdata;
     bool activity = event->type == SDL_MOUSEWHEEL ||
+                    event->type == SDL_KEYDOWN ||
+                    event->type == SDL_TEXTINPUT ||
                     event->type == SDL_FINGERDOWN ||
                     (event->type == SDL_MOUSEBUTTONDOWN &&
                      (event->button.button == SDL_BUTTON_LEFT ||
@@ -123,8 +125,6 @@ void bsp_lvgl_lock(void)   { if (lvgl_mutex) SDL_LockMutex(lvgl_mutex); }
 void bsp_lvgl_unlock(void) { if (lvgl_mutex) SDL_UnlockMutex(lvgl_mutex); }
 
 void bsp_restart(void)
-lv_indev_t *bsp_encoder_indev(void) { return NULL; }   /* 桌面端无旋转编码器 */
-
 {
     /* 桌面端无「重启」概念：退出进程，重新启动即按新配置加载 */
     printf("bsp_restart: exit for restart\n");
@@ -149,7 +149,3 @@ void bsp_time_sync_from_host(const char *host, uint16_t port)
     /* 桌面端直接用本机时间，无需兜底 */
     (void)host; (void)port;
 }
-
-/* 电池（桌面模拟固定值供调试） */
-int bsp_battery_mv(void) { return 3800; }
-int bsp_battery_percent(void) { return 85; }

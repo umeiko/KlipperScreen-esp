@@ -1,10 +1,13 @@
 /*
- * BSP: ESP32-S3 N16R8 + ST7789 240x320 SPI 屏 + GT911 电容触摸（I2C）
+ * BSP: ESP32-S3 N16R8 + ST7789 240x320 SPI 屏（无触摸）+ EC11 编码器 + 4 快捷键 + 电池检测
  * 逻辑分辨率 320x240 横屏。
  *
- * 引脚定义需按实际接线修改（下方 #define PIN_*）。
- * 触摸 GT911：使用 esp_lcd_touch_gt911 组件，坐标由驱动按 x_max/y_max 直接输出，
- *            方向通过 tp_cfg.flags.swap_xy / mirror_x / mirror_y 调整。
+ * 引脚分配：
+ *   ST7789 SPI:  clk=12  sda(MOSI)=11  cs=13  dc=14  rst=10  bckl=9
+ *   EC11:        A=47  B=21  key=48
+ *   息屏按键:    GPIO4（低有效，内部上拉）
+ *   快捷键:      GPIO5/6/7/15 → 打印机槽位 0/1/2/3（按下选中，旋钮确认切换）
+ *   电池检测:    GPIO8 = ADC1_CH7，100k:100k 分压（电池电压 = ADC 电压 x2）
  */
 #include "sdkconfig.h"
 #if CONFIG_BOARD_ESP32S3_ST7789
@@ -15,7 +18,6 @@
 #include <string.h>
 
 #include "driver/gpio.h"
-#include "driver/i2c_master.h"
 #include "driver/ledc.h"
 #include "driver/pulse_cnt.h"
 #include "driver/spi_master.h"
@@ -24,7 +26,6 @@
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_panel_st7789.h"
-#include "esp_lcd_touch_gt911.h"
 #include "esp_adc/adc_oneshot.h"
 #include "esp_adc/adc_cali.h"
 #include "esp_littlefs.h"
@@ -38,59 +39,66 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 
-/* ---------- 引脚定义（按实际接线修改！） ---------- */
-/* LCD SPI */
-#define PIN_LCD_SCLK   21
-#define PIN_LCD_MOSI   47
-#define PIN_LCD_MISO   (-1)   /* ST7789 只写不读，MISO 可不接 */
-#define PIN_LCD_CS     41
-#define PIN_LCD_DC     40
-#define PIN_LCD_RST    45     /* 无独立复位脚时填 -1，走软件复位 */
-#define PIN_LCD_BL     42     /* 高电平点亮 */
+/* ---------- 引脚定义 ---------- */
+/* LCD SPI (ST7789) */
+#define PIN_LCD_SCLK   12
+#define PIN_LCD_MOSI   11
+#define PIN_LCD_MISO   (-1)   /* ST7789 只写不读 */
+#define PIN_LCD_CS     13
+#define PIN_LCD_DC     14
+#define PIN_LCD_RST    10
+#define PIN_LCD_BL     9      /* 高电平点亮 */
 
-/* 触摸 GT911 I2C */
-#define PIN_TP_SDA     8
-#define PIN_TP_SCL     9
-#define PIN_TP_RST     (-1)   /* 无复位脚填 -1 */
+/* 旋转编码器 EC11：A/B 相位 + 按键，内部上拉，公共端接 GND */
+#define PIN_ENC_A       47
+#define PIN_ENC_B       21
+#define PIN_ENC_KEY     48
 
-/* 旋转编码器 EC11（可选）：A/B 相位脚 + 按键，均内部上拉，公共端接 GND */
-#define PIN_ENC_A       13
-#define PIN_ENC_B       14
-#define PIN_ENC_KEY     46
+/* 一键息屏/唤醒按键（低有效，内部上拉，公共端接 GND） */
+#define PIN_SLEEP_BTN   4
 
-/* 一键息屏/唤醒独立按键（低有效，内部上拉，公共端接 GND） */
-/* 息屏/唤醒按键（EC11 minimal 合并）：BOOT(GPIO0) + GPIO39 双键等效，任一按下触发 */
-#define PIN_BTN_BOOT     0
-#define PIN_PWR_KEY     39
+/* 快捷键：GPIO5/6/7/15 → 打印机槽位 0/1/2/3 */
+#define HOTKEY_COUNT    4
+static const int PIN_HOTKEY[HOTKEY_COUNT] = { 5, 6, 7, 15 };
+
+/* 电池 ADC：GPIO8 = ADC1_CH7，100k:100k 分压 */
+#define BAT_ADC_UNIT    ADC_UNIT_1
+#define BAT_ADC_CH      ADC_CHANNEL_7
+#define BAT_ADC_ATTEN   ADC_ATTEN_DB_11
 
 #define LCD_H_RES      320    /* 240x320 面板右转 90° → 横屏 320x240 */
 #define LCD_V_RES      240
 #define LCD_SPI_HZ     (40 * 1000 * 1000)
 #define DRAW_BUF_LINES 40
 
+/* 快捷键确认窗口（ms）：按下快捷键后 N 毫秒内按编码器旋钮确认 */
+#define HOTKEY_CONFIRM_MS  3000
+
 static const char *TAG = "bsp";
 
 static SemaphoreHandle_t lvgl_mux;
-static adc_oneshot_unit_handle_t bat_adc;   /* 电池 ADC（IO17 = ADC2_CH6） */
-static adc_cali_handle_t bat_cali;   /* eFuse 校准（可为 NULL） */
-static int bat_last_mv = -1;           /* 上次有效电压缓存（WiFi 抢 ADC2 时兜底） */
+static adc_oneshot_unit_handle_t bat_adc;
+static adc_cali_handle_t bat_cali;
+static int bat_last_mv = -1;
 static esp_lcd_panel_handle_t panel_handle;
-static esp_lcd_touch_handle_t touch_handle;
-static lv_indev_t *enc_indev;              /* 编码器 LVGL 输入设备 */
-static pcnt_unit_handle_t enc_pcnt;        /* PCNT 计数单元 */
-static int enc_last_cnt;                   /* 上次读取的计数（差值送给 LVGL） */
-static int enc_acc;                       /* 累积计数：攒满 1 格（4 计数）才输出 1 步，避免一格跳多个焦点 */
-static int enc_key_raw = 1;                /* 按键原始电平（1=释放，0=按下） */
-static int enc_key_state = 1;              /* 去抖后的稳定状态 */
-static int64_t enc_key_debounce_ms;        /* 电平变化时间戳（去抖） */
+static lv_indev_t *enc_indev;
+static pcnt_unit_handle_t enc_pcnt;
+static int enc_last_cnt;
+static int enc_acc;
+static int enc_key_raw = 1;
+static int enc_key_state = 1;
+static int64_t enc_key_debounce_ms;
 
+/* 快捷键切换打印机：待确认槽位（-1 = 无待确认） */
+static int pending_slot = -1;
+static int64_t pending_until_ms = 0;
+static void (*hotkey_printer_fn)(int slot) = NULL;
+static void (*hotkey_select_fn)(int slot) = NULL;
 
 void bsp_lvgl_lock(void)   { xSemaphoreTakeRecursive(lvgl_mux, portMAX_DELAY); }
 void bsp_lvgl_unlock(void) { xSemaphoreGiveRecursive(lvgl_mux); }
 
 /* ---------- 开机动画推屏 ---------- */
-/* esp_lcd_panel_draw_bitmap 是 DMA 异步传输：必须等 on_color_trans_done 再释放/复用
-   像素缓冲，否则 DMA 读到被覆写的内存，画面出现 Y 向条状撕裂 */
 static SemaphoreHandle_t lcd_trans_done;
 
 static bool on_color_trans_done(esp_lcd_panel_io_handle_t io,
@@ -104,12 +112,11 @@ static bool on_color_trans_done(esp_lcd_panel_io_handle_t io,
 
 void bsp_lcd_push(int x, int y, int w, int h, const uint16_t *px)
 {
-    /* ST7789 走 SPI 要求先发像素高字节：拷一份交换字节再推 */
     size_t n = (size_t)w * h;
     uint16_t *tmp = malloc(n * 2);
     if (!tmp) return;
     for (size_t i = 0; i < n; i++) tmp[i] = (uint16_t)((px[i] >> 8) | (px[i] << 8));
-    xSemaphoreTake(lcd_trans_done, 0);   /* 排掉 LVGL flush 可能留下的存量信号 */
+    xSemaphoreTake(lcd_trans_done, 0);
     esp_lcd_panel_draw_bitmap(panel_handle, x, y, x + w, y + h, tmp);
     xSemaphoreTake(lcd_trans_done, pdMS_TO_TICKS(500));
     free(tmp);
@@ -117,8 +124,7 @@ void bsp_lcd_push(int x, int y, int w, int h, const uint16_t *px)
 
 void bsp_delay_ms(uint32_t ms) { vTaskDelay(pdMS_TO_TICKS(ms)); }
 
-/* ---------- 背光 + 屏幕电源（上游 bsp_screen_power） ---------- */
-/* 硬件背光映射回调：0-100 → LEDC 占空比 */
+/* ---------- 背光 + 屏幕电源 ---------- */
 static void backlight_apply(int pct)
 {
     if (pct < 0) pct = 0;
@@ -139,7 +145,6 @@ void bsp_fade_out(uint32_t ms)
     ledc_set_fade_with_time(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0, ms);
     ledc_fade_start(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, LEDC_FADE_WAIT_DONE);
 
-    /* 渐暗后把 GRAM 整屏推黑：否则面板寄存器残留旧帧，下次上电瞬间会闪一下旧画面 */
     static uint16_t black[LCD_H_RES * 40];
     for (int y = 0; y < LCD_V_RES; y += 40) {
         xSemaphoreTake(lcd_trans_done, 0);
@@ -151,7 +156,6 @@ void bsp_fade_out(uint32_t ms)
 /* ---------- LVGL 对接 ---------- */
 static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
 {
-    /* ST7789 走 SPI 要求先发像素高字节，LVGL 内存是小端 RGB565 → 就地交换字节 */
     uint16_t *p = (uint16_t *)px_map;
     int32_t n = (int32_t)(area->x2 - area->x1 + 1) * (area->y2 - area->y1 + 1);
     for (int32_t i = 0; i < n; i++) p[i] = (uint16_t)((p[i] >> 8) | (p[i] << 8));
@@ -162,13 +166,13 @@ static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
 
 static uint32_t tick_cb(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
 
+static int64_t now_ms(void) { return esp_timer_get_time() / 1000; }
+
 static void encoder_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
 {
     int cnt = 0;
     pcnt_unit_get_count(enc_pcnt, &cnt);
-    int diff = (int)((int16_t)(cnt - enc_last_cnt));   /* 旋转步数（正=顺时针） */
-    /* 20 脉冲 EC11：1 格 = 1 正交周期 = 4 个 PCNT 计数；30ms 采样会把一格拆成多次读取，
-       直接取符号会一格跳多个焦点，这里累积到完整 4 计数才输出 1 步 */
+    int diff = (int)((int16_t)(cnt - enc_last_cnt));
     enc_acc += diff;
     int step = 0;
     while (enc_acc >= 4) { step++; enc_acc -= 4; }
@@ -176,44 +180,66 @@ static void encoder_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
     data->enc_diff = step;
     enc_last_cnt = cnt;
 
-    /* 按键（低有效）：电平变化后稳定 30ms 才切换状态，去抖 */
-    int64_t now = esp_timer_get_time() / 1000;
-    int cur = gpio_get_level(PIN_ENC_KEY);   /* 0=按下 */
+    /* 按键（低有效）：去抖 */
+    int64_t now = now_ms();
+    int cur = gpio_get_level(PIN_ENC_KEY);
     if (cur != enc_key_raw) {
         enc_key_raw = cur;
         enc_key_debounce_ms = now;
     }
+    bool pressed_stable;
     if (now - enc_key_debounce_ms >= 30) {
         enc_key_state = cur;
-        data->state = cur ? LV_INDEV_STATE_RELEASED : LV_INDEV_STATE_PRESSED;
+        pressed_stable = (cur == 0);
     } else {
-        data->state = enc_key_state ? LV_INDEV_STATE_RELEASED : LV_INDEV_STATE_PRESSED;
+        pressed_stable = (enc_key_state == 0);
     }
-    /* 只有实际旋转（step!=0）或按住按键才算活动：否则轮询本身会立即唤醒手动息屏 */
-    if (step != 0 || (enc_key_state == 0 && cur == 0))
+    data->state = pressed_stable ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
+
+    /* 快捷键确认：待确认期间按编码器旋钮 → 执行切换 */
+    if (pending_slot >= 0 && pressed_stable && now < pending_until_ms) {
+        ESP_LOGI(TAG, "Hotkey confirm: switch to printer slot %d", pending_slot);
+        if (hotkey_printer_fn) hotkey_printer_fn(pending_slot);
+        pending_slot = -1;
+    }
+    /* 旋转编码器取消待确认 */
+    if (step != 0 && pending_slot >= 0) pending_slot = -1;
+
+    /* 活动唤醒 */
+    if (step != 0 || pressed_stable)
         bsp_screen_activity();
 }
+
+/* 无触摸板：pointer 输入设备始终返回释放 */
 static void touch_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
 {
-        if (!touch_handle) { data->state = LV_INDEV_STATE_RELEASED; return; }
-    static bool wake_swallow;               /* 息屏唤醒的那次按下：吞掉防误触 */
-    esp_lcd_touch_point_data_t pt[1] = {0};
-    uint8_t count = 0;
-    esp_lcd_touch_read_data(touch_handle);
-    if (esp_lcd_touch_get_data(touch_handle, pt, &count, 1) == ESP_OK && count > 0) {
-        if (bsp_screen_is_off()) wake_swallow = true;
-        bsp_screen_activity();
-        if (wake_swallow) {
-            data->state = LV_INDEV_STATE_RELEASED;
-            return;
+    LV_UNUSED(indev);
+    data->state = LV_INDEV_STATE_RELEASED;
+}
+
+/* ---------- 快捷键轮询 ---------- */
+static int hotkey_prev_level[HOTKEY_COUNT];
+
+static void hotkey_poll(void)
+{
+    int64_t now = now_ms();
+
+    /* 超时取消 */
+    if (pending_slot >= 0 && now >= pending_until_ms) {
+        ESP_LOGI(TAG, "Hotkey confirm timeout (slot %d)", pending_slot);
+        pending_slot = -1;
+    }
+
+    for (int i = 0; i < HOTKEY_COUNT; i++) {
+        int lvl = gpio_get_level(PIN_HOTKEY[i]);
+        /* 按下沿（高→低） */
+        if (hotkey_prev_level[i] == 1 && lvl == 0) {
+            ESP_LOGI(TAG, "Hotkey %d (GPIO%d): select printer slot %d",
+                     i + 1, PIN_HOTKEY[i], i);
+            if (hotkey_select_fn) hotkey_select_fn(i);
+            bsp_screen_activity();
         }
-        data->state = LV_INDEV_STATE_PRESSED;
-        /* 驱动按 x_max/y_max 直接输出屏幕坐标；方向由 tp_cfg.flags 控制 */
-        data->point.x = LV_CLAMP(0, pt[0].x, LCD_H_RES - 1);
-        data->point.y = LV_CLAMP(0, pt[0].y, LCD_V_RES - 1);
-    } else {
-        data->state = LV_INDEV_STATE_RELEASED;
-        wake_swallow = false;
+        hotkey_prev_level[i] = lvl;
     }
 }
 
@@ -222,9 +248,12 @@ static void lvgl_task(void *arg)
     for (;;) {
         bsp_lvgl_lock();
         lv_timer_handler();
-        bsp_lvgl_unlock();
         bsp_screen_power_poll();
         bsp_sleep_button_poll();
+        hotkey_poll();
+        extern void screensaver_poll(void);
+        screensaver_poll();
+        bsp_lvgl_unlock();
         vTaskDelay(pdMS_TO_TICKS(5));
     }
 }
@@ -298,55 +327,16 @@ void bsp_init(void)
 
     esp_lcd_panel_dev_config_t panel_cfg = {
         .reset_gpio_num = PIN_LCD_RST,
-        .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_BGR,   /* 多数 ST7789 模组是 BGR；颜色红蓝互换改 RGB */
+        .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_BGR,
         .bits_per_pixel = 16,
     };
     ESP_ERROR_CHECK(esp_lcd_new_panel_st7789(io_handle, &panel_cfg, &panel_handle));
     ESP_ERROR_CHECK(esp_lcd_panel_reset(panel_handle));
     ESP_ERROR_CHECK(esp_lcd_panel_init(panel_handle));
-    /* 240x240 面板；若内容上下偏移 40 行改 set_gap(0, 40)，颠倒改 mirror */
-ESP_ERROR_CHECK(esp_lcd_panel_set_gap(panel_handle, 0, 0));
-    /* 240x320 面板右转 90°（顺时针）：行列交换 + 行反向；反了则换 mirror(false,false) 或 (true,false) */
+    ESP_ERROR_CHECK(esp_lcd_panel_set_gap(panel_handle, 0, 0));
     ESP_ERROR_CHECK(esp_lcd_panel_swap_xy(panel_handle, true));
-    /* 左转 90°（逆时针）：行列交换 + 列反向 */
     ESP_ERROR_CHECK(esp_lcd_panel_mirror(panel_handle, true, false));
     ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_handle, true));
-
-    /* 触摸 GT911（I2C0）：可选。初始化失败仅警告、禁用触摸，不阻塞显示（无触摸屏时正常跑） */
-    i2c_master_bus_config_t i2c_cfg = {
-        .i2c_port = I2C_NUM_0,
-        .sda_io_num = PIN_TP_SDA,
-        .scl_io_num = PIN_TP_SCL,
-        .clk_source = I2C_CLK_SRC_DEFAULT,
-        .glitch_ignore_cnt = 7,
-        .flags = { .enable_internal_pullup = 1 },
-    };
-    touch_handle = NULL;
-    i2c_master_bus_handle_t i2c_bus = NULL;
-    if (i2c_new_master_bus(&i2c_cfg, &i2c_bus) != ESP_OK) {
-        ESP_LOGW(TAG, "I2C bus init failed, touch disabled");
-    } else {
-        esp_lcd_panel_io_handle_t tp_io = NULL;
-        esp_lcd_panel_io_i2c_config_t tp_io_cfg = ESP_LCD_TOUCH_IO_I2C_GT911_CONFIG();
-        if (esp_lcd_new_panel_io_i2c(i2c_bus, &tp_io_cfg, &tp_io) != ESP_OK) {
-            ESP_LOGW(TAG, "GT911 I2C IO init failed, touch disabled");
-        } else {
-            esp_lcd_touch_config_t tp_cfg = {
-                .x_max = LCD_H_RES,
-                .y_max = LCD_V_RES,
-                .rst_gpio_num = PIN_TP_RST,
-                .int_gpio_num = GPIO_NUM_NC,
-                .levels = { .reset = 0, .interrupt = 0 },
-                /* 触摸方向与屏幕不一致时改这里的三个 flag 组合 */
-                .flags = { .swap_xy = false, .mirror_x = false, .mirror_y = false },
-            };
-            if (esp_lcd_touch_new_i2c_gt911(tp_io, &tp_cfg, &touch_handle) != ESP_OK) {
-                ESP_LOGW(TAG, "GT911 not found, touch disabled");
-            } else {
-                ESP_LOGI(TAG, "GT911 touch ready");
-            }
-        }
-    }
 
     /* 旋转编码器 EC11：PCNT 正交解码（A/B），按键 GPIO 输入 */
     gpio_config_t enc_io_cfg = {
@@ -369,23 +359,37 @@ ESP_ERROR_CHECK(esp_lcd_panel_set_gap(panel_handle, 0, 0));
     enc_chan_cfg.edge_gpio_num = PIN_ENC_B;
     enc_chan_cfg.level_gpio_num = PIN_ENC_A;
     ESP_ERROR_CHECK(pcnt_new_channel(enc_pcnt, &enc_chan_cfg, &enc_ch_b));
-    /* pcnt_new_channel 会把 GPIO 重配为浮空输入覆盖上拉，这里重新使能 A/B 上拉 */
     ESP_ERROR_CHECK(gpio_config(&enc_io_cfg));
     ESP_ERROR_CHECK(pcnt_channel_set_edge_action(enc_ch_a, PCNT_CHANNEL_EDGE_ACTION_DECREASE, PCNT_CHANNEL_EDGE_ACTION_INCREASE));
     ESP_ERROR_CHECK(pcnt_channel_set_level_action(enc_ch_a, PCNT_CHANNEL_LEVEL_ACTION_KEEP, PCNT_CHANNEL_LEVEL_ACTION_INVERSE));
     ESP_ERROR_CHECK(pcnt_channel_set_edge_action(enc_ch_b, PCNT_CHANNEL_EDGE_ACTION_INCREASE, PCNT_CHANNEL_EDGE_ACTION_DECREASE));
-    ESP_ERROR_CHECK(pcnt_channel_set_level_action(enc_ch_b, PCNT_CHANNEL_LEVEL_ACTION_KEEP, PCNT_CHANNEL_LEVEL_ACTION_INVERSE));   /* 官方例程：KEEP(低)/INVERSE(高) */
+    ESP_ERROR_CHECK(pcnt_channel_set_level_action(enc_ch_b, PCNT_CHANNEL_LEVEL_ACTION_KEEP, PCNT_CHANNEL_LEVEL_ACTION_INVERSE));
     ESP_ERROR_CHECK(pcnt_unit_enable(enc_pcnt));
     ESP_ERROR_CHECK(pcnt_unit_clear_count(enc_pcnt));
     ESP_ERROR_CHECK(pcnt_unit_start(enc_pcnt));
-    ESP_LOGI(TAG, "Encoder ready (A=GPIO%d B=GPIO%d KEY=GPIO%d PWRKEY=GPIO%d)",
-             PIN_ENC_A, PIN_ENC_B, PIN_ENC_KEY, PIN_PWR_KEY);
-    /* 息屏/唤醒按钮（上游 bsp_sleep_button）：BOOT(GPIO0) + GPIO39 双键，低电平有效 */
+    ESP_LOGI(TAG, "Encoder ready (A=GPIO%d B=GPIO%d KEY=GPIO%d)",
+             PIN_ENC_A, PIN_ENC_B, PIN_ENC_KEY);
+
+    /* 息屏/唤醒按钮（GPIO4，低电平有效） */
     const bsp_sleep_button_cfg_t sleep_btns[] = {
-        { PIN_BTN_BOOT, true },
-        { PIN_PWR_KEY, true },
+        { PIN_SLEEP_BTN, true },
     };
-    ESP_ERROR_CHECK(bsp_sleep_button_init(sleep_btns, 2));
+    ESP_ERROR_CHECK(bsp_sleep_button_init(sleep_btns, 1));
+
+    /* 快捷键 GPIO5/6/7/15 → 槽位 0/1/2/3，内部上拉，低有效 */
+    uint64_t hk_mask = 0;
+    for (int i = 0; i < HOTKEY_COUNT; i++) {
+        hk_mask |= (1ULL << PIN_HOTKEY[i]);
+        hotkey_prev_level[i] = 1;   /* 上电默认释放 */
+    }
+    gpio_config_t hk_io = {
+        .pin_bit_mask = hk_mask,
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    ESP_ERROR_CHECK(gpio_config(&hk_io));
 
     /* LVGL */
     lv_init();
@@ -393,15 +397,13 @@ ESP_ERROR_CHECK(esp_lcd_panel_set_gap(panel_handle, 0, 0));
 
     lv_display_t *disp = lv_display_create(LCD_H_RES, LCD_V_RES);
     size_t buf_sz = LCD_H_RES * DRAW_BUF_LINES * 2;
-    /* N16R8 有 PSRAM，但 SPI 屏的 DMA 缓冲必须在内部 RAM（GDMA 不能直接访问 PSRAM），
-       用 MALLOC_CAP_DMA 分配。如果后续要更大的 PARTIAL 缓冲，可改用 MALLOC_CAP_SPIRAM
-       分配渲染缓冲 + 一小块内部 RAM 做 DMA 中转，但 40 行缓冲内部 RAM 已足够 */
     void *buf1 = heap_caps_malloc(buf_sz, MALLOC_CAP_DMA);
     void *buf2 = heap_caps_malloc(buf_sz, MALLOC_CAP_DMA);
     ESP_ERROR_CHECK(buf1 && buf2 ? ESP_OK : ESP_ERR_NO_MEM);
     lv_display_set_buffers(disp, buf1, buf2, buf_sz, LV_DISPLAY_RENDER_MODE_PARTIAL);
     lv_display_set_flush_cb(disp, flush_cb);
 
+    /* 无触摸板：pointer indev 空操作（保留以兼容 UI 焦点逻辑） */
     lv_indev_t *indev = lv_indev_create();
     lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
     lv_indev_set_read_cb(indev, touch_read_cb);
@@ -409,68 +411,62 @@ ESP_ERROR_CHECK(esp_lcd_panel_set_gap(panel_handle, 0, 0));
     lv_indev_set_type(enc_indev, LV_INDEV_TYPE_ENCODER);
     lv_indev_set_read_cb(enc_indev, encoder_read_cb);
 
-
     xTaskCreatePinnedToCore(lvgl_task, "lvgl", 12288, NULL, 4, NULL, 1);
 
-    /* 电池 ADC：IO17 = ADC2_CH6，100k:100k 分压；11dB 衰减满量程约 3100mV */
-    adc_oneshot_unit_init_cfg_t bat_cfg = { .unit_id = ADC_UNIT_2 };
+    /* 电池 ADC：GPIO8 = ADC1_CH7，100k:100k 分压 */
+    adc_oneshot_unit_init_cfg_t bat_cfg = { .unit_id = BAT_ADC_UNIT };
     ESP_ERROR_CHECK(adc_oneshot_new_unit(&bat_cfg, &bat_adc));
-    adc_oneshot_chan_cfg_t bat_chan = { .atten = ADC_ATTEN_DB_11, .bitwidth = ADC_BITWIDTH_12 };
-    ESP_ERROR_CHECK(adc_oneshot_config_channel(bat_adc, ADC_CHANNEL_6, &bat_chan));
-    /* eFuse 曲线校准（失败则回退 3100mV 线性） */
+    adc_oneshot_chan_cfg_t bat_chan = { .atten = BAT_ADC_ATTEN, .bitwidth = ADC_BITWIDTH_12 };
+    ESP_ERROR_CHECK(adc_oneshot_config_channel(bat_adc, BAT_ADC_CH, &bat_chan));
     adc_cali_scheme_ver_t cali_mask = 0;
     if (adc_cali_check_scheme(&cali_mask) == ESP_OK && (cali_mask & ADC_CALI_SCHEME_VER_CURVE_FITTING)) {
         adc_cali_curve_fitting_config_t ccfg = {
-            .unit_id = ADC_UNIT_2, .chan = ADC_CHANNEL_6,
-            .atten = ADC_ATTEN_DB_11, .bitwidth = ADC_BITWIDTH_12,
+            .unit_id = BAT_ADC_UNIT, .chan = BAT_ADC_CH,
+            .atten = BAT_ADC_ATTEN, .bitwidth = ADC_BITWIDTH_12,
         };
         if (adc_cali_create_scheme_curve_fitting(&ccfg, &bat_cali) != ESP_OK) bat_cali = NULL;
     } else {
         bat_cali = NULL;
     }
 
-    ESP_LOGI(TAG, "BSP ready (ESP32-S3 ST7789+GT911, %dx%d)", LCD_H_RES, LCD_V_RES);
+    ESP_LOGI(TAG, "BSP ready (ESP32-S3 ST7789 no-touch, %dx%d, battery on GPIO8)",
+             LCD_H_RES, LCD_V_RES);
 }
 
 void bsp_restart(void)
-
 {
     lv_refr_now(NULL);
     vTaskDelay(pdMS_TO_TICKS(800));
     esp_restart();
 }
+
 lv_indev_t *bsp_encoder_indev(void) { return enc_indev; }
 
-/* ---------- 显示设置：反色 / 180° 旋转（ST7789 硬件支持，供"显示设置"页调用） ---------- */
+/* ---------- 显示设置：反色 / 180° 旋转 ---------- */
 bool bsp_disp_can_invert(void) { return true; }
 void bsp_disp_set_invert(bool en) { esp_lcd_panel_invert_color(panel_handle, en); }
 
 bool bsp_disp_can_rotate180(void) { return true; }
 void bsp_disp_set_rotate180(bool en)
 {
-    /* 基线方向：swap_xy=true + mirror(true,false)（左转 90° 横屏）；
-       再转 180° = 两轴镜像方向互换；恢复则回到基线 */
     if (en) esp_lcd_panel_mirror(panel_handle, false, true);
     else    esp_lcd_panel_mirror(panel_handle, true, false);
 }
-
 
 /* ---------- 电池检测 ---------- */
 int bsp_battery_mv(void)
 {
     int raw = 0;
-    /* ADC2 与 WiFi 共用硬件互斥：WiFi 活跃时读取可能超时 → 用上次缓存（避免跳 0） */
-    if (adc_oneshot_read(bat_adc, ADC_CHANNEL_6, &raw) != ESP_OK) return bat_last_mv;
-    /* 100k 高阻抗源采样不足：连续读几次取最大，接近真值 */
+    if (adc_oneshot_read(bat_adc, BAT_ADC_CH, &raw) != ESP_OK) return bat_last_mv;
     for (int i = 0; i < 7; i++) {
         int r = 0;
-        if (adc_oneshot_read(bat_adc, ADC_CHANNEL_6, &r) == ESP_OK && r > raw) raw = r;
+        if (adc_oneshot_read(bat_adc, BAT_ADC_CH, &r) == ESP_OK && r > raw) raw = r;
     }
     int mv;
     if (bat_cali && adc_cali_raw_to_voltage(bat_cali, raw, &mv) == ESP_OK) {
         mv = mv * 2;   /* 100k:100k 分压 → 电池电压 = ADC 电压 x2 */
     } else {
-        mv = (int)((int64_t)raw * 3100 * 2 / 4095);   /* 回退：11dB 满量程约 3100mV，x2 分压 */
+        mv = (int)((int64_t)raw * 3100 * 2 / 4095);
     }
     bat_last_mv = mv;
     return mv;
@@ -480,10 +476,20 @@ int bsp_battery_percent(void)
 {
     int mv = bsp_battery_mv();
     if (mv < 0) return -1;
-    int pct = (mv - 3300) * 100 / 900;   /* 3.3V=0% 4.2V=100% 线性近似 */
+    int pct = (mv - 3300) * 100 / 900;
     if (pct < 0) pct = 0;
     if (pct > 100) pct = 100;
     return pct;
+}
+
+/* ---------- 快捷键打印机切换回调注册 ---------- */
+void bsp_hotkey_set_printer_handler(void (*handler)(int slot))
+{
+    hotkey_printer_fn = handler;
+}
+void bsp_hotkey_set_select_handler(void (*handler)(int slot))
+{
+    hotkey_select_fn = handler;
 }
 
 #endif /* CONFIG_BOARD_ESP32S3_ST7789 */

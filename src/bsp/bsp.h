@@ -15,7 +15,7 @@ void bsp_input_init(void);
 
 lv_display_t *bsp_get_display(void);
 
-/* 旋转编码器输入设备（无编码器/桌面平台返回 NULL）。配合 lv_group 做焦点导航 */
+/* 旋转编码器输入设备（无编码器/桌面平台返回 NULL）。 */
 lv_indev_t *bsp_encoder_indev(void);
 
 /* LVGL 线程互斥（所有 LVGL API 调用必须持锁） */
@@ -64,11 +64,15 @@ void bsp_disp_set_rotate180(bool en);
    SNTP 已同步则跳过；异步执行不阻塞调用方（desktop 空操作）。 */
 void bsp_time_sync_from_host(const char *host, uint16_t port);
 
-/* 电池电压（mV）与电量百分比（0-100）；未接电池/读取失败返回 -1（UI 显示占位）。
-   esp32s3_st7789：IO17=ADC2_CH6，100k:100k 分压（电池电压 = ADC 读数 x2），3.3V=0% / 4.2V=100% 线性；
-   其余 esp32 板：未接电池返回 -1；desktop：模拟固定值供调试。 */
+/* 电池电压（mV）与电量百分比（0-100）；未接电池/读取失败返回 -1。 */
 int bsp_battery_mv(void);
 int bsp_battery_percent(void);
+
+/* 快捷键按下时的"选择"回调（slot 0..N）：app 层据此弹确认框。
+   板型检测到快捷键按下即调用此回调，不再走编码器旋钮确认。 */
+void bsp_hotkey_set_select_handler(void (*handler)(int slot));
+/* 执行实际切换（旧接口，保留兼容）。 */
+void bsp_hotkey_set_printer_handler(void (*handler)(int slot));
 
 #ifdef __cplusplus
 }

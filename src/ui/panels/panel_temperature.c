@@ -3,6 +3,7 @@
  * 连续快速旋转会把步长从 1°C 逐步放大到 10°C，停顿后恢复精调。
  */
 #include "../theme.h"
+#include "../lang.h"
 #include "../ui_anim.h"
 #include "../panel_mgr.h"
 #include "printer.h"
@@ -10,11 +11,15 @@
 #include "../assets/icons.h"
 #include <stdio.h>
 
+#define EXTRUDER_MAX_TEMP 320
+#define BED_MAX_TEMP      150
+
 static lv_obj_t *lbl_ext_cur, *lbl_ext_tgt;
 static lv_obj_t *lbl_bed_cur, *lbl_bed_tgt;
 static int ext_shown10 = -1, bed_shown10 = -1;   /* 0.1 度单位的显示值 */
 static lv_obj_t *row_ext_obj, *row_bed_obj;
-static lv_obj_t *editing_row, *editing_cur, *editing_tgt;
+static lv_obj_t *preset_row, *readonly_hint;
+static lv_obj_t *editing_row, *editing_tgt;
 static lv_timer_t *commit_timer;
 static int editing_value, sent_value, speed_score, step_size = 1;
 static uint32_t last_step_at;
@@ -30,26 +35,31 @@ static void temp_anim_cb(void *obj, int32_t v10)
 static void set_ext_cb(float v, int ok, void *ud)
 {
     LV_UNUSED(ud);
-    if (ok) { printer_set_target_ext(v); ui_toast(v > 0 ? "喷嘴加热中" : "喷嘴已关闭", THEME_COL_EXTRUDER); }
+    if (ok) {
+        v = LV_CLAMP(0, v, EXTRUDER_MAX_TEMP);
+        printer_set_target_ext(v);
+        ui_toast(v > 0 ? "喷嘴加热中" : "喷嘴已关闭", THEME_COL_EXTRUDER);
+    }
 }
 
 static void set_bed_cb(float v, int ok, void *ud)
 {
     LV_UNUSED(ud);
-    if (ok) { printer_set_target_bed(v); ui_toast(v > 0 ? "热床加热中" : "热床已关闭", THEME_COL_BED); }
+    if (ok) {
+        v = LV_CLAMP(0, v, BED_MAX_TEMP);
+        printer_set_target_bed(v);
+        ui_toast(v > 0 ? "热床加热中" : "热床已关闭", THEME_COL_BED);
+    }
 }
 
 static int editing_is_ext(void) { return editing_row == row_ext_obj; }
+static int editing_max_temp(void) { return editing_is_ext() ? EXTRUDER_MAX_TEMP : BED_MAX_TEMP; }
 
 static void render_edit_value(void)
 {
-    if (!editing_cur || !editing_tgt) return;
-    lv_label_set_text_fmt(editing_cur, "%d" "\xC2\xB0", editing_value);
-    lv_label_set_text_fmt(editing_tgt, "STEP %d", step_size);
-    lv_obj_set_style_text_color(editing_cur,
-        theme_col(editing_is_ext() ? THEME_COL_EXTRUDER : THEME_COL_BED), 0);
-    lv_obj_set_style_text_color(editing_tgt,
-        theme_col(editing_is_ext() ? THEME_COL_EXTRUDER : THEME_COL_BED), 0);
+    if (!editing_tgt) return;
+    lv_label_set_text_fmt(editing_tgt, "/%d" "\xC2\xB0", editing_value);
+    lv_obj_set_style_text_color(editing_tgt, theme_col(THEME_COL_ERROR), 0);
 }
 
 static void send_edit_value(void)
@@ -78,12 +88,11 @@ static void begin_edit(lv_obj_t *row)
 {
     if (editing_row == row) return;
     editing_row = row;
-    editing_cur = row == row_ext_obj ? lbl_ext_cur : lbl_bed_cur;
     editing_tgt = row == row_ext_obj ? lbl_ext_tgt : lbl_bed_tgt;
     float target = row == row_ext_obj ? printer_target_ext() : printer_target_bed();
     editing_value = (int)(target + 0.5f);
     if (editing_value < 0) editing_value = 0;
-    if (editing_value > 320) editing_value = 320;
+    if (editing_value > editing_max_temp()) editing_value = editing_max_temp();
     sent_value = editing_value;
     speed_score = 0;
     step_size = 1;
@@ -94,18 +103,13 @@ static void begin_edit(lv_obj_t *row)
 static void finish_edit(void)
 {
     if (!editing_row) return;
-    int was_ext = editing_is_ext();
     if (commit_timer) {
         lv_timer_delete(commit_timer);
         commit_timer = NULL;
     }
     send_edit_value();
-    temp_anim_cb(editing_cur, (int)((was_ext ? printer_temp_ext() : printer_temp_bed()) * 10));
-    lv_obj_set_style_text_color(editing_cur,
-        theme_col(was_ext ? THEME_COL_EXTRUDER : THEME_COL_BED), 0);
     lv_obj_set_style_text_color(editing_tgt, theme_col(THEME_COL_TEXT_DIM), 0);
     editing_row = NULL;
-    editing_cur = NULL;
     editing_tgt = NULL;
     update_temps();
 }
@@ -124,6 +128,7 @@ static int accelerated_step(uint32_t now)
 
 static void on_temp_row(lv_event_t *e)
 {
+    if (!printer_has_capability(PRINTER_CAP_TEMP_CONTROL)) return;
     lv_obj_t *row = lv_event_get_target_obj(e);
     lv_event_code_t code = lv_event_get_code(e);
 
@@ -136,7 +141,7 @@ static void on_temp_row(lv_event_t *e)
             step_size = accelerated_step(lv_tick_get());
             editing_value += key == LV_KEY_RIGHT ? step_size : -step_size;
             if (editing_value < 0) editing_value = 0;
-            if (editing_value > 320) editing_value = 320;
+            if (editing_value > editing_max_temp()) editing_value = editing_max_temp();
             render_edit_value();
             schedule_commit();
         } else if (key == LV_KEY_ENTER) {
@@ -167,6 +172,7 @@ static void on_temp_row(lv_event_t *e)
 
 static void on_preset(lv_event_t *e)
 {
+    if (!printer_has_capability(PRINTER_CAP_TEMP_CONTROL)) return;
     int idx = (int)(intptr_t)lv_event_get_user_data(e);
     static const struct { float e, b; const char *name; } presets[] = {
         {210, 60, "PLA"}, {240, 80, "PETG"}, {250, 100, "ABS"}, {0, 0, "全部冷却"},
@@ -182,9 +188,11 @@ static lv_obj_t *make_row(lv_obj_t *parent, const char *name, uint32_t col,
 {
     lv_obj_t *row = theme_action_card(parent);
     lv_obj_set_size(row, ui_content_w(), h);
-    lv_obj_set_style_bg_color(row, theme_col(col), LV_STATE_FOCUS_KEY | LV_STATE_EDITED);
+    lv_obj_set_style_bg_color(row, theme_col(THEME_COL_ERROR),
+                              LV_STATE_FOCUS_KEY | LV_STATE_EDITED);
     lv_obj_set_style_bg_opa(row, LV_OPA_30, LV_STATE_FOCUS_KEY | LV_STATE_EDITED);
-    lv_obj_set_style_outline_color(row, theme_col(col), LV_STATE_FOCUS_KEY | LV_STATE_EDITED);
+    lv_obj_set_style_outline_color(row, theme_col(THEME_COL_ERROR),
+                                   LV_STATE_FOCUS_KEY | LV_STATE_EDITED);
     lv_obj_set_style_outline_width(row, ui_px(3), LV_STATE_FOCUS_KEY | LV_STATE_EDITED);
     lv_obj_add_event_cb(row, on_temp_row, LV_EVENT_ALL, NULL);
 
@@ -207,14 +215,31 @@ static lv_obj_t *make_row(lv_obj_t *parent, const char *name, uint32_t col,
 
 static void update_temps(void)
 {
+    bool writable = printer_has_capability(PRINTER_CAP_TEMP_CONTROL);
+    lv_obj_set_flag(preset_row, LV_OBJ_FLAG_HIDDEN, !writable);
+    lv_obj_set_flag(readonly_hint, LV_OBJ_FLAG_HIDDEN, writable);
+    if (writable) {
+        lv_obj_remove_state(row_ext_obj, LV_STATE_DISABLED);
+        lv_obj_remove_state(row_bed_obj, LV_STATE_DISABLED);
+    } else {
+        if (editing_row) {
+            if (commit_timer) { lv_timer_delete(commit_timer); commit_timer = NULL; }
+            lv_obj_set_style_text_color(editing_tgt, theme_col(THEME_COL_TEXT_DIM), 0);
+            editing_row = NULL;
+            editing_tgt = NULL;
+        }
+        lv_obj_add_state(row_ext_obj, LV_STATE_DISABLED);
+        lv_obj_add_state(row_bed_obj, LV_STATE_DISABLED);
+    }
+
     int e10 = (int)(printer_temp_ext() * 10);
     int b10 = (int)(printer_temp_bed() * 10);
-    if (ext_shown10 < 0) ext_shown10 = e10;   /* 首次直接到位 */
-    if (bed_shown10 < 0) bed_shown10 = b10;
-    if (e10 != ext_shown10 && editing_row != row_ext_obj) {
+    if (ext_shown10 < 0) { ext_shown10 = e10; temp_anim_cb(lbl_ext_cur, e10); }
+    if (bed_shown10 < 0) { bed_shown10 = b10; temp_anim_cb(lbl_bed_cur, b10); }
+    if (e10 != ext_shown10) {
         ui_anim_to(lbl_ext_cur, temp_anim_cb, ext_shown10, e10, UI_ANIM_SLOW, lv_anim_path_ease_out);
     }
-    if (b10 != bed_shown10 && editing_row != row_bed_obj) {
+    if (b10 != bed_shown10) {
         ui_anim_to(lbl_bed_cur, temp_anim_cb, bed_shown10, b10, UI_ANIM_SLOW, lv_anim_path_ease_out);
     }
     ext_shown10 = e10;
@@ -246,20 +271,23 @@ static lv_obj_t *create(void)
 
     /* 预设行 */
     static const char *names[] = {"PLA", "PETG", "ABS", "冷却"};
-    lv_obj_t *row = lv_obj_create(scr);
-    lv_obj_remove_style_all(row);
-    lv_obj_set_size(row, ui_content_w(), ui_px(36));
-    lv_obj_align(row, LV_ALIGN_BOTTOM_MID, 0, -ui_px(12));
-    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_column(row, gap, 0);
+    preset_row = lv_obj_create(scr);
+    lv_obj_remove_style_all(preset_row);
+    lv_obj_set_size(preset_row, ui_content_w(), ui_px(36));
+    lv_obj_align(preset_row, LV_ALIGN_BOTTOM_MID, 0, -ui_px(12));
+    lv_obj_set_flex_flow(preset_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(preset_row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(preset_row, gap, 0);
 
     int pw = (ui_content_w() - 3 * gap) / 4;
     for (int i = 0; i < 4; i++) {
-        lv_obj_t *b = theme_button(row, NULL, names[i], 0);
+        lv_obj_t *b = theme_button(preset_row, NULL, names[i], 0);
         lv_obj_set_size(b, pw, ui_px(34));
         lv_obj_add_event_cb(b, on_preset, LV_EVENT_CLICKED, (void *)(intptr_t)i);
     }
+
+    readonly_hint = theme_label(scr, "云端监视 · 温度只读", THEME_FONT_S, THEME_COL_TEXT_DIM);
+    lv_obj_align(readonly_hint, LV_ALIGN_BOTTOM_MID, 0, -ui_px(20));
 
     return scr;
 }

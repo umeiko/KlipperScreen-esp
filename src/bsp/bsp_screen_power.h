@@ -20,6 +20,7 @@ typedef uint64_t (*bsp_screen_now_ms_cb_t)(void);
 void bsp_screen_power_init(bsp_backlight_apply_cb_t apply_backlight,
                            bsp_screen_now_ms_cb_t now_ms);
 void bsp_screen_power_poll(void);
+uint64_t bsp_screen_idle_ms(void);   /* 距上次输入的毫秒数 */
 
 #ifdef __cplusplus
 }

@@ -1,5 +1,5 @@
 site_name: KlipperScreen-esp 文档 / Docs
-site_description: Klipper 远程显示屏（ESP32 + Moonraker）项目文档 — board porting & contribution guides
+site_description: 跨平台 3D 打印机显示与控制软件（ESP32 / Windows / macOS，Klipper / Moonraker + 拓竹云端监视）— board porting & contribution guides
 site_url: https://umeiko.github.io/KlipperScreen-esp/
 repo_url: https://github.com/umeiko/KlipperScreen-esp
 edit_uri: edit/main/docs/
