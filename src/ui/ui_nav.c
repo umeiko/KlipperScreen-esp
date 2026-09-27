@@ -15,7 +15,13 @@ typedef struct {
 
 static nav_scope_t scopes[UI_NAV_SCOPE_MAX];
 static lv_group_t *active_group;
-static lv_group_t *modal_stack[UI_NAV_MODAL_MAX];
+
+typedef struct {
+    lv_group_t *restore;         /* 弹层结束后要恢复的下层组 */
+    lv_group_t *modal;           /* 弹层自己的组（cancel 钩子按它索引） */
+    ui_nav_cancel_cb_t cancel;
+} modal_entry_t;
+static modal_entry_t modal_stack[UI_NAV_MODAL_MAX];
 static unsigned modal_depth;
 static lv_obj_t *global_obj;
 static bool global_enabled;
@@ -58,6 +64,7 @@ static int SDLCALL desktop_keyboard_watch(void *userdata, SDL_Event *event)
     switch (key) {
     case SDLK_BACKSPACE: input_event = UI_DESKTOP_INPUT_BACKSPACE; break;
     case SDLK_DELETE:    input_event = UI_DESKTOP_INPUT_DELETE;    break;
+    case SDLK_F1:
     case SDLK_RETURN:
     case SDLK_KP_ENTER:  input_event = UI_DESKTOP_INPUT_READY;     break;
     case SDLK_ESCAPE:    input_event = UI_DESKTOP_INPUT_CANCEL;    break;
@@ -66,7 +73,7 @@ static int SDLCALL desktop_keyboard_watch(void *userdata, SDL_Event *event)
         return 0;
     case SDLK_RIGHT:
         if (desktop_textarea) lv_textarea_cursor_right(desktop_textarea);
-        return 0;
+        return 0;   /* 会话期间方向键归导航（buttons_sdl_watch 已喂语义层），不动光标 */
     case SDLK_HOME:
         if (desktop_textarea) lv_textarea_set_cursor_pos(desktop_textarea, 0);
         return 0;
@@ -111,7 +118,7 @@ static void desktop_input_start(void)
 static void focus_changed(lv_group_t *group)
 {
     lv_obj_t *obj = lv_group_get_focused(group);
-    if (!obj) return;
+    if (!obj || obj == global_obj) return;
 
     /*
      * The title bar lives on layer_top and visually covers the top of every
@@ -223,7 +230,126 @@ void ui_nav_register_obj(lv_obj_t *obj)
 
     /* Static page controls are built before the page root can be attached. */
     lv_group_t *group = lv_group_get_default();
-    if (group) lv_group_add_obj(group, obj);
+    if (group)
+        lv_group_add_obj(group, obj);
+}
+
+/* ---------- 方向键策略标记（白名单：空间导航 / 列表导航） ---------- */
+#define UI_NAV_GROUP_FLAG_MAX 8
+typedef struct { lv_group_t *group; bool spatial; bool list; } group_flag_t;
+static group_flag_t group_flags[UI_NAV_GROUP_FLAG_MAX];
+
+static group_flag_t *group_flag_slot(lv_group_t *group, bool alloc)
+{
+    if (!group) return NULL;
+    int free_i = -1;
+    for (unsigned i = 0; i < UI_NAV_GROUP_FLAG_MAX; i++) {
+        if (group_flags[i].group == group) return &group_flags[i];
+        if (!group_flags[i].group && free_i < 0) free_i = (int)i;
+    }
+    if (!alloc || free_i < 0) return NULL;
+    group_flags[free_i].group = group;
+    group_flags[free_i].spatial = group_flags[free_i].list = false;
+    return &group_flags[free_i];
+}
+
+void ui_nav_group_set_spatial(lv_group_t *group, bool en)
+{
+    group_flag_t *s = group_flag_slot(group, en);
+    if (!s) return;
+    s->spatial = en;
+    if (!s->spatial && !s->list) s->group = NULL;
+}
+
+void ui_nav_group_set_list(lv_group_t *group, bool en)
+{
+    group_flag_t *s = group_flag_slot(group, en);
+    if (!s) return;
+    s->list = en;
+    if (!s->spatial && !s->list) s->group = NULL;
+}
+
+bool ui_nav_group_is_spatial(lv_group_t *group)
+{
+    group_flag_t *s = group_flag_slot(group, false);
+    return s && s->spatial;
+}
+
+bool ui_nav_group_is_list(lv_group_t *group)
+{
+    group_flag_t *s = group_flag_slot(group, false);
+    return s && s->list;
+}
+
+/* 候选扫描：禁用/隐藏对象始终跳过（与 LVGL 线性步行一致）。
+   strict 轮要求正交方向有投影重叠（网格行列内的严格邻居，整宽卡片不会被
+   左右键穿走）；网格中有灰色禁用项时严格邻居可能不存在（焦点被困死），
+   此时放宽为「该方向上最近的可选对象」（轴向距离 + 正交偏移*3），保证
+   任何可达方向上焦点都能落到某个可选项。 */
+static lv_obj_t *spatial_scan(lv_group_t *group, lv_obj_t *cur, const lv_area_t *a,
+                              uint32_t lv_key_dir, bool strict)
+{
+    lv_obj_t *best = NULL;
+    int32_t best_score = INT32_MAX;
+    uint32_t count = lv_group_get_obj_count(group);
+    for (uint32_t i = 0; i < count; i++) {
+        lv_obj_t *cand = lv_group_get_obj_by_index(group, i);
+        if (!cand || cand == cur) continue;
+        if (lv_obj_get_state(cand) & LV_STATE_DISABLED) continue;
+        bool hidden = false;
+        for (lv_obj_t *p = cand; p; p = lv_obj_get_parent(p)) {
+            if (lv_obj_has_flag(p, LV_OBJ_FLAG_HIDDEN)) { hidden = true; break; }
+        }
+        if (hidden) continue;
+
+        lv_area_t b;
+        lv_obj_get_coords(cand, &b);
+        int32_t primary, ortho;
+        switch (lv_key_dir) {
+        case LV_KEY_LEFT:
+            if (strict && (b.y1 > a->y2 || b.y2 < a->y1)) continue;
+            primary = (a->x1 + a->x2 - b.x1 - b.x2) / 2;
+            ortho = LV_ABS((b.y1 + b.y2) - (a->y1 + a->y2)) / 2;
+            break;
+        case LV_KEY_RIGHT:
+            if (strict && (b.y1 > a->y2 || b.y2 < a->y1)) continue;
+            primary = (b.x1 + b.x2 - a->x1 - a->x2) / 2;
+            ortho = LV_ABS((b.y1 + b.y2) - (a->y1 + a->y2)) / 2;
+            break;
+        case LV_KEY_UP:
+            if (strict && (b.x1 > a->x2 || b.x2 < a->x1)) continue;
+            primary = (a->y1 + a->y2 - b.y1 - b.y2) / 2;
+            ortho = LV_ABS((b.x1 + b.x2) - (a->x1 + a->x2)) / 2;
+            break;
+        case LV_KEY_DOWN:
+            if (strict && (b.x1 > a->x2 || b.x2 < a->x1)) continue;
+            primary = (b.y1 + b.y2 - a->y1 - a->y2) / 2;
+            ortho = LV_ABS((b.x1 + b.x2) - (a->x1 + a->x2)) / 2;
+            break;
+        default:
+            return NULL;
+        }
+        if (primary <= 0) continue;
+        int32_t score = strict ? primary * 4 + ortho : primary + ortho * 3;
+        if (score < best_score) {
+            best_score = score;
+            best = cand;
+        }
+    }
+    return best;
+}
+
+void ui_nav_spatial_move(lv_group_t *group, uint32_t lv_key_dir)
+{
+    lv_obj_t *cur = group ? lv_group_get_focused(group) : NULL;
+    if (!cur) return;
+    lv_obj_update_layout(cur);
+    lv_area_t a;
+    lv_obj_get_coords(cur, &a);
+
+    lv_obj_t *best = spatial_scan(group, cur, &a, lv_key_dir, true);
+    if (!best) best = spatial_scan(group, cur, &a, lv_key_dir, false);
+    if (best) lv_group_focus_obj(best);
 }
 
 void ui_nav_activate(lv_group_t *group)
@@ -236,6 +362,20 @@ void ui_nav_activate(lv_group_t *group)
     bind_navigation_indevs(group);
     if (global_obj && global_enabled && modal_depth == 0)
         lv_group_add_obj(group, global_obj);
+}
+
+void ui_nav_group_destroy(lv_obj_t *root, lv_group_t *group)
+{
+    if (root) ui_nav_detach_scope(root);
+    if (!group) return;
+    ui_nav_group_set_spatial(group, false);
+    ui_nav_group_set_list(group, false);
+    if (active_group == group) {   /* 正常不会发生（只销毁已离开的面板），兜底解绑 */
+        active_group = NULL;
+        lv_group_set_default(NULL);
+        bind_navigation_indevs(NULL);
+    }
+    lv_group_delete(group);   /* 会把组内对象（含 global_obj）的回指清空 */
 }
 
 void ui_nav_refocus_visible(lv_group_t *group)
@@ -275,7 +415,10 @@ lv_group_t *ui_nav_modal_begin(void)
     if (modal_depth >= UI_NAV_MODAL_MAX) return NULL;
     lv_group_t *group = ui_nav_group_create();
     if (!group) return NULL;
-    modal_stack[modal_depth++] = active_group;
+    modal_stack[modal_depth].restore = active_group;
+    modal_stack[modal_depth].modal = group;
+    modal_stack[modal_depth].cancel = NULL;
+    modal_depth++;
     ui_nav_activate(group);
     return group;
 }
@@ -285,7 +428,7 @@ void ui_nav_modal_end(lv_group_t *group)
     if (!group) return;
     lv_group_t *restore = NULL;
     if (active_group == group && modal_depth > 0)
-        restore = modal_stack[--modal_depth];
+        restore = modal_stack[--modal_depth].restore;
 
     if (restore)
         ui_nav_activate(restore);
@@ -295,6 +438,43 @@ void ui_nav_modal_end(lv_group_t *group)
         bind_navigation_indevs(NULL);
     }
     lv_group_delete(group);
+}
+
+void ui_nav_modal_set_cancel(lv_group_t *group, ui_nav_cancel_cb_t cb)
+{
+    for (unsigned i = 0; i < modal_depth; i++) {
+        if (modal_stack[i].modal == group) {
+            modal_stack[i].cancel = cb;
+            return;
+        }
+    }
+}
+
+bool ui_nav_modal_cancel_top(void)
+{
+    if (modal_depth == 0) return false;
+    ui_nav_cancel_cb_t cb = modal_stack[modal_depth - 1].cancel;
+    if (cb) {
+        cb();   /* 回调内部走 ui_nav_modal_end 完成出栈 */
+    } else {
+        lv_obj_t *f = active_group ? lv_group_get_focused(active_group) : NULL;
+        if (f) lv_obj_send_event(f, LV_EVENT_CANCEL, NULL);
+    }
+    return true;
+}
+
+lv_group_t *ui_nav_active_group(void)
+{
+    return active_group;
+}
+
+bool ui_desktop_input_active(void)
+{
+#ifndef ESP_PLATFORM
+    return desktop_textarea != NULL || desktop_input_cb != NULL;
+#else
+    return false;
+#endif
 }
 
 void ui_desktop_textarea_begin(lv_obj_t *textarea)

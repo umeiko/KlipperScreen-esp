@@ -5,11 +5,14 @@
 #include "panel_mgr.h"
 #include "printer.h"
 #include "bsp_wifi.h"
+#include "widgets/confirm.h"
+#include "ui_anim.h"
 #include "bsp.h"
 #include <time.h>
 
 static lv_obj_t *bar;
 static lv_obj_t *btn_back;
+static lv_obj_t *btn_motoroff;
 static lv_obj_t *lbl_title;
 static lv_obj_t *lbl_wifi;
 static lv_obj_t *lbl_ext;
@@ -28,6 +31,19 @@ static void back_cb(lv_event_t *e)
     panel_mgr_back();
 }
 
+static void do_motoroff(void *ud)
+{
+    LV_UNUSED(ud);
+    printer_motors_off();   /* M84 */
+    ui_toast("已关闭电机（M84）", THEME_COL_WARN);
+}
+
+static void motoroff_cb(lv_event_t *e)
+{
+    LV_UNUSED(e);
+    confirm_open("确认关闭电机？\n所有步进电机将失去保持力矩（M84）", "关闭电机", do_motoroff, NULL);
+}
+
 void titlebar_init(void)
 {
     lv_obj_t *top = lv_layer_top();
@@ -44,6 +60,16 @@ void titlebar_init(void)
     lv_obj_set_size(btn_back, ui_px(64), THEME_TITLEBAR_H - ui_px(4));   /* 宽一点好点（电阻屏精度差） */
     lv_obj_align(btn_back, LV_ALIGN_LEFT_MID, 0, 0);
     lv_obj_add_event_cb(btn_back, back_cb, LV_EVENT_CLICKED, NULL);
+
+    /* 右上角关闭电机按钮（M84）：默认隐藏，仅移动面板经 titlebar_show_motoroff 打开 */
+    btn_motoroff = theme_button(bar, NULL, NULL, 0);
+    lv_obj_set_size(btn_motoroff, ui_px(44), THEME_TITLEBAR_H - ui_px(4));
+    lv_obj_align(btn_motoroff, LV_ALIGN_RIGHT_MID, -ui_px(2), 0);
+    lv_obj_add_event_cb(btn_motoroff, motoroff_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *ic_motor = theme_img(btn_motoroff, ui_icon(&img_motor_off, &img_motor_off_36), THEME_COL_TEXT);
+    lv_obj_set_style_image_recolor_opa(ic_motor, LV_OPA_TRANSP, 0);
+    lv_obj_center(ic_motor);
+    lv_obj_add_flag(btn_motoroff, LV_OBJ_FLAG_HIDDEN);
 
     /* WiFi 连接状态小图标（左侧，返回键之后） */
     bsp_wifi_init();   /* 幂等；提前把后端 WiFi 轮询拉起来 */
@@ -94,6 +120,13 @@ void titlebar_init(void)
 }
 
 lv_obj_t *titlebar_back_button(void) { return btn_back; }
+lv_obj_t *titlebar_motoroff_button(void) { return btn_motoroff; }
+
+void titlebar_show_motoroff(int show)
+{
+    if (show) lv_obj_remove_flag(btn_motoroff, LV_OBJ_FLAG_HIDDEN);
+    else      lv_obj_add_flag(btn_motoroff, LV_OBJ_FLAG_HIDDEN);
+}
 
 void titlebar_show_temps(int show)
 {

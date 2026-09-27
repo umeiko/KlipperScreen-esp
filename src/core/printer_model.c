@@ -15,6 +15,10 @@
 #include "bambu_cloud.h"
 #include "bambu_monitor.h"
 #include "bsp_wifi.h"
+#include "file_list_stream.h"
+#ifdef ESP_PLATFORM
+#include "moonraker_files_esp32.h"
+#endif
 
 #include "cJSON.h"
 #include "lvgl.h"
@@ -236,6 +240,12 @@ void printer_home(int axis)
     klipper_gcode_script(g);
 }
 
+void printer_motors_off(void)
+{
+    if (!klipper_active()) return;
+    klipper_gcode_script("M84");
+}
+
 void printer_extrude(float mm)
 {
     if (!klipper_active()) return;
@@ -251,52 +261,46 @@ void printer_print_cancel(void) { if (klipper_active()) klipper_print_cancel(); 
 void printer_emergency_stop(void)  { if (klipper_active()) klipper_emergency_stop(); }
 void printer_firmware_restart(void){ if (klipper_active()) klipper_firmware_restart(); }
 
-/* ---------- GCode 文件列表 ----------
- * server.files.list {"root":"gcodes"} → moonraker_rpc 应答在 LVGL 上下文
- * 回到这里解析，再转发给面板回调。同时只允许一个在途请求（单面板使用场景）。 */
+/* Bounded GCode pages: ESP32 uses an independent streaming HTTP worker.
+ * Desktop transports retain RPC but parse its result one record at a time.
+ * One active request; page lifetime is limited to the callback, stale replies
+ * are rejected by generation, and timeout is polled without status traffic. */
+#define FILES_REQ_TIMEOUT_MS 25000
 static struct {
     printer_files_cb cb;
     void *ud;
     bool in_flight;
+    uint32_t start_ms;
+    uintptr_t generation;
+    unsigned offset;
 } files_req;
 
+/* 在途请求失败收尾：清标记并回调失败（count=-1）。LVGL 上下文调用。 */
+static void files_req_fail(void)
+{
+    printer_files_cb cb = files_req.cb;
+    void *ud = files_req.ud;
+    printer_files_cancel();
+    if (cb) cb(NULL, ud);
+}
+
+#ifndef ESP_PLATFORM
 static void on_files_list(char *json, void *ud)
 {
-    (void)ud;
+    if (!files_req.in_flight || (uintptr_t)ud != files_req.generation) { free(json); return; }
     printer_files_cb cb = files_req.cb;
     void *cb_ud = files_req.ud;
     files_req.in_flight = false;
 
-    printer_file_t *files = NULL;
-    int count = 0;
-
-    cJSON *arr = json ? cJSON_Parse(json) : NULL;
+    file_list_stream_t stream;
+    file_list_stream_init(&stream, files_req.offset);
+    bool ok = json && file_list_stream_feed(&stream, json, strlen(json)) && file_list_stream_finish(&stream);
     free(json);
-    if (!arr) count = -1;   /* RPC 错误/解析失败：区别于"空列表" */
-    if (arr) {
-        int n = cJSON_GetArraySize(arr);
-        files = n > 0 ? calloc(n, sizeof(printer_file_t)) : NULL;
-        cJSON *it;
-        cJSON_ArrayForEach(it, arr) {
-            if (!files) break;
-            cJSON *path = cJSON_GetObjectItem(it, "path");
-            cJSON *size = cJSON_GetObjectItem(it, "size");
-            if (!cJSON_IsString(path) || !cJSON_IsNumber(size)) continue;   /* 目录无 size，跳过 */
-            if (path->valuestring[0] == '.') continue;                      /* 隐藏文件 */
-            printer_file_t *f = &files[count++];
-            strncpy(f->name, path->valuestring, sizeof(f->name) - 1);
-            f->size = (uint32_t)size->valuedouble;
-            cJSON *mod = cJSON_GetObjectItem(it, "modified");
-            f->modified = cJSON_IsNumber(mod) ? mod->valuedouble : 0;
-        }
-        cJSON_Delete(arr);
-    }
-
-    if (cb) cb(files, count, cb_ud);
-    else    free(files);
+    if (cb) cb(ok ? &stream.page : NULL, cb_ud);
 }
+#endif
 
-bool printer_files_refresh(printer_files_cb cb, void *ud)
+bool printer_files_refresh(unsigned offset, printer_files_cb cb, void *ud)
 {
     if (!klipper_active() || !cb || files_req.in_flight ||
         M.state == PRINTER_STATE_DISCONNECTED)
@@ -304,11 +308,46 @@ bool printer_files_refresh(printer_files_cb cb, void *ud)
     files_req.cb = cb;
     files_req.ud = ud;
     files_req.in_flight = true;
-    if (!moonraker_rpc("server.files.list", "{\"root\":\"gcodes\"}", on_files_list, NULL)) {
+    files_req.start_ms = lv_tick_get();
+    files_req.offset = offset;
+    files_req.generation++;
+#ifdef ESP_PLATFORM
+    bool started = moonraker_files_start(offset);
+#else
+    bool started = moonraker_rpc("server.files.list", "{\"root\":\"gcodes\"}", on_files_list,
+                                 (void *)files_req.generation);
+#endif
+    if (!started) {
         files_req.in_flight = false;
         return false;
     }
     return true;
+}
+
+void printer_files_cancel(void)
+{
+    files_req.in_flight = false;
+    files_req.cb = NULL;
+    files_req.generation++;
+#ifdef ESP_PLATFORM
+    moonraker_files_cancel();
+#endif
+}
+
+void printer_files_poll(void)
+{
+    if (!files_req.in_flight) return;
+#ifdef ESP_PLATFORM
+    printer_file_page_t page;
+    if (moonraker_files_poll(&page)) {
+        printer_files_cb cb = files_req.cb;
+        void *ud = files_req.ud;
+        files_req.in_flight = false;
+        if (cb) cb(page.count < 0 ? NULL : &page, ud);
+        return;
+    }
+#endif
+    if (lv_tick_elaps(files_req.start_ms) > FILES_REQ_TIMEOUT_MS) files_req_fail();
 }
 
 void printer_file_delete(const char *name)
@@ -346,7 +385,11 @@ static void evaluate_state(void)
 void printer_model_set_online(int online)
 {
     M.online = online;
-    if (!online) M.rtt_ms = 0;   /* 断线后延迟值失效 */
+    if (!online) {
+        M.rtt_ms = 0;   /* 断线后延迟值失效 */
+        /* 断线时底层 clear_pending 直接丢在途请求且无回调，这里补失败收尾 */
+        if (files_req.in_flight) files_req_fail();
+    }
     evaluate_state();
 }
 
@@ -375,6 +418,11 @@ static void jstr(cJSON *obj, const char *key, char *out, size_t len)
 
 void printer_model_apply_status_json(char *json_heap)
 {
+    /* 文件列表在途请求的超时兜底：应答被底层整条丢弃时（大列表 OOM 等）
+     * 主动判失败，防面板卡死在"加载中"。状态推送在线时约 4Hz，顺带巡检。 */
+    if (files_req.in_flight && lv_tick_elaps(files_req.start_ms) > FILES_REQ_TIMEOUT_MS)
+        files_req_fail();
+
     cJSON *status = cJSON_Parse(json_heap);
     free(json_heap);
     if (!status) return;
@@ -444,6 +492,7 @@ static void tick_autostart(lv_timer_t *tm)
     LV_UNUSED(tm);
     static uint32_t last_bambu_device_refresh;
     if (settings_load_machine_mode() == MACHINE_MODE_BAMBU) {
+        moonraker_stop();   /* 幂等：Bambu 模式下 Moonraker 不得持有连接（后端互斥） */
         if (settings_load_bambu_link() == BAMBU_LINK_CLOUD_MONITOR) {
             bambu_cloud_snapshot_t cloud;
             bambu_device_conf_t selected;

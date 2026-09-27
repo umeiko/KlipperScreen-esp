@@ -421,6 +421,22 @@ bool settings_save_display_rotate(int en)    { return ksc_save_int("display_rota
 int  settings_load_saver_delay(void)         { int s = ksc_load_int("saver_delay", 5); if (s < 1) s = 1; if (s > 60) s = 60; return s; }
 bool settings_save_saver_delay(int sec)      { if (sec < 1) sec = 1; if (sec > 60) sec = 60; return ksc_save_int("saver_delay", sec); }
 
+int settings_load_display_color_order(void)
+{
+    char val[16];
+    char *buf = conf_load("klipperscreen.conf");
+    if (!buf) return 0;
+    bool got = kv_get(buf, "display_color_order", val, sizeof(val));
+    free(buf);
+    if (!got || strlen(val) != 1 || val[0] < "0"[0] || val[0] > "2"[0]) return 0;
+    return val[0] - "0"[0];
+}
+
+bool settings_save_display_color_order(int order)
+{
+    return order >= 0 && order <= 2 && ksc_save_int("display_color_order", order);
+}
+
 void settings_load_theme(char *out, size_t len)
 {
     if (len) { out[0] = 0; strncat(out, "dark", len - 1); }   /* 缺省深色 */
