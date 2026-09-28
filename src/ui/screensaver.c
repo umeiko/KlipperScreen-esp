@@ -4,6 +4,8 @@
 #include "bsp_screen_power.h"
 #include "assets/saver_frames.h"
 #include "app_settings.h"
+#include <stdio.h>
+#include "esp_heap_caps.h"
 
 /* 延时从设置读（1..60秒），缺省5秒 */
 #define SAVER_CHG_MV    4210             /* 充电电压 > 4.21V 触发 */
@@ -17,11 +19,35 @@ static int cur_frame;
 static int active;
 static lv_img_dsc_t dsc[3];
 
+/* 后台壁纸：/littlefs/wallpaper/wall_0..2.raw（RGB565 320x240），缺帧回退内置动图 */
+static uint8_t *wall_buf[3];
+
+static void reload_wallpaper(void)
+{
+    for (int i = 0; i < 3; i++) {
+        char path[64];
+        snprintf(path, sizeof(path), "/littlefs/wallpaper/wall_%d.raw", i);
+        FILE *f = fopen(path, "rb");
+        if (f) {
+            if (!wall_buf[i])
+                wall_buf[i] = heap_caps_malloc(320 * 240 * 2, MALLOC_CAP_SPIRAM);
+            if (wall_buf[i]) {
+                if (fread(wall_buf[i], 2, 320 * 240, f) == 320 * 240)
+                    dsc[i].data = wall_buf[i];
+            }
+            fclose(f);
+        } else {
+            dsc[i].data = (const uint8_t *)saver_frames[i];   /* 回退内置帧 */
+        }
+    }
+}
+
 static void show(void)
 {
     if (active) return;
     active = 1;
     cur_frame = 0;
+    reload_wallpaper();   /* 每次触发前重读壁纸，后台更换后下次屏保即生效 */
     lv_img_set_src(img, &dsc[0]);
     lv_obj_remove_flag(scr_layer, LV_OBJ_FLAG_HIDDEN);
     lv_timer_resume(frame_timer);

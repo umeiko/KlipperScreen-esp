@@ -120,6 +120,7 @@ static void ensure_init(void)
     esp_netif_init();
     esp_event_loop_create_default();
     esp_netif_create_default_wifi_sta();
+    esp_netif_create_default_wifi_ap();   /* 后台 SoftAP 兜底用（不启动无副作用） */
 
     esp_timer_create_args_t t = {.callback = reconnect_cb, .name = "wifi_reconn"};
     esp_timer_create(&t, &W.reconnect_timer);
@@ -172,6 +173,31 @@ void bsp_wifi_init(void)
     ensure_init();
 }
 
+void bsp_wifi_start_ap(const char *ssid, const char *password)
+{
+    ensure_init();
+    wifi_config_t ap = { 0 };
+    strlcpy((char *)ap.ap.ssid, ssid, sizeof(ap.ap.ssid));
+    ap.ap.ssid_len = (uint8_t)strlen(ssid);
+    ap.ap.channel = 1;
+    ap.ap.max_connection = 4;
+    if (password && password[0]) {
+        strlcpy((char *)ap.ap.password, password, sizeof(ap.ap.password));
+        ap.ap.authmode = WIFI_AUTH_WPA2_PSK;
+    } else {
+        ap.ap.authmode = WIFI_AUTH_OPEN;
+    }
+    /* 顺序必须：先切模式（含 AP 接口）再配置 AP；wifi 可能已 start（STA），
+       esp_wifi_set_mode 在 started 状态下允许调用，start 重复调用返回 ESP_ERR_WIFI_STATE 需忽略 */
+    esp_err_t r = esp_wifi_set_mode(WIFI_MODE_APSTA);
+    if (r != ESP_OK && r != ESP_ERR_WIFI_NOT_INIT) { ESP_LOGE(TAG, "set_mode APSTA: %s", esp_err_to_name(r)); }
+    r = esp_wifi_set_config(WIFI_IF_AP, &ap);
+    if (r != ESP_OK && r != ESP_ERR_WIFI_NOT_INIT) { ESP_LOGE(TAG, "set_config AP: %s", esp_err_to_name(r)); }
+    r = esp_wifi_start();
+    if (r != ESP_OK && r != ESP_ERR_WIFI_STATE) { ESP_LOGE(TAG, "wifi start: %s", esp_err_to_name(r)); }
+    W.manual = false;
+    ESP_LOGI(TAG, "SoftAP '%s' up at 192.168.4.1 (APSTA)", ssid);
+}
 void bsp_wifi_scan_start(void)
 {
     ensure_init();

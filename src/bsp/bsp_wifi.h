@@ -48,6 +48,9 @@ int bsp_wifi_scan_poll(bsp_wifi_ap_t *out, int max);
 /* 发起连接；open 网络传 password=NULL。自动取消正在进行的连接 */
 void bsp_wifi_connect(const char *ssid, const char *password);
 
+/* 启动 SoftAP 热点（供首次配置/后台无网时访问）；STA 模式不受影响，AP+STA 共存 */
+void bsp_wifi_start_ap(const char *ssid, const char *password);
+
 bsp_wifi_state_t bsp_wifi_status(void);
 
 /* 当前是否真的连着 WiFi（不依赖本 UI 的连接流程；桌面端为后台轮询缓存） */

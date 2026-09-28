@@ -4,6 +4,7 @@
 #include "boot_anim.h"
 #include "app_settings.h"
 #include "screensaver.h"
+#include "web_config.h"
 
 #if CONFIG_BOARD_ESP32S3_ST7789
 #include "moonraker_client.h"
@@ -60,6 +61,7 @@ void app_main(void)
     wifi_conf_t wc;
     if (settings_load_wifi(&wc))
         bsp_wifi_connect(wc.ssid, wc.pass[0] ? wc.pass : NULL);
+    web_config_start();      /* 手机后台配置页 :80 */
 
     debug_cli_start();       /* 串口调试命令行 */
 }

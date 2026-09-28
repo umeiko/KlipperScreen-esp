@@ -8,3 +8,4 @@ dependencies:
   espressif/esp_lcd_touch_ft5x06: "^1.0.6"
   joltwallet/littlefs: "^1.20.0"
   espressif/esp_websocket_client: "^1.5.0"
+  espressif/esp_jpeg: "^1.0.0"
