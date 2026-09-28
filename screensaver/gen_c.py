@@ -12,7 +12,7 @@ def to_rgb565_bytes(im):
     for y in range(im.height):
         for x in range(im.width):
             r, g, b = px[x, y]
-            rgb = ((b & 0xF8) << 8) | ((g & 0xFC) << 3) | (r >> 3)   # BGR565
+            rgb = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)   # RGB565（面板已配 RGB 序）
             out.append(rgb & 0xFF)
             out.append((rgb >> 8) & 0xFF)
     return out
