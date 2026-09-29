@@ -48,6 +48,7 @@ static const char PAGE_HEAD[] =
     "button.sec{background:#262c3a;color:#8b93a1;border:1px solid #3a4152}"
     "button.danger{background:#e74c3c;color:#fff}"
     ".tip{font-size:12px;color:#8b93a1;margin-top:8px}"
+    ".upbtn{display:block;margin:6px 0;padding:10px;border:1px solid #3a4152;border-radius:8px;background:#1f2733;color:#dce6f0;text-align:center;font-size:13px;font-weight:600}"
     ".row{display:flex;gap:8px;margin:12px 0}.row button{flex:1;margin:0;padding:10px;font-size:14px}"
     "#status{margin-top:12px;padding:10px;border-radius:8px;display:none;font-size:13px}"
     "#status.ok{display:block;background:#1b2e22;color:#7ee2a8}#status.err{display:block;background:#3a1d1d;color:#f5a3a3}"
@@ -73,12 +74,12 @@ static const char PAGE_FORM[] =
     "<button onclick='saveCfg()'>保存并重启</button>"
     "<h2>屏保壁纸</h2>"
     "<div class='tip'>上传 1~3 张图（JPG），屏保按帧循环播放；不够 3 张时用内置动图补足；恢复默认动图请点下方按钮。</div>"
-    "<label for='f0'>第 1 帧</label><input id='f0' type='file' accept='image/jpeg,.jpg,.jpeg' onchange='up(0)'>"
-    "<label for='f1'>第 2 帧（可选）</label><input id='f1' type='file' accept='image/jpeg,.jpg,.jpeg' onchange='up(1)'>"
-    "<label for='f2'>第 3 帧（可选）</label><input id='f2' type='file' accept='image/jpeg,.jpg,.jpeg' onchange='up(2)'>"
-    "<button onclick='up(0)'>上传第 1 帧</button>"
-    "<button class='sec' onclick='up(1)'>上传第 2 帧</button>"
-    "<button class='sec' onclick='up(2)'>上传第 3 帧</button>"
+    "<label class='upbtn' for='f0'>点击选择第 1 帧图片</label><input id='f0' type='file' accept='image/jpeg,.jpg,.jpeg' onchange='up(0)'>"
+    "<label class='upbtn' for='f1'>点击选择第 2 帧图片（可选）</label><input id='f1' type='file' accept='image/jpeg,.jpg,.jpeg' onchange='up(1)'>"
+    "<label class='upbtn' for='f2'>点击选择第 3 帧图片（可选）</label><input id='f2' type='file' accept='image/jpeg,.jpg,.jpeg' onchange='up(2)'>"
+    "<button onclick='pickFile(0)'>上传第 1 帧</button>"
+    "<button class='sec' onclick='pickFile(1)'>上传第 2 帧</button>"
+    "<button class='sec' onclick='pickFile(2)'>上传第 3 帧</button>"
     "<button class='danger' onclick='clearWall()'>恢复默认动图（删除壁纸）</button>"
     "<div id='status'></div>";
 
@@ -111,6 +112,7 @@ static const char PAGE_JS[] =
     "try{var r=await fetch('/api/config',{method:'POST',body:b});"
     "show(await r.text(),r.ok);if(r.ok)show('保存成功，3 秒后自动重启…',true)}"
     "catch(e){show('网络错误: '+e,false)}}"
+    "function pickFile(i){var f=document.getElementById('f'+i);if(!f.files[0]){f.click();return}up(i)}"
     "async function up(i){var f=document.getElementById('f'+i);if(!f.files[0]){alert('请先选择第 '+(i+1)+' 张图片');return}"
     "show('第 '+(i+1)+' 帧上传中…',true);"
     "try{var r=await fetch('/api/wallpaper?idx='+i,{method:'POST',body:f.files[0]});"
@@ -213,6 +215,7 @@ static esp_err_t handle_root(httpd_req_t *req)
     }
     ESP_LOGI(TAG, "PAGE total=%d", (int)strlen(s_page));
     httpd_resp_set_type(req, "text/html; charset=utf-8");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache");   /* 防手机缓存旧页面 */
     esp_err_t e = httpd_resp_sendstr(req, s_page);
     ESP_LOGI(TAG, "PAGE send: %s", esp_err_to_name(e));
     return ESP_OK;
