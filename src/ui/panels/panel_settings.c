@@ -6,7 +6,6 @@
 #include "../lang.h"
 #include "../panel_mgr.h"
 #include "version.h"
-#include "bsp_wifi.h"
 
 static void open_wifi(lv_event_t *e)
 {
@@ -32,15 +31,6 @@ static void open_language(lv_event_t *e)
     panel_mgr_open("language");
 }
 
-static lv_obj_t *lbl_ip;
-
-static void tick(void)
-{
-    char ip[40] = "";
-    if (!bsp_wifi_current(NULL, 0, ip, sizeof(ip))) ip[0] = 0;
-    lv_label_set_text(lbl_ip, ip[0] ? ip : "--");
-}
-
 static lv_obj_t *create(void)
 {
     lv_obj_t *scr = lv_obj_create(NULL);
@@ -62,11 +52,6 @@ static lv_obj_t *create(void)
     theme_row_link(scr, "显示设置", "", y, open_display);
     y += step;
 
-    /* 本机IP（WiFi连接后显示局域网地址，进后台换壁纸/配置用） */
-    lv_obj_t *row_ip = theme_row(scr, "本机IP", "--", y);
-    lbl_ip = lv_obj_get_child(row_ip, 1);   /* 0=标签 1=值 */
-    y += step;
-
     theme_row(scr, "版本", KR_VERSION, y);
 
     return scr;
@@ -76,5 +61,5 @@ panel_def_t panel_settings_def = {
     .name = "settings", .title = "设置",
     .create = create,
     .on_show = NULL,
-    .on_tick = tick,
+    .on_tick = NULL,
 };
