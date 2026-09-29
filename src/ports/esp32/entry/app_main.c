@@ -57,11 +57,12 @@ void app_main(void)
     bsp_hotkey_set_select_handler(on_hotkey_select);
 #endif
 
-    /* WiFi 自动回连 */
+    /* 先开 SoftAP（定好 APSTA 模式），再发起 STA 回连——顺序不能反：
+       若先 connect 再 set_mode(APSTA)，模式切换会打断进行中的 STA 连接 */
+    web_config_start();      /* 手机后台配置页 :80（SoftAP 常开） */
     wifi_conf_t wc;
     if (settings_load_wifi(&wc))
         bsp_wifi_connect(wc.ssid, wc.pass[0] ? wc.pass : NULL);
-    web_config_start();      /* 手机后台配置页 :80 */
 
     debug_cli_start();       /* 串口调试命令行 */
 }

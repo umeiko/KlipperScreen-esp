@@ -31,7 +31,9 @@
 #include "esp_littlefs.h"
 #include "bsp_screen_power.h"
 #include "bsp_sleep_button.h"
+#include "bsp_wifi.h"
 #include "esp_log.h"
+extern void ui_toast(const char *text, uint32_t accent_hex);   /* src/ui/ui_anim.h */
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "nvs_flash.h"
@@ -243,6 +245,32 @@ static void hotkey_poll(void)
     }
 }
 
+/* ---------- 长按息屏键 5s 开启 SoftAP（手机后台配置页） ---------- */
+#define SLEEP_KEY_LONG_MS   5000
+static int64_t sleep_key_down_since = -1;
+static bool    sleep_key_long_fired = false;
+
+static void sleep_key_long_poll(void)
+{
+    int64_t now = now_ms();
+    int lvl = gpio_get_level(PIN_SLEEP_BTN);
+    if (lvl == 0) {   /* 按下（低有效） */
+        if (sleep_key_down_since < 0) {
+            sleep_key_down_since = now;
+            sleep_key_long_fired = false;
+        } else if (!sleep_key_long_fired && now - sleep_key_down_since >= SLEEP_KEY_LONG_MS) {
+            sleep_key_long_fired = true;
+            ESP_LOGI(TAG, "Sleep key long-press 5s: enable SoftAP KlipperScreen-AP");
+            bsp_wifi_start_ap("KlipperScreen-AP", "12345678");
+            bsp_screen_activity();   /* 唤醒屏幕给反馈 */
+            ui_toast("热点已开启 KlipperScreen-AP", 0x00A651);
+        }
+    } else {
+        sleep_key_down_since = -1;
+        sleep_key_long_fired = false;
+    }
+}
+
 static void lvgl_task(void *arg)
 {
     for (;;) {
@@ -250,6 +278,7 @@ static void lvgl_task(void *arg)
         lv_timer_handler();
         bsp_screen_power_poll();
         bsp_sleep_button_poll();
+        sleep_key_long_poll();
         hotkey_poll();
         extern void screensaver_poll(void);
         screensaver_poll();

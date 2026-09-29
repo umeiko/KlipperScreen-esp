@@ -84,18 +84,20 @@ static const char PAGE_FORM[] =
 
 static const char PAGE_JS[] =
     "<script>"
-    "var SLOT=0;var J=null;"
+    "var SLOT=0;var J=null;var E={};"
+    "function g(id){return document.getElementById(id).value}"
+    "function s_(id,v){document.getElementById(id).value=v}"
+    "function hl(){var bs=document.getElementById('slotrow').children;"
+    "for(var i=0;i<bs.length;i++){bs[i].style.background=(i===SLOT)?'#2d9cdb':'#262c3a'}}"
     "function show(t,ok){var s=document.getElementById('status');s.className=ok?'ok':'err';"
     "s.textContent=t;setTimeout(function(){s.style.display='none'},6000)}"
     "function fill(){if(!J||!J.slots)return;var m=J.slots[SLOT]||{};"
-    "document.getElementById('mode').value=m.mode||'klipper';"
-    "document.getElementById('name').value=m.name||'';"
-    "document.getElementById('host').value=m.host||'';"
-    "document.getElementById('port').value=m.port||7125;"
-    "document.getElementById('api_key').value=m.api_key||'';"
-    "var bs=document.getElementById('slotrow').children;"
-    "for(var i=0;i<bs.length;i++){bs[i].style.background=(i===SLOT)?'#2d9cdb':'#262c3a'}}"
-    "function pick(i){SLOT=i;fill()}"
+    "s_('mode',m.mode||'klipper');s_('name',m.name||'');s_('host',m.host||'');"
+    "s_('port',m.port||7125);s_('api_key',m.api_key||'');hl()}"
+    "function pick(i){E[SLOT]={mode:g('mode'),name:g('name'),host:g('host'),port:g('port'),api_key:g('api_key')};"
+    "SLOT=i;var v=E[i]||(J&&J.slots[i])||{};"
+    "s_('mode',v.mode||'klipper');s_('name',v.name||'');s_('host',v.host||'');"
+    "s_('port',v.port||7125);s_('api_key',v.api_key||'');hl()}"
     "async function saveCfg(){var b=new URLSearchParams();"
     "b.set('slot',SLOT);"
     "b.set('ssid',document.getElementById('ssid').value);"
@@ -179,17 +181,30 @@ static void scale_nearest(const uint16_t *src, int sw, int sh, uint16_t *dst)
 
 /* ---------------- HTTP 处理 ---------------- */
 
+static void log_req(httpd_req_t *req)
+{
+    ESP_LOGI(TAG, "REQ %s %s", req->method == HTTP_GET ? "GET" : "POST", req->uri);
+}
 static esp_err_t handle_root(httpd_req_t *req)
 {
+    log_req(req);
+    /* 三段合成一段发送，交由 httpd 自动处理长度 */
+    static char s_page[8192];
+    static bool s_built = false;
+    if (!s_built) {
+        snprintf(s_page, sizeof(s_page), "%s%s%s", PAGE_HEAD, PAGE_FORM, PAGE_JS);
+        s_built = true;
+    }
+    ESP_LOGI(TAG, "PAGE total=%d", (int)strlen(s_page));
     httpd_resp_set_type(req, "text/html; charset=utf-8");
-    httpd_resp_sendstr(req, PAGE_HEAD);
-    httpd_resp_sendstr(req, PAGE_FORM);
-    httpd_resp_sendstr(req, PAGE_JS);
+    esp_err_t e = httpd_resp_sendstr(req, s_page);
+    ESP_LOGI(TAG, "PAGE send: %s", esp_err_to_name(e));
     return ESP_OK;
 }
 
 static esp_err_t handle_status(httpd_req_t *req)
 {
+    log_req(req);
     wifi_conf_t w;
     char buf[2048];
     settings_load_wifi(&w);
@@ -223,6 +238,7 @@ static void reboot_cb(void *arg)
 
 static esp_err_t handle_config(httpd_req_t *req)
 {
+    log_req(req);
     char body[2048];
     int len = httpd_req_recv(req, body, sizeof(body) - 1);
     if (len <= 0) { httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "no body"); return ESP_OK; }
@@ -243,7 +259,16 @@ static esp_err_t handle_config(httpd_req_t *req)
     settings_load_wifi(&w);
     if (form_get(body, "ssid", v, sizeof(v)) && v[0]) { strncpy(w.ssid, v, sizeof(w.ssid) - 1); w.ssid[sizeof(w.ssid) - 1] = 0; w.valid = true; dirty = true; }
     if (form_get(body, "pass", v, sizeof(v)) && v[0]) { strncpy(w.pass, v, sizeof(w.pass) - 1); w.pass[sizeof(w.pass) - 1] = 0; w.valid = true; dirty = true; }
-    if (dirty) settings_save_wifi(&w);
+    if (dirty) {
+        if (settings_save_wifi(&w)) {
+            wifi_conf_t chk;
+            bool ok = settings_load_wifi(&chk);
+            ESP_LOGI(TAG, "wifi saved: ssid='%s' pass_len=%d readok=%d", chk.ssid,
+                     (int)strlen(chk.pass), ok ? 1 : 0);
+        } else {
+            ESP_LOGE(TAG, "wifi save FAILED (littlefs write)");
+        }
+    }
 
     moonraker_conf_t m;
     settings_load_moonraker_slot(slot, &m);
@@ -274,6 +299,7 @@ static esp_err_t handle_config(httpd_req_t *req)
 
 static esp_err_t handle_wallpaper(httpd_req_t *req)
 {
+    log_req(req);
     char query[64];
     if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK) {
         char val[16];
@@ -375,12 +401,15 @@ void web_config_start(void)
 {
     if (s_server) return;
 
-    /* 无 WiFi 配置时开 SoftAP，手机连热点后访问 192.168.4.1 完成首次配置 */
+    /* 有 WiFi 配置则不开热点（保存重启后热点关闭）；仅首次无配置时开热点引导配置。
+       运行中长按息屏键 5 秒可手动开启热点进后台。 */
     wifi_conf_t wc;
     bool have_wifi = settings_load_wifi(&wc) && wc.valid && wc.ssid[0];
     if (!have_wifi) {
         bsp_wifi_start_ap(AP_SSID, AP_PASS);
-        ESP_LOGW(TAG, "no wifi config -> SoftAP '%s' (%s), config page at http://192.168.4.1", AP_SSID, AP_PASS);
+        ESP_LOGW(TAG, "no wifi config -> SoftAP '%s' up, config page at http://192.168.4.1", AP_SSID);
+    } else {
+        ESP_LOGI(TAG, "wifi configured -> SoftAP off (long-press sleep key 5s to reopen)");
     }
 
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
