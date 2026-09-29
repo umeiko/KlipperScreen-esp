@@ -9,6 +9,7 @@
 #include "ui_anim.h"
 #include "bsp.h"
 #include <time.h>
+#include <stdio.h>
 
 static lv_obj_t *bar;
 static lv_obj_t *btn_back;
@@ -164,12 +165,25 @@ void titlebar_tick(void)
     }
     lv_label_set_text_fmt(lbl_ext, "%d" "\xC2\xB0", (int)(printer_temp_ext() + 0.5f));
     lv_label_set_text_fmt(lbl_bed, "%d" "\xC2\xB0", (int)(printer_temp_bed() + 0.5f));
-
     /* 连接中=橙，已连接=绿，未连接=灰 */
     uint32_t col = THEME_COL_TEXT_DIM;
     if (bsp_wifi_status() == BSP_WIFI_CONNECTING) col = THEME_COL_WARN;
     else if (bsp_wifi_connected())                col = THEME_COL_OK;
     lv_obj_set_style_text_color(lbl_wifi, theme_col(col), 0);
+
+    /* WiFi 刚连上：toast 提示后台地址（局域网可打开配置页/换壁纸） */
+    static bool was_conn = false;
+    bool conn = bsp_wifi_connected();
+    if (conn && !was_conn) {
+        char ip[40] = "";
+        bsp_wifi_current(NULL, 0, ip, sizeof(ip));
+        if (ip[0]) {
+            char msg[64];
+            snprintf(msg, sizeof(msg), "后台 http://%s", ip);
+            ui_toast(msg, THEME_COL_OK);
+        }
+    }
+    was_conn = conn;
 
     /* 电量 10 秒刷一次（ADC2 与 WiFi 互斥，频繁读会等锁） */
     if (lv_tick_get() - last_bat_tick > 10000) {
