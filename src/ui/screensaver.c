@@ -8,7 +8,7 @@
 #include "esp_heap_caps.h"
 
 /* 延时从设置读（1..60秒），缺省5秒 */
-#define SAVER_CHG_MV    4210             /* 充电电压 > 4.21V 触发 */
+#define SAVER_CHG_MV    4150             /* 充电电压 > 4.15V 触发 */
 #define SAVER_EXIT_MV    4100             /* 跌到 <= 4.1V 退出 */
 #define SAVER_FRAME_MS  600              /* 帧间隔 */
 
