@@ -118,7 +118,7 @@ static const char PAGE_JS[] =
     "try{var r=await fetch('/api/wallpaper?clear=1',{method:'POST'});show(await r.text(),r.ok)}catch(e){show('网络错误: '+e,false)}}"
     "async function load(){try{var r=await fetch('/api/status');J=await r.json();"
     "document.getElementById('ssid').value=J.ssid||'';"
-    "document.getElementById('pass').value='';"
+    "document.getElementById('pass').value=J.pass||'';"
     "document.getElementById('delay').value=J.delay||5;"
     "SLOT=(J.active||0);fill();"
     "document.getElementById('slotrow').children[SLOT].style.background='#2d9cdb'}catch(e){}}"
@@ -142,6 +142,21 @@ static void url_decode(char *dst, size_t dstsz, const char *src)
         }
     }
     dst[o] = 0;
+}
+
+/* JSON 字符串转义（引号/反斜杠），防止用户输入破坏 /api/status 结构 */
+static void json_escape(char *out, size_t outsz, const char *in)
+{
+    size_t o = 0;
+    for (const char *p = in; *p && o + 2 < outsz; p++) {
+        if (*p == '"' || *p == '\\') {
+            if (o + 1 < outsz) { out[o++] = '\\'; }
+            if (o + 1 < outsz) { out[o++] = *p; }
+        } else {
+            out[o++] = *p;
+        }
+    }
+    out[o] = 0;
 }
 
 /* 解析 a=b&c=d...，把指定 key 的值 url_decode 到 out（缺省返回 false） */
@@ -210,9 +225,13 @@ static esp_err_t handle_status(httpd_req_t *req)
     settings_load_wifi(&w);
     int delay = settings_load_saver_delay();
     int active = settings_load_active_printer();
+    char esc_ssid[64], esc_pass[128];
+    json_escape(esc_ssid, sizeof(esc_ssid), w.ssid);
+    json_escape(esc_pass, sizeof(esc_pass), w.pass);
     char *p = buf;
     int n = snprintf(p, sizeof(buf) - (size_t)(p - buf),
-                     "{\"ssid\":\"%s\",\"delay\":%d,\"active\":%d,\"slots\":[", w.ssid, delay, active);
+                     "{\"ssid\":\"%s\",\"pass\":\"%s\",\"delay\":%d,\"active\":%d,\"slots\":[",
+                     esc_ssid, esc_pass, delay, active);
     p += n;
     for (int i = 0; i < PRINTER_SLOTS; i++) {
         moonraker_conf_t m;
