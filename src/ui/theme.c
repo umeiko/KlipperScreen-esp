@@ -202,6 +202,7 @@ lv_obj_t *theme_row(lv_obj_t *parent, const char *key, const char *val, int y)
 
     lv_obj_t *v = theme_label(row, val, THEME_FONT_S, THEME_COL_TEXT_DIM);
     lv_obj_align(v, LV_ALIGN_RIGHT_MID, -ui_px(4), 0);
+    theme_focusable(row);   /* 只读行也可被编码器聚焦高亮，确认键无动作 */
     return row;
 }
 

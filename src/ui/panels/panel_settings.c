@@ -53,17 +53,6 @@ static lv_obj_t *create(void)
     theme_row_link(scr, "无线网络", "", y, open_wifi);
     y += step;
 
-    /* 本机IP（WiFi连接后显示局域网地址，进后台换壁纸/配置用） */
-    lv_obj_t *row_ip = theme_card(scr);
-    lv_obj_set_size(row_ip, ui_content_w(), ui_px(38));
-    lv_obj_align(row_ip, LV_ALIGN_TOP_MID, 0, y);
-    theme_label(row_ip, "本机IP", THEME_FONT_M, THEME_COL_TEXT);
-    lv_obj_t *k_ip = lv_obj_get_child(row_ip, 0);
-    lv_obj_align(k_ip, LV_ALIGN_LEFT_MID, ui_px(2), 0);
-    lbl_ip = theme_label(row_ip, "--", THEME_FONT_S, THEME_COL_TEXT_DIM);
-    lv_obj_align(lbl_ip, LV_ALIGN_RIGHT_MID, -ui_px(4), 0);
-    y += step;
-
     theme_row_link(scr, "打印机连接设置", "", y, open_moonraker);
     y += step;
 
@@ -71,6 +60,11 @@ static lv_obj_t *create(void)
     y += step;
 
     theme_row_link(scr, "显示设置", "", y, open_display);
+    y += step;
+
+    /* 本机IP（WiFi连接后显示局域网地址，进后台换壁纸/配置用） */
+    lv_obj_t *row_ip = theme_row(scr, "本机IP", "--", y);
+    lbl_ip = lv_obj_get_child(row_ip, 1);   /* 0=标签 1=值 */
     y += step;
 
     theme_row(scr, "版本", KR_VERSION, y);
