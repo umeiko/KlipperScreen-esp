@@ -6,6 +6,7 @@
 #include "../lang.h"
 #include "../panel_mgr.h"
 #include "version.h"
+#include "bsp_wifi.h"
 
 static void open_wifi(lv_event_t *e)
 {
@@ -31,6 +32,15 @@ static void open_language(lv_event_t *e)
     panel_mgr_open("language");
 }
 
+static lv_obj_t *lbl_ip;
+
+static void tick(void)
+{
+    char ip[40] = "";
+    if (!bsp_wifi_current(NULL, 0, ip, sizeof(ip))) ip[0] = 0;
+    lv_label_set_text(lbl_ip, ip[0] ? ip : "--");
+}
+
 static lv_obj_t *create(void)
 {
     lv_obj_t *scr = lv_obj_create(NULL);
@@ -42,6 +52,18 @@ static lv_obj_t *create(void)
 
     theme_row_link(scr, "无线网络", "", y, open_wifi);
     y += step;
+
+    /* 本机IP（WiFi连接后显示局域网地址，进后台换壁纸/配置用） */
+    lv_obj_t *row_ip = theme_card(scr);
+    lv_obj_set_size(row_ip, ui_content_w(), ui_px(38));
+    lv_obj_align(row_ip, LV_ALIGN_TOP_MID, 0, y);
+    theme_label(row_ip, "本机IP", THEME_FONT_M, THEME_COL_TEXT);
+    lv_obj_t *k_ip = lv_obj_get_child(row_ip, 0);
+    lv_obj_align(k_ip, LV_ALIGN_LEFT_MID, ui_px(2), 0);
+    lbl_ip = theme_label(row_ip, "--", THEME_FONT_S, THEME_COL_TEXT_DIM);
+    lv_obj_align(lbl_ip, LV_ALIGN_RIGHT_MID, -ui_px(4), 0);
+    y += step;
+
     theme_row_link(scr, "打印机连接设置", "", y, open_moonraker);
     y += step;
 
@@ -60,5 +82,5 @@ panel_def_t panel_settings_def = {
     .name = "settings", .title = "设置",
     .create = create,
     .on_show = NULL,
-    .on_tick = NULL,
+    .on_tick = tick,
 };
