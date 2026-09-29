@@ -174,12 +174,16 @@ void titlebar_tick(void)
     /* 电量 10 秒刷一次（ADC2 与 WiFi 互斥，频繁读会等锁） */
     if (lv_tick_get() - last_bat_tick > 10000) {
         last_bat_tick = lv_tick_get();
-        int pct = bsp_battery_percent();
-        if (pct < 0) {
-            lv_label_set_text(lbl_bat, "--%");
-            lv_obj_set_size(bat_fill, 0, ui_px(5));   /* 未知电量：清空填充 */
+        int mv = bsp_battery_mv();   /* 毫伏 */
+        if (mv < 0) {
+            lv_label_set_text(lbl_bat, "--V");
+            lv_obj_set_size(bat_fill, 0, ui_px(5));   /* 未知电压：清空填充 */
         } else {
-            lv_label_set_text_fmt(lbl_bat, "%d%%", pct);
+            lv_label_set_text_fmt(lbl_bat, "%d.%02dV", mv / 1000, (mv % 1000) / 10);
+            /* 颜色/填充按电压映射（3.3~4.2V 对应 0~100%） */
+            int pct = (mv - 3300) * 100 / 900;
+            if (pct < 0) pct = 0;
+            if (pct > 100) pct = 100;
             uint32_t c = pct > 50 ? THEME_COL_OK : (pct > 20 ? THEME_COL_WARN : THEME_COL_ERROR);
             lv_obj_set_style_text_color(lbl_bat, theme_col(c), 0);
             lv_obj_set_style_bg_color(bat_fill, theme_col(c), 0);
