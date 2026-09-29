@@ -49,6 +49,13 @@ static const char PAGE_HEAD[] =
     "button.danger{background:#e74c3c;color:#fff}"
     ".tip{font-size:12px;color:#8b93a1;margin-top:8px}"
     ".upbtn{display:block;margin:6px 0;padding:10px;border:1px solid #3a4152;border-radius:8px;background:#1f2733;color:#dce6f0;text-align:center;font-size:13px;font-weight:600}"
+    ".wcard{background:#1a2029;border:1px solid #2a3242;border-radius:10px;padding:10px;margin:10px 0}"
+    ".whead{display:flex;justify-content:space-between;align-items:center;font-size:14px;font-weight:600}"
+    ".wstat{font-size:12px;padding:3px 10px;border-radius:12px;background:#262c3a;color:#8b93a1}"
+    ".wstat.on{background:#1b2e22;color:#7ee2a8}"
+    ".wprev{height:72px;margin:8px 0;border-radius:8px;background:#141922;display:flex;align-items:center;justify-content:center;color:#5a6372;font-size:12px;overflow:hidden}"
+    ".wprev img{width:100%;height:100%;object-fit:cover}"
+    ".upbtn.dis{opacity:.5;pointer-events:none}"
     ".row{display:flex;gap:8px;margin:12px 0}.row button{flex:1;margin:0;padding:10px;font-size:14px}"
     "#status{margin-top:12px;padding:10px;border-radius:8px;display:none;font-size:13px}"
     "#status.ok{display:block;background:#1b2e22;color:#7ee2a8}#status.err{display:block;background:#3a1d1d;color:#f5a3a3}"
@@ -73,14 +80,20 @@ static const char PAGE_FORM[] =
     "<label>屏保延时（秒，1~60）</label><input id='delay' type='number' min='1' max='60'>"
     "<button onclick='saveCfg()'>保存并重启</button>"
     "<h2>屏保壁纸</h2>"
-    "<div class='tip'>上传 1~3 张图（JPG），屏保按帧循环播放；不够 3 张时用内置动图补足；恢复默认动图请点下方按钮。</div>"
-    "<label class='upbtn' for='f0'>点击选择第 1 帧图片</label><input id='f0' type='file' accept='image/jpeg,.jpg,.jpeg' onchange='up(0)'>"
-    "<label class='upbtn' for='f1'>点击选择第 2 帧图片（可选）</label><input id='f1' type='file' accept='image/jpeg,.jpg,.jpeg' onchange='up(1)'>"
-    "<label class='upbtn' for='f2'>点击选择第 3 帧图片（可选）</label><input id='f2' type='file' accept='image/jpeg,.jpg,.jpeg' onchange='up(2)'>"
-    "<button onclick='pickFile(0)'>上传第 1 帧</button>"
-    "<button class='sec' onclick='pickFile(1)'>上传第 2 帧</button>"
-    "<button class='sec' onclick='pickFile(2)'>上传第 3 帧</button>"
-    "<button class='danger' onclick='clearWall()'>恢复默认动图（删除壁纸）</button>"
+    "<div class='tip'>每帧一张 JPG 图片，选中即自动上传；屏保按帧循环播放，不足 3 帧用内置动图补足。</div>"
+    "<div class='wcard'><div class='whead'><span>第 1 帧</span><span class='wstat' id='ws0'>默认动图</span></div>"
+    "<div class='wprev' id='wp0'>未上传，屏保使用内置动图</div>"
+    "<label class='upbtn' id='ub0' for='f0'>选择图片并上传</label>"
+    "<input id='f0' type='file' accept='image/jpeg,.jpg,.jpeg' onchange='up(0,this)'></div>"
+    "<div class='wcard'><div class='whead'><span>第 2 帧</span><span class='wstat' id='ws1'>默认动图</span></div>"
+    "<div class='wprev' id='wp1'>未上传，屏保使用内置动图</div>"
+    "<label class='upbtn' id='ub1' for='f1'>选择图片并上传</label>"
+    "<input id='f1' type='file' accept='image/jpeg,.jpg,.jpeg' onchange='up(1,this)'></div>"
+    "<div class='wcard'><div class='whead'><span>第 3 帧</span><span class='wstat' id='ws2'>默认动图</span></div>"
+    "<div class='wprev' id='wp2'>未上传，屏保使用内置动图</div>"
+    "<label class='upbtn' id='ub2' for='f2'>选择图片并上传</label>"
+    "<input id='f2' type='file' accept='image/jpeg,.jpg,.jpeg' onchange='up(2,this)'></div>"
+    "<button class='sec' onclick='clearWall()'>恢复默认动图（删除全部壁纸）</button>"
     "<div id='status'></div>";
 
 static const char PAGE_JS[] =
@@ -112,11 +125,15 @@ static const char PAGE_JS[] =
     "try{var r=await fetch('/api/config',{method:'POST',body:b});"
     "show(await r.text(),r.ok);if(r.ok)show('保存成功，3 秒后自动重启…',true)}"
     "catch(e){show('网络错误: '+e,false)}}"
-    "function pickFile(i){var f=document.getElementById('f'+i);if(!f.files[0]){f.click();return}up(i)}"
-    "async function up(i){var f=document.getElementById('f'+i);if(!f.files[0]){alert('请先选择第 '+(i+1)+' 张图片');return}"
-    "show('第 '+(i+1)+' 帧上传中…',true);"
-    "try{var r=await fetch('/api/wallpaper?idx='+i,{method:'POST',body:f.files[0]});"
-    "show(await r.text(),r.ok)}catch(e){show('上传失败: '+e,false)}}"
+    "function up(i,el){var f=el.files[0];if(!f)return;"
+    "if(f.type!=='image/jpeg'&&!/\\.jpe?g$/i.test(f.name)){alert('只能上传 JPG 图片');el.value='';return}"
+    "if(f.size>4*1024*1024){alert('图片不能超过 4MB');el.value='';return}"
+    "var st=document.getElementById('ws'+i),ub=document.getElementById('ub'+i);"
+    "st.className='wstat';st.textContent='上传中…';ub.classList.add('dis');"
+    "var rd=new FileReader();rd.onload=function(e){document.getElementById('wp'+i).innerHTML='<img src=\"'+e.target.result+'\"'>'};rd.readAsDataURL(f);"
+    "fetch('/api/wallpaper?idx='+i,{method:'POST',body:f}).then(function(r){return r.text().then(function(t){return{ok:r.ok,t:t}})}).then(function(x){"
+    "st.textContent=x.ok?'已上传':'失败';st.className=x.ok?'wstat on':'wstat';ub.classList.remove('dis');show(x.t,x.ok)})"
+    ".catch(function(e){st.textContent='失败';st.className='wstat';ub.classList.remove('dis');show('上传失败: '+e,false)})}"
     "async function clearWall(){if(!confirm('删除全部壁纸并恢复默认供奉动图？'))return;"
     "try{var r=await fetch('/api/wallpaper?clear=1',{method:'POST'});show(await r.text(),r.ok)}catch(e){show('网络错误: '+e,false)}}"
     "async function load(){try{var r=await fetch('/api/status');J=await r.json();"
@@ -124,6 +141,7 @@ static const char PAGE_JS[] =
     "document.getElementById('pass').value=J.pass||'';"
     "document.getElementById('delay').value=J.delay||5;"
     "SLOT=(J.active||0);fill();"
+    "if(J.walls){for(var i=0;i<3;i++){var st=document.getElementById('ws'+i);if(st){st.textContent=J.walls[i]?'已上传':'默认动图';st.className=J.walls[i]?'wstat on':'wstat'}}}"
     "document.getElementById('slotrow').children[SLOT].style.background='#2d9cdb'}catch(e){}}"
     "load();</script></body></html>";
 
@@ -246,6 +264,13 @@ static esp_err_t handle_status(httpd_req_t *req)
                      i ? "," : "", mode == MACHINE_MODE_BAMBU ? "bambu" : "klipper",
                      m.name, m.host, m.port, m.api_key);
         p += n;
+    }
+    p += snprintf(p, sizeof(buf) - (size_t)(p - buf), ",\"walls\":[");
+    for (int i = 0; i < WALL_MAX; i++) {
+        char wpath[64];
+        snprintf(wpath, sizeof(wpath), WALL_DIR "/wall_%d.raw", i);
+        struct stat stt;
+        p += snprintf(p, sizeof(buf) - (size_t)(p - buf), "%s%d", i ? "," : "", stat(wpath, &stt) == 0 ? 1 : 0);
     }
     snprintf(p, sizeof(buf) - (size_t)(p - buf), "]}");
     httpd_resp_set_type(req, "application/json");
