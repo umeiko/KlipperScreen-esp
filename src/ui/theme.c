@@ -202,8 +202,9 @@ lv_obj_t *theme_row(lv_obj_t *parent, const char *key, const char *val, int y)
 
     lv_obj_t *v = theme_label(row, val, THEME_FONT_S, THEME_COL_TEXT_DIM);
     lv_obj_align(v, LV_ALIGN_RIGHT_MID, -ui_px(4), 0);
-    /* 只读行可聚焦：必须 CLICKABLE，编码器确认键才会走完整的 press/release，否则普通对象不响应点击导致输入卡死 */
+    /* 只读行可聚焦：需 CLICKABLE；必须去掉 SCROLLABLE，否则 LVGL 编码器确认键会把导航组切进 edit 模式，旋转不再切换焦点=锁死 */
     lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
     theme_focusable(row);
     return row;
 }
