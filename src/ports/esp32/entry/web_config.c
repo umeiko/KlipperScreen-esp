@@ -73,9 +73,9 @@ static const char PAGE_FORM[] =
     "<button onclick='saveCfg()'>保存并重启</button>"
     "<h2>屏保壁纸</h2>"
     "<div class='tip'>上传 1~3 张图（JPG），屏保按帧循环播放；不够 3 张时用内置动图补足；恢复默认动图请点下方按钮。</div>"
-    "<label>第 1 帧</label><input id='f0' type='file' accept='image/jpeg,.jpg,.jpeg'>"
-    "<label>第 2 帧（可选）</label><input id='f1' type='file' accept='image/jpeg,.jpg,.jpeg'>"
-    "<label>第 3 帧（可选）</label><input id='f2' type='file' accept='image/jpeg,.jpg,.jpeg'>"
+    "<label>第 1 帧</label><input id='f0' type='file' accept='image/jpeg,.jpg,.jpeg' onchange='up(0)'>"
+    "<label>第 2 帧（可选）</label><input id='f1' type='file' accept='image/jpeg,.jpg,.jpeg' onchange='up(1)'>"
+    "<label>第 3 帧（可选）</label><input id='f2' type='file' accept='image/jpeg,.jpg,.jpeg' onchange='up(2)'>"
     "<button onclick='up(0)'>上传第 1 帧</button>"
     "<button class='sec' onclick='up(1)'>上传第 2 帧</button>"
     "<button class='sec' onclick='up(2)'>上传第 3 帧</button>"
@@ -111,7 +111,8 @@ static const char PAGE_JS[] =
     "try{var r=await fetch('/api/config',{method:'POST',body:b});"
     "show(await r.text(),r.ok);if(r.ok)show('保存成功，3 秒后自动重启…',true)}"
     "catch(e){show('网络错误: '+e,false)}}"
-    "async function up(i){var f=document.getElementById('f'+i);if(!f.files[0]){show('请先选择第 '+(i+1)+' 张图片',false);return}"
+    "async function up(i){var f=document.getElementById('f'+i);if(!f.files[0]){alert('请先选择第 '+(i+1)+' 张图片');return}"
+    "show('第 '+(i+1)+' 帧上传中…',true);"
     "try{var r=await fetch('/api/wallpaper?idx='+i,{method:'POST',body:f.files[0]});"
     "show(await r.text(),r.ok)}catch(e){show('上传失败: '+e,false)}}"
     "async function clearWall(){if(!confirm('删除全部壁纸并恢复默认供奉动图？'))return;"
@@ -435,6 +436,8 @@ void web_config_start(void)
     cfg.server_port = 80;
     cfg.stack_size = 8192;
     cfg.max_uri_handlers = 8;
+    cfg.recv_wait_timeout = 30;   /* 壁纸上传大图：默认 5s 收不完会中断解码 */
+    cfg.send_wait_timeout = 30;
     if (httpd_start(&s_server, &cfg) == ESP_OK) {
         httpd_uri_t u;
         u.user_ctx = NULL;
