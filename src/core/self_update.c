@@ -63,8 +63,8 @@ static int curl_fetch(const char *url, const char *out_path)
     if (pid == 0) {
         int devnull = open("/dev/null", O_WRONLY);
         if (devnull >= 0) { dup2(devnull, 1); dup2(devnull, 2); }
-        execlp("curl", "curl", "-fsSL", "--max-time", "60",
-               "-o", out_path, url, (char *)NULL);
+        execlp("curl", "curl", "-fsSL", "--connect-timeout", "10",
+               "--max-time", "300", "-o", out_path, url, (char *)NULL);
         _exit(127);
     }
     pthread_mutex_lock(&st_lock);
@@ -76,6 +76,29 @@ static int curl_fetch(const char *url, const char *out_path)
     curl_pid = -1;
     pthread_mutex_unlock(&st_lock);
     return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+}
+
+/* 直连失败时依次走 GitHub 反代镜像（国内网络常见 objects.githubusercontent.com
+ * 不通但镜像可通）。md5 边车与包体走同一条链路校验完整性；镜像只做兜底，
+ * 直连优先。返回最终 curl 退出码。 */
+static const char *mirrors[] = {
+    "https://ghproxy.net/",
+    "https://gh-proxy.com/",
+};
+
+static int fetch_with_fallback(const char *url, const char *out_path)
+{
+    int rc = curl_fetch(url, out_path);
+    for (size_t i = 0; rc != 0 && i < sizeof(mirrors) / sizeof(mirrors[0]); i++) {
+        pthread_mutex_lock(&st_lock);
+        bool cancelled = cancel_req;
+        pthread_mutex_unlock(&st_lock);
+        if (cancelled) break;   /* 用户取消：不再换镜像重试 */
+        char murl[560];
+        snprintf(murl, sizeof(murl), "%s%s", mirrors[i], url);
+        rc = curl_fetch(murl, out_path);
+    }
+    return rc;
 }
 
 /* 当前架构对应的 release 资产名：desktop-linux-x86_64/arm64/armhf.tar.gz */
@@ -182,12 +205,12 @@ static void *update_worker(void *arg)
     snprintf(md5f, sizeof(md5f), "%s.md5", pkg);
 
     set_state(SUPD_DOWNLOADING, NULL);
-    if (curl_fetch(url, pkg) != 0) {
+    if (fetch_with_fallback(url, pkg) != 0) {
         pthread_mutex_lock(&st_lock);
         bool cancelled = cancel_req;
         pthread_mutex_unlock(&st_lock);
+        unlink(pkg);   /* 清掉半截文件，下次从头来 */
         if (cancelled) {   /* 用户取消：静默回 IDLE，不报错 */
-            unlink(pkg);
             set_state(SUPD_IDLE, NULL);
         } else {
             set_state(SUPD_ERROR, "下载失败");
@@ -195,7 +218,7 @@ static void *update_worker(void *arg)
         return NULL;
     }
     snprintf(md5url, sizeof(md5url), "%s.md5", url);
-    if (curl_fetch(md5url, md5f) != 0) {
+    if (fetch_with_fallback(md5url, md5f) != 0) {
         set_state(SUPD_ERROR, "缺少校验文件");
         return NULL;
     }
