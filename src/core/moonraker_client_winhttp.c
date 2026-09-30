@@ -270,28 +270,65 @@ static void on_subscribe_result(cJSON *result)
     post_to_lvgl(set_online_in_lvgl, (void *)(intptr_t)1);
 }
 
-static void handshake_step_subscribe(void)
+/* 依据当前工具数动态拼接订阅参数：extruder + extruder1..N-1，
+ * 并订阅 toolhead.extruder 以获知活动工具。栈缓冲，无堆分配。 */
+static int build_subscribe_params(char *buf, size_t cap)
 {
-    const char *params =
+    int n = printer_tool_count();
+    int len = snprintf(buf, cap,
         "{\"objects\":{"
         "\"webhooks\":null,"
         "\"print_stats\":[\"state\",\"filename\",\"print_duration\",\"total_duration\",\"message\"],"
         "\"virtual_sdcard\":[\"progress\",\"is_active\"],"
         "\"display_status\":[\"progress\",\"message\"],"
         "\"gcode_move\":[\"speed_factor\",\"extrude_factor\"],"
-        "\"toolhead\":[\"position\",\"homed_axes\"],"
-        "\"extruder\":[\"temperature\",\"target\",\"power\"],"
+        "\"toolhead\":[\"position\",\"homed_axes\",\"extruder\"],"
+        "\"extruder\":[\"temperature\",\"target\",\"power\"],");
+    for (int i = 1; i < n; i++) {
+        if (len < 0 || (size_t)len >= cap) { len = (int)cap - 1; break; }
+        len += snprintf(buf + len, cap - len,
+            "\"extruder%d\":[\"temperature\",\"target\",\"power\"],", i);
+    }
+    if (len < 0 || (size_t)len >= cap) len = (int)cap - 1;
+    snprintf(buf + len, cap - len,
         "\"heater_bed\":[\"temperature\",\"target\",\"power\"],"
         "\"fan\":[\"speed\"],"
         "\"idle_timeout\":[\"state\"],"
         "\"pause_resume\":[\"is_paused\"]"
-        "}}";
+        "}}");
+    return len;
+}
+
+static void handshake_step_subscribe(void)
+{
+    char params[1024];
+    build_subscribe_params(params, sizeof(params));
     send_rpc_cb("printer.objects.subscribe", params, on_subscribe_result);
 }
 
 static void on_objects_list_result(cJSON *result)
 {
-    (void)result;
+    int tool_count = 1;
+    cJSON *objects = cJSON_GetObjectItem(result, "objects");
+    if (cJSON_IsArray(objects)) {
+        bool has_ext[PRINTER_MAX_TOOLS] = { false };
+        int n = cJSON_GetArraySize(objects);
+        for (int i = 0; i < n; i++) {
+            cJSON *o = cJSON_GetArrayItem(objects, i);
+            if (!cJSON_IsString(o) || !o->valuestring) continue;
+            const char *name = o->valuestring;
+            if (strncmp(name, "extruder", 8) != 0) continue;
+            if (name[8] == '\0') has_ext[0] = true;
+            else {
+                int idx = atoi(name + 8);
+                if (idx >= 1 && idx < PRINTER_MAX_TOOLS) has_ext[idx] = true;
+            }
+        }
+        int count = 0;
+        for (int i = 0; i < PRINTER_MAX_TOOLS; i++) if (has_ext[i]) count++;
+        if (count > 0) tool_count = count;
+    }
+    printer_model_set_tool_count(tool_count);
     handshake_step_subscribe();
 }
 

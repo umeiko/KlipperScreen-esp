@@ -18,6 +18,7 @@ static lv_obj_t *lbl_ext;
 static lv_obj_t *lbl_bed;
 static lv_obj_t *ic_ext;
 static lv_obj_t *ic_bed;
+static lv_obj_t *lbl_tool;   /* 多工具时活动工具指示 T{n} */
 static int show_clock;   /* 主面板（无返回键且无标题）→ 标题位显示时钟 */
 static int show_temps = 1;   /* 标题长的面板（Moonraker 设置等）可关掉温度显示 */
 static int title_x;      /* 标题左缘 x（有无返回键两种布局） */
@@ -26,7 +27,7 @@ static int title_x;      /* 标题左缘 x（有无返回键两种布局） */
 static void title_update_width(void)
 {
     int reserve = ui_px(8);
-    if (show_temps) reserve = ui_px(124);
+    if (show_temps) reserve = ui_px(140);   /* 124 + 活动工具 T{n} 指示 */
     else if (!(lv_obj_has_flag(btn_motoroff, LV_OBJ_FLAG_HIDDEN))) reserve = ui_px(56);
     lv_obj_set_width(lbl_title, ui_scr_w() - title_x - reserve);
 }
@@ -107,6 +108,10 @@ void titlebar_init(void)
     lv_obj_align_to(lbl_ext, ic_bed, LV_ALIGN_OUT_LEFT_MID, -ui_px(8), 0);
     ic_ext = theme_img(bar, ui_icon(&img_nozzle_16, &img_nozzle_32), THEME_COL_EXTRUDER);
     lv_obj_align_to(ic_ext, lbl_ext, LV_ALIGN_OUT_LEFT_MID, -ui_px(2), 0);
+    /* 多工具：喷嘴图标左侧的小号 T{n}，单挤出机时隐藏 */
+    lbl_tool = theme_label(bar, "", THEME_FONT_S, THEME_COL_EXTRUDER);
+    lv_obj_align_to(lbl_tool, ic_ext, LV_ALIGN_OUT_LEFT_MID, -ui_px(2), 0);
+    lv_obj_add_flag(lbl_tool, LV_OBJ_FLAG_HIDDEN);
 
     titlebar_tick();
 }
@@ -129,6 +134,7 @@ void titlebar_show_temps(int show)
         if (show) lv_obj_remove_flag(objs[i], LV_OBJ_FLAG_HIDDEN);
         else      lv_obj_add_flag(objs[i], LV_OBJ_FLAG_HIDDEN);
     }
+    if (!show) lv_obj_add_flag(lbl_tool, LV_OBJ_FLAG_HIDDEN);
     title_update_width();
 }
 
@@ -160,6 +166,14 @@ void titlebar_tick(void)
     }
     lv_label_set_text_fmt(lbl_ext, "%d" "\xC2\xB0", (int)(printer_temp_ext() + 0.5f));
     lv_label_set_text_fmt(lbl_bed, "%d" "\xC2\xB0", (int)(printer_temp_bed() + 0.5f));
+
+    /* 多工具：显示活动工具 T{n}（printer_temp_ext 已取该工具温度） */
+    if (show_temps && printer_tool_count() > 1) {
+        lv_obj_remove_flag(lbl_tool, LV_OBJ_FLAG_HIDDEN);
+        lv_label_set_text_fmt(lbl_tool, "T%d", printer_current_tool());
+    } else {
+        lv_obj_add_flag(lbl_tool, LV_OBJ_FLAG_HIDDEN);
+    }
 
     /* 连接中=橙，已连接=绿，未连接=灰 */
     uint32_t col = THEME_COL_TEXT_DIM;

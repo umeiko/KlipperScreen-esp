@@ -42,11 +42,16 @@ static struct {
     int   online;              /* Moonraker READY */
     int   rtt_ms;              /* 应用层心跳往返延迟，0=未知 */
     char  gcode_err[96];       /* 待 UI 提示的 klippy 错误（"!!" 行，已去前缀） */
+    int   tool_count;          /* 工具数，>=1（单挤出机 = 1） */
+    int   current_tool;        /* 活动工具索引，0 起 */
+    float tool_temp[PRINTER_MAX_TOOLS];
+    float tool_target[PRINTER_MAX_TOOLS];
 } M = {
     .state = PRINTER_STATE_DISCONNECTED,
     .flow = 100, .speed = 100,
     .klippy = "disconnected",
     .print_state = "standby",
+    .tool_count = 1, .current_tool = 0,
 };
 
 static bool klipper_active(void)
@@ -113,9 +118,9 @@ printer_capabilities_t printer_capabilities(void)
     return klipper_active()
            ? PRINTER_CAP_KLIPPER_ALL : 0;
 }
-float printer_temp_ext(void)   { bambu_monitor_snapshot_t b; return klipper_active() ? M.ext : (bambu_status_snapshot(&b) ? b.printer.nozzle_temp : 0); }
+float printer_temp_ext(void)   { bambu_monitor_snapshot_t b; return klipper_active() ? M.tool_temp[printer_current_tool()] : (bambu_status_snapshot(&b) ? b.printer.nozzle_temp : 0); }
 float printer_temp_bed(void)   { bambu_monitor_snapshot_t b; return klipper_active() ? M.bed : (bambu_status_snapshot(&b) ? b.printer.bed_temp : 0); }
-float printer_target_ext(void) { bambu_monitor_snapshot_t b; return klipper_active() ? M.ext_t : (bambu_status_snapshot(&b) ? b.printer.nozzle_target : 0); }
+float printer_target_ext(void) { bambu_monitor_snapshot_t b; return klipper_active() ? M.tool_target[printer_current_tool()] : (bambu_status_snapshot(&b) ? b.printer.nozzle_target : 0); }
 float printer_target_bed(void) { bambu_monitor_snapshot_t b; return klipper_active() ? M.bed_t : (bambu_status_snapshot(&b) ? b.printer.bed_target : 0); }
 float printer_pos(int axis)    { return klipper_active() ? M.pos[axis] : 0; }
 int printer_homed(int axis)    { return klipper_active() ? M.homed[axis] : 0; }
@@ -131,6 +136,46 @@ const char *printer_filename(void)
     return bambu_name;
 }
 float printer_flow_pct(void)   { return klipper_active() ? M.flow : 0; }
+
+/* ---- 多工具 ---- */
+int printer_tool_count(void) { return M.tool_count >= 1 ? M.tool_count : 1; }
+
+int printer_current_tool(void)
+{
+    int t = M.current_tool;
+    if (t < 0 || t >= printer_tool_count()) return 0;
+    return t;
+}
+
+float printer_temp_tool(int tool)
+{
+    if (tool < 0 || tool >= printer_tool_count()) tool = 0;
+    return M.tool_temp[tool];
+}
+
+float printer_target_tool(int tool)
+{
+    if (tool < 0 || tool >= printer_tool_count()) tool = 0;
+    return M.tool_target[tool];
+}
+
+void printer_set_target_tool(int tool, float t)
+{
+    if (!klipper_active()) return;
+    if (tool < 0 || tool >= PRINTER_MAX_TOOLS) return;
+    char g[48];
+    snprintf(g, sizeof(g), "M104 T%d S%d", tool, (int)(t + 0.5f));
+    klipper_gcode_script(g);
+}
+
+void printer_select_tool(int tool)
+{
+    if (!klipper_active()) return;
+    if (tool < 0 || tool >= PRINTER_MAX_TOOLS) return;
+    char g[16];
+    snprintf(g, sizeof(g), "T%d", tool);
+    klipper_gcode_script(g);
+}
 
 /* 取走待提示的 klippy 错误（取后清空）。UI 节拍轮询后弹 toast。 */
 bool printer_take_error(char *out, size_t cap)
@@ -399,6 +444,14 @@ void printer_model_set_rtt(int ms)
     M.rtt_ms = ms;   /* 仅存储，UI 节拍自会刷新 */
 }
 
+void printer_model_set_tool_count(int n)
+{
+    if (n < 1) n = 1;
+    if (n > PRINTER_MAX_TOOLS) n = PRINTER_MAX_TOOLS;
+    M.tool_count = n;
+    if (M.current_tool >= n) M.current_tool = 0;
+}
+
 int printer_rtt_ms(void) { return klipper_active() ? M.rtt_ms : 0; }
 
 /* ---------- 增量合入 ---------- */
@@ -432,6 +485,16 @@ void printer_model_apply_status_json(char *json_heap)
     if ((it = cJSON_GetObjectItem(status, "extruder"))) {
         M.ext   = jnum(it, "temperature", M.ext);
         M.ext_t = jnum(it, "target", M.ext_t);
+        M.tool_temp[0]   = M.ext;
+        M.tool_target[0] = M.ext_t;
+    }
+    for (int i = 1; i < PRINTER_MAX_TOOLS; i++) {
+        char key[16];
+        snprintf(key, sizeof(key), "extruder%d", i);
+        if ((it = cJSON_GetObjectItem(status, key))) {
+            M.tool_temp[i]   = jnum(it, "temperature", M.tool_temp[i]);
+            M.tool_target[i] = jnum(it, "target", M.tool_target[i]);
+        }
     }
     if ((it = cJSON_GetObjectItem(status, "heater_bed"))) {
         M.bed   = jnum(it, "temperature", M.bed);
@@ -451,6 +514,12 @@ void printer_model_apply_status_json(char *json_heap)
             M.homed[0] = strchr(s, 'x') != NULL;
             M.homed[1] = strchr(s, 'y') != NULL;
             M.homed[2] = strchr(s, 'z') != NULL;
+        }
+        cJSON *ex = cJSON_GetObjectItem(it, "extruder");
+        if (cJSON_IsString(ex) && ex->valuestring &&
+            strncmp(ex->valuestring, "extruder", 8) == 0) {
+            int idx = atoi(ex->valuestring + 8);   /* "extruder"=0, "extruder3"=3 */
+            if (idx >= 0 && idx < PRINTER_MAX_TOOLS) M.current_tool = idx;
         }
     }
     if ((it = cJSON_GetObjectItem(status, "print_stats"))) {
