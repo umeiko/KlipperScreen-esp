@@ -10,6 +10,9 @@
 #include "ui_buttons.h"
 #include "ui_nav.h"
 #include "ui_anim.h"
+#include "ui_layout.h"
+#include "titlebar.h"
+#include "panel_mgr.h"
 #include "theme.h"
 #include <SDL.h>
 
@@ -155,6 +158,41 @@ static int SDLCALL screen_input_filter(void *userdata, SDL_Event *event)
     return 1;
 }
 
+/* 逻辑分辨率真实变化（桌面窗口 resize / 应用内软旋转；Android 系统旋转）时，
+   既有布局是按旧分辨率排的，整树异步重建（panel_mgr_reload 要求异步调用）。
+   拖拽 resize 期间事件密集，300ms 去抖；重建执行时读的是当时分辨率，
+   最终布局必然与窗口一致。
+   注意 LVGL 的 lv_sdl_window_set_zoom() 与 lv_display_set_rotation() 即使
+   无实际变化也会发 LV_EVENT_RESOLUTION_CHANGED（桌面端每次启动都会经
+   main.c 的 set_rotation(默认 0°) 触发一次伪事件），所以必须跟上次值比较，
+   只有真实变化才重建——否则启动时被无端重建、--panel 直达被重置回主面板。 */
+static int res_track_w, res_track_h;
+
+static void reload_panels_async(void *ud)
+{
+    (void)ud;
+    ui_layout_init();     /* 分辨率/缩放档位按新逻辑分辨率重算（否则布局沿用旧档） */
+    titlebar_refresh();   /* 常驻标题栏挂在 layer_top，面板重建碰不到，显式重建 */
+    panel_mgr_reload();
+}
+
+static void on_resolution_changed(lv_event_t *e)
+{
+    LV_UNUSED(e);
+    lv_display_t *disp = lv_display_get_default();
+    if (!disp) return;
+    int w = lv_display_get_horizontal_resolution(disp);
+    int h = lv_display_get_vertical_resolution(disp);
+    if (w == res_track_w && h == res_track_h) return;   /* 伪事件：无实际变化 */
+    res_track_w = w;
+    res_track_h = h;
+    static uint32_t last_queued;
+    uint32_t now = lv_tick_get();
+    if (now - last_queued < 300) return;
+    last_queued = now;
+    lv_async_call(reload_panels_async, NULL);
+}
+
 void bsp_init(void)
 {
     const char *res = getenv("KLIPPER_RES");
@@ -194,9 +232,11 @@ void bsp_init(void)
     }
 
 #if defined(__ANDROID__)
-    /* Android：SDL 强制全屏，直接按屏幕原生分辨率建 LVGL 显示，避免创建后
-       收到 WINDOWEVENT_RESIZED 再把已建好的布局推翻。Activity 在 manifest
-       里锁定 sensorLandscape，物理旋转由应用内 0/90/180/270 软旋转承担。 */
+    /* Android：方向完全跟随系统（manifest fullSensor，不提供应用内旋转）。
+       SDL 强制全屏；这里先按显示模式估一个初始分辨率建 LVGL 显示——手机上
+       GetCurrentDisplayMode 给的是设备自然方向（竖屏），与 Activity 实际
+       全屏方向未必一致，估错没关系：真实窗口尺寸随后经 RESIZED 事件修正
+       （见 bsp_init 尾部的就位泵 + on_resolution_changed 重建）。 */
     SDL_SetHint(SDL_HINT_ENABLE_SCREEN_KEYBOARD, "0");  /* UI 自带 lv_keyboard，
        禁止系统软键盘自弹；物理键盘的 SDL_TEXTINPUT 不受影响（该 hint 只管
        ShowScreenKeyboard，不关文本事件） */
@@ -248,6 +288,33 @@ void bsp_init(void)
     }
     bsp_screen_power_init(backlight_apply, screen_now_ms);
     SDL_SetEventFilter(screen_input_filter, NULL);
+
+#if defined(__ANDROID__)
+    /* 真实窗口尺寸要等 SDL 报出来（初始分辨率是按显示模式估的，手机上可能
+       与实际全屏方向正交）：先把挂起的 RESIZED 处理掉，让分辨率在
+       ui_app_create 之前就位。超时兜底——迟到的 resize 由
+       on_resolution_changed 重建，不会错配。 */
+    {
+        uint32_t wait_start = SDL_GetTicks();
+        while (SDL_GetTicks() - wait_start < 500) {
+            lv_timer_handler();
+            if (lv_display_get_horizontal_resolution(disp) != scr_w ||
+                lv_display_get_vertical_resolution(disp) != scr_h)
+                break;
+            SDL_Delay(10);
+        }
+        /* 静态分辨率与显示对齐（boot 动画 canvas 按它们分配） */
+        scr_w = lv_display_get_horizontal_resolution(disp);
+        scr_h = lv_display_get_vertical_resolution(disp);
+    }
+#endif
+
+    /* 注册放最后、跟踪器从当前值起步：启动阶段的分辨率修正（上面的就位泵 /
+       zoom / main.c 的默认软旋转）不触发重建，只有之后的真实变化才重建。 */
+    res_track_w = lv_display_get_horizontal_resolution(disp);
+    res_track_h = lv_display_get_vertical_resolution(disp);
+    lv_display_add_event_cb(disp, on_resolution_changed,
+                            LV_EVENT_RESOLUTION_CHANGED, NULL);
 }
 
 /* 物理键盘 → 语义实体按钮（上/下/左/右/确定/返回）。

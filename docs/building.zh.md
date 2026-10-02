@@ -51,7 +51,7 @@ Android 端口（`src/ports/android`）复用桌面端的整套 UI/核心代码�
    # 产物：app/build/outputs/apk/release/app-release.apk
    ```
 
-行为说明：Activity 锁定横屏（`sensorLandscape`），竖屏需求用应用内「显示设置 → 屏幕方向」软旋转；配置存应用私有目录；release 构建目前用 debug 密钥签名（可直接侧载，上架 release 前换正式密钥）；WiFi 由系统管理故应用内 WiFi 页不可用（同 macOS）；息屏/背光、本机 gcode 缩略图、检查更新为 Linux 上位机专属能力，Android 不提供；切换语言/屏幕方向后的「重启」表现为退出应用，重新打开即可。
+行为说明：方向完全跟随系统（`fullSensor`，系统开自动旋转则四向跟随、关闭则锁当前方向），系统旋转会触发 UI 按新分辨率整体重建；应用内不提供旋转设置（该设置项在 Android 上隐藏）。配置存应用私有目录；release 构建目前用 debug 密钥签名（可直接侧载，上架 release 前换正式密钥）；WiFi 由系统管理，设置页不显示「无线网络」入口（同 macOS）；「背光」「自动息屏」「屏幕方向」行在 Android 上不显示；本机 gcode 缩略图与检查更新为 Linux 上位机专属能力，Android 不提供；语言与主题切换均为动态重建，无需重启应用。
 
 ## 字体生成与替换
 

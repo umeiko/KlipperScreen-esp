@@ -1,7 +1,8 @@
 /*
  * 显示设置：反色 / 180° 旋转 / 水平镜像（按 BSP 能力显示）+ 背光 / 自动息屏 / 主题。
  * 反色、旋转运行时立即生效并落盘 klipperscreen.conf；主题切换与语言同理——
- * 各面板在 create 时取色一次，热切换要全量重建 UI，故落盘后渐暗重启。
+ * 各面板在 create 时取色一次，热切换要全量重建 UI，故落盘后渐暗重启
+ *（Android 无重启概念：改主题色全局变量后异步整树重建，立即生效）。
  */
 #include "../theme.h"
 #include "../lang.h"
@@ -166,11 +167,13 @@ static void on_encoder_select(lv_event_t *e)
 }
 #endif
 
+#if BSP_HAS_BACKLIGHT
 static void open_brightness(lv_event_t *e)
 {
     LV_UNUSED(e);
     panel_mgr_open("brightness");
 }
+#endif
 
 static void on_invert_toggle(lv_event_t *e)
 {
@@ -207,6 +210,7 @@ static void open_color_order(lv_event_t *e)
     panel_mgr_open("display_color");
 }
 
+#if BSP_HAS_BACKLIGHT
 /* 息屏选项（秒）；0 = 永不 */
 static const uint32_t so_values[] = { 15, 30, 60, 300, 900, 1800, 3600, 0 };
 static const char    *so_labels[] = { "15秒", "30秒", "1分钟", "5分钟", "15分钟", "30分钟", "1小时", "永不" };
@@ -220,9 +224,23 @@ static void on_screen_off_select(lv_event_t *e)
     settings_save_screen_off((int)so_values[sel]);
     bsp_set_screen_timeout(so_values[sel]);   /* 立即生效，无需重启 */
 }
+#endif
 
 /* 主题：深色/浅色。切换后存 klipperscreen.conf，渐暗到黑再重启（同语言切换） */
 static const char *theme_codes[] = { "dark", "light" };
+
+#if defined(__ANDROID__)
+/* Android 免重启：主题色是全局变量，改完异步整树重建即热切换
+   （与桌面端语言切换同一机制，panel_mgr_reload 要求异步调用）。
+   重建后回到本页（此时界面已是新主题）。 */
+static void reload_panels_for_theme(void *ud)
+{
+    (void)ud;
+    panel_mgr_reload();
+    panel_mgr_open("settings");
+    panel_mgr_open("display");
+}
+#endif
 
 #if BSP_HAS_DISPLAY_ROTATION
 /* 屏幕方向（桌面端软件旋转）：分辨率按交换后逻辑值重算，须重启重建布局 */
@@ -250,9 +268,14 @@ static void on_theme_select(lv_event_t *e)
     settings_load_theme(cur, sizeof(cur));
     if (strcmp(cur, theme_codes[sel]) == 0) return;
     settings_save_theme(theme_codes[sel]);
+#if defined(__ANDROID__)
+    theme_set_dark(sel == 0);
+    lv_async_call(reload_panels_for_theme, NULL);
+#else
     lv_refr_now(NULL);      /* 先把选中态画出来 */
     bsp_fade_out(1000);
     bsp_restart();
+#endif
 }
 
 static lv_obj_t *create(void)
@@ -290,11 +313,13 @@ static lv_obj_t *create(void)
     }
 #endif
 
+#if BSP_HAS_BACKLIGHT
     /* 背光：行内显示当前亮度，点击进滑杆调节 */
     char br[8];
     snprintf(br, sizeof(br), "%d%%", settings_load_brightness());
     theme_row_link(scr, "背光", br, y, open_brightness);
     y += step;
+#endif
 
     /* 用户只需常见 EC11 的 1/2/4 三档；显示当前数字，不显示“默认(4)”。 */
 #if BSP_HAS_ENCODER_SETTINGS
@@ -318,6 +343,7 @@ static lv_obj_t *create(void)
     }
 #endif
 
+#if BSP_HAS_BACKLIGHT
     /* 自动息屏：下拉选择超时（立即生效） */
     static char so_opts[96];   /* 按当前语言拼接选项 */
     int so_len = 0, so_sel = (int)SO_COUNT - 1;
@@ -329,8 +355,9 @@ static lv_obj_t *create(void)
     }
     theme_row_dropdown(scr, "自动息屏", so_opts, y, so_sel, on_screen_off_select, NULL);
     y += step;
+#endif
 
-    /* 主题：下拉选择深/浅色，切换后渐暗重启生效 */
+    /* 主题：下拉选择深/浅色，切换后渐暗重启生效（Android 动态重建免重启） */
     static char th_opts[32];
     int th_len = 0, th_sel = 0;
     char cur_theme[8];

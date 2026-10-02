@@ -45,8 +45,10 @@
 /* BSP_HAS_DISPLAY_ROTATION：桌面端（Windows/Linux/macOS）由 LVGL SDL 驱动
  * 软件旋转（lv_display_set_rotation，flush 时 lv_draw_sw_rotate + 触摸坐标
  * 由 LVGL 内核自动反变换），显示设置提供 0/90/180/270 四档；
+ * Android=0：方向完全跟随系统（系统旋转 → 窗口 resize → 分辨率变化 →
+ * UI 重建），不提供应用内旋转，避免与系统旋转双重叠加；
  * ESP32 各板走硬件 rotate180（bsp_disp_set_rotate180），不提供本能力。 */
-#if !defined(ESP_PLATFORM)
+#if !defined(ESP_PLATFORM) && !defined(__ANDROID__)
 #define BSP_HAS_DISPLAY_ROTATION 1
 #else
 #define BSP_HAS_DISPLAY_ROTATION 0
@@ -59,6 +61,25 @@
 #define BSP_HAS_LINUX_HOST 1
 #else
 #define BSP_HAS_LINUX_HOST 0
+#endif
+
+/* BSP_HAS_BACKLIGHT：背光亮度/自动息屏控制。ESP32 各板=1（GPIO/PWM 背光）、
+ * Linux 上位机=1（sysfs backlight）；Windows/macOS/Android 无可控背光=0，
+ * 显示设置据此隐藏「背光」「自动息屏」行。 */
+#if defined(ESP_PLATFORM) || BSP_HAS_LINUX_HOST
+#define BSP_HAS_BACKLIGHT 1
+#else
+#define BSP_HAS_BACKLIGHT 0
+#endif
+
+/* BSP_HAS_WIFI：应用内 WiFi 配置能力。ESP32 真网卡=1；Windows=netsh、
+ * Linux=nmcli；macOS 与 Android 的 WiFi 由系统管理=0，
+ * 设置页据此隐藏「无线网络」入口。 */
+#if defined(ESP_PLATFORM) || defined(_WIN32) || \
+    (defined(__linux__) && !defined(__ANDROID__))
+#define BSP_HAS_WIFI 1
+#else
+#define BSP_HAS_WIFI 0
 #endif
 
 /* BSP_HAS_GCODE_THUMB：gcode 切片缩略图显示。

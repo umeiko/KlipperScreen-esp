@@ -111,6 +111,17 @@ void titlebar_init(void)
     titlebar_tick();
 }
 
+void titlebar_refresh(void)
+{
+    if (bar) {
+        /* 子对象（btn_back、btn_motoroff、各 lbl/ic）随父删除，
+           titlebar_init 会全部重建并重赋值静态指针 */
+        lv_obj_delete(bar);
+        bar = NULL;
+    }
+    titlebar_init();
+}
+
 lv_obj_t *titlebar_back_button(void) { return btn_back; }
 lv_obj_t *titlebar_motoroff_button(void) { return btn_motoroff; }
 

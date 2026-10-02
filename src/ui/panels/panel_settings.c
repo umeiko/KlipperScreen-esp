@@ -6,13 +6,16 @@
 #include "../lang.h"
 #include "../panel_mgr.h"
 #include "../ui_nav.h"
+#include "bsp_caps.h"
 #include "version.h"
 
+#if BSP_HAS_WIFI
 static void open_wifi(lv_event_t *e)
 {
     LV_UNUSED(e);
     panel_mgr_open("wifi");
 }
+#endif
 
 static void open_moonraker(lv_event_t *e)
 {
@@ -47,8 +50,10 @@ static lv_obj_t *create(void)
     int y = THEME_TITLEBAR_H + ui_px(4);
     const int step = ui_px(39);
 
+#if BSP_HAS_WIFI
     theme_row_link(scr, "无线网络", "", y, open_wifi);
     y += step;
+#endif
     theme_row_link(scr, "打印机连接设置", "", y, open_moonraker);
     y += step;
 
