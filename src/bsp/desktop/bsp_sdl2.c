@@ -193,6 +193,24 @@ void bsp_init(void)
         SDL_ShowCursor(SDL_DISABLE);
     }
 
+#if defined(__ANDROID__)
+    /* Android：SDL 强制全屏，直接按屏幕原生分辨率建 LVGL 显示，避免创建后
+       收到 WINDOWEVENT_RESIZED 再把已建好的布局推翻。Activity 在 manifest
+       里锁定 sensorLandscape，物理旋转由应用内 0/90/180/270 软旋转承担。 */
+    SDL_SetHint(SDL_HINT_ENABLE_SCREEN_KEYBOARD, "0");  /* UI 自带 lv_keyboard，
+       禁止系统软键盘自弹；物理键盘的 SDL_TEXTINPUT 不受影响（该 hint 只管
+       ShowScreenKeyboard，不关文本事件） */
+    SDL_Init(SDL_INIT_VIDEO);
+    {
+        SDL_DisplayMode mode;
+        if (SDL_GetCurrentDisplayMode(0, &mode) == 0 &&
+            mode.w >= 128 && mode.h >= 96) {
+            scr_w = mode.w;
+            scr_h = mode.h;
+        }
+    }
+#endif
+
     lv_init();
 
     lv_display_t *disp = lv_sdl_window_create(scr_w, scr_h);
@@ -205,9 +223,12 @@ void bsp_init(void)
         lv_display_add_event_cb(disp, preview_color_flush, LV_EVENT_FLUSH_FINISH, NULL);
     }
 #endif
-    /* 小屏放大看：160x128 → 3x，320x240 → 2x，800x480 → 1x；全屏服务不缩放 */
+    /* 小屏放大看：160x128 → 3x，320x240 → 2x，800x480 → 1x；全屏服务不缩放。
+       Android 已是原生分辨率全屏，缩放无意义（zoom 还会歪曲 RESIZED 换算）。 */
+#if !defined(__ANDROID__)
     if (!kiosk_mode)
         lv_sdl_window_set_zoom(disp, scr_w <= 200 ? 3 : (scr_w <= 320 ? 2 : 1));
+#endif
 #ifdef KLIPPER_DESKTOP_SIMULATOR
 #if defined(KR_DISPLAY_SETTINGS_PREVIEW)
     lv_sdl_window_set_title(disp, "Display Settings Preview - RGB/BGR + Encoder");
@@ -260,6 +281,9 @@ static int SDLCALL buttons_sdl_watch(void *userdata, SDL_Event *event)
     case SDLK_KP_ENTER:  id = UI_BTN_OK;    break;
     case SDLK_ESCAPE:
     case SDLK_BACKSPACE: id = UI_BTN_BACK;  break;
+#if defined(__ANDROID__)
+    case SDLK_AC_BACK:   id = UI_BTN_BACK;  break;  /* 系统返回键/手势 */
+#endif
     default: return 0;
     }
     ui_buttons_send(id, event->type == SDL_KEYDOWN);
@@ -338,6 +362,16 @@ const char *bsp_board_name(void)
 {
 #if defined(_WIN32)
     return "MinGW-Win-x86_64";
+#elif defined(__ANDROID__)
+#  if defined(__aarch64__)
+    return "Clang-Android-arm64";
+#  elif defined(__arm__)
+    return "Clang-Android-arm32";
+#  elif defined(__x86_64__)
+    return "Clang-Android-x86_64";
+#  else
+    return "Clang-Android-x86";
+#  endif
 #elif defined(__APPLE__)
     return "Clang-macOS-arm64";
 #elif defined(__aarch64__)

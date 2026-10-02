@@ -35,6 +35,24 @@ Board names: `cyd_2432s028r` / `cyd_2432s028r_plus` / `e32r35t` / `esp32s3-st778
 
 On Windows, always call `idf.py` through the `tools/idf.ps1` wrapper — Git Bash injects `MSYSTEM` into child processes and makes `idf.py` silently no-op.
 
+## Android (APK)
+
+The Android port (`src/ports/android`) reuses the entire desktop UI/core codebase: an SDL2 Android project builds `libmain.so` via CMake (same entry point as `src/ports/desktop/main.c`), and Gradle packages the APK. Day-to-day packaging is done by the CI `android` job (artifact `android-apk-<ref>`). To build locally:
+
+1. Install **JDK 17 + Android SDK** (platform android-34, build-tools 34.0.0, any NDK, CMake 3.22.1 — installing Android Studio covers all of these).
+2. Fetch the native dependencies (SDL2 2.30.9 sources + cJSON + the SDLActivity glue; none of them are committed):
+   ```bash
+   bash tools/fetch-android-deps.sh
+   ```
+3. Build (`third_party/lvgl` is shared with the desktop port and must be fetched as well):
+   ```bash
+   cd src/ports/android
+   bash gradlew assembleRelease          # add -PndkVersion=<ver> if your NDK differs from AGP's default
+   # output: app/build/outputs/apk/release/app-release.apk
+   ```
+
+Notes: the activity is locked to `sensorLandscape` — use the in-app display rotation setting (0/90/180/270, software-rotated) for portrait mounting; settings live in the app's private storage; release builds are currently signed with the debug key (sideloadable — switch to a proper key before shipping on the release page); the in-app WiFi page is unavailable because WiFi is managed by the OS (same as macOS); screen-off/backlight, local gcode thumbnails and self-update are Linux-host-only capabilities and are not offered on Android; the "restart" after changing language or display rotation simply closes the app — reopen it manually.
+
 ## Regenerating fonts
 
 All non-ASCII characters in UI string literals are extracted automatically to build the CJK subset fonts. **Regenerate after changing any UI string**, otherwise new characters render as □:

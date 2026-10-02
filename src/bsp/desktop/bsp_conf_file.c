@@ -23,6 +23,10 @@
 #endif
 #endif
 
+#ifdef __ANDROID__
+#include <SDL.h>   /* SDL_AndroidGetInternalStoragePath */
+#endif
+
 static FILE *open_override(const char *name, const char *mode)
 {
     const char *dir = getenv("KLIPPER_CONFIG_DIR");
@@ -37,7 +41,19 @@ static FILE *open_conf(const char *name, const char *mode)
     const char *override = getenv("KLIPPER_CONFIG_DIR");
     if (override && override[0]) return open_override(name, mode);
 
-#if defined(_WIN32) && !defined(KLIPPER_DESKTOP_SIMULATOR)
+#if defined(__ANDROID__) && !defined(KLIPPER_DESKTOP_SIMULATOR)
+    /* Android：应用私有目录（SDL 返回的 internal storage 路径以 '/' 结尾，
+       无需 mkdir）；应用卸载时配置随包清除，符合平台惯例。 */
+    static char dir[1088];
+    if (!dir[0]) {
+        const char *base = SDL_AndroidGetInternalStoragePath();
+        if (!base || !base[0]) return fopen(name, mode);
+        snprintf(dir, sizeof(dir), "%s", base);
+    }
+    char path[1200];
+    snprintf(path, sizeof(path), "%s%s", dir, name);
+    return fopen(path, mode);
+#elif defined(_WIN32) && !defined(KLIPPER_DESKTOP_SIMULATOR)
     const wchar_t *appdata = _wgetenv(L"APPDATA");
     if (appdata && appdata[0]) {
         wchar_t dir[MAX_PATH], path[MAX_PATH], wname[80], wmode[8];
@@ -145,10 +161,11 @@ int bsp_conf_write(const char *name, const char *buf)
 }
 
 /* 仅 Linux 上位机提供默认打印机：这类机器通常就是 Klipper/Moonraker 本机，
- * 首次开机直接把槽 0 指到本机 127.0.0.1，名称沿用当前登录用户名。 */
+ * 首次开机直接把槽 0 指到本机 127.0.0.1，名称沿用当前登录用户名。
+ * Android 上 127.0.0.1 永远不是打印机、getpwuid 只会得到 u0_aXX 沙箱名，排除。 */
 bool bsp_conf_default_printer(char *host, size_t host_len, char *name, size_t name_len)
 {
-#if defined(__linux__) && !defined(KLIPPER_DESKTOP_SIMULATOR)
+#if defined(__linux__) && !defined(__ANDROID__) && !defined(KLIPPER_DESKTOP_SIMULATOR)
     if (!host_len || !name_len) return false;
     snprintf(host, host_len, "127.0.0.1");
     const char *user = NULL;

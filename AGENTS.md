@@ -2,7 +2,7 @@
 
 ## 项目概况
 
-Klipper 远程显示屏：ESP32 固件（ESP-IDF 5.5.5）+ Windows 桌面端（MinGW，调试用同一套 UI 代码）。LVGL 9.3，MIT。仓库：`umeiko/KlipperScreen-esp`。
+Klipper 远程显示屏：ESP32 固件（ESP-IDF 5.5.5）+ 桌面端（Windows MinGW / Linux / macOS / Android，调试用同一套 UI 代码）。LVGL 9.3，MIT。仓库：`umeiko/KlipperScreen-esp`。
 
 ## 外部编码代理与 Token 控制
 
@@ -21,6 +21,7 @@ Klipper 远程显示屏：ESP32 固件（ESP-IDF 5.5.5）+ Windows 桌面端（M
 
 - ESP32：`bash tools/build-esp32.sh <board> [flash COMx]`，board ∈ `cyd_2432s028r` / `cyd_2432s028r_plus`（CYD 的 ST7789 变种，WROOM-32E，引脚同 CYD、无 RST 脚，与 CYD 共用 BSP 文件的 `#if` 分支）/ `e32r35t` / `esp32s3-st7789-320_240-ec11`（原 ec11_knob_minimal，S3+ST7789）/ `esp32-st7735s-128_160-ec11`（原 ec11_knob_esp32，ESP32+ST7735S）/ `esp32-st7789-320_240-ec11`（ESP32+ST7789 320x240，引脚同 st7735s 板）/ `esp32-ILI9341-320_240-ec11`（ESP32+ILI9341 320x240，引脚同 st7789 板）/ `esp32-ST7796-320_240-ec11`（ESP32+ST7796 320x240，引脚同 ILI9341 板）/ `esp32s3-st7796-480_320-xpt2046-ec11`（S3+ST7796S+XPT2046 共总线+EC11）/ `esp32s3-ILI9488-480_320-xpt2046-ec11`（S3+ILI9488+XPT2046 共总线+EC11，MKS PI-TS35，引脚同 st7796 板；18-bit SPI，atanisoft/esp_lcd_ili9488，flush 必须等 DMA 完成保内部共享转换缓冲；无出厂触摸校准，首启两点校准）/ `esp32s3-ILI9341-320_240-xpt2046-ec11`（S3+ILI9341 320x240+XPT2046 共总线+EC11，引脚同 st7796 板；面板参数沿用 CYD 实测：BGR/mirror(true,true)/INVOFF，就地字节交换；无出厂触摸校准，首启两点校准）/ `jc8048w550` / `esp32s3-sensecap-indicator`（Seeed SenseCAP Indicator，S3+4" 480x480 ST7701S RGB 并口+FT5x06 电容触摸，GX 批次触摸地址 0x48；与 JC8048 共用 rgb44 DIRECT 双缓冲，PCLK 12MHz；TCA9535 扩展器管 CS/RST/TP_RST/RP2040_RST；烧录走 CH340 的 "USB-SERIAL" 口，另一个 Type-C 是 RP2040 的别碰）/ `esp32s3-JLC-SZP` / `esp32s3-retro-go`（Chaeng retro-go S3 掌机，ST7789+GPIO 按键）/ `esp32c3-st7789-320_240-ec11`（C3 单核无 PCNT：编码器走 2ms 定时轮询软件正交解码，flash DIO，USB-Serial-JTAG 控制台；合宙 CORE USB 版与 Super Mini 通用）/ `all`。烧录前必须先断开串口占用（`mcp__serial-mcp__close_port`），烧后重连（115200）。
 - 桌面端：`bash tools/build-desktop.sh`。
+- Android：`bash tools/fetch-android-deps.sh`（拉 SDL2 2.30.9 源码 + cJSON + SDLActivity 胶水层，均 gitignored）后 `cd src/ports/android && bash gradlew assembleRelease`（需 JDK17 + Android SDK 34 + NDK；产物 `app/build/outputs/apk/release/app-release.apk`）；CI `android` job 出 `android-apk-<ref>` artifact。
 - **sdkconfig 大坑**：改 `sdkconfig.defaults.<board>` 对已生成的 `sdkconfig.<board>` 不生效——要改必须两个文件都改（sdkconfig 里翻 canonical 行，注意 `# CONFIG_XXX is not set` 会覆盖 defaults）。
 - IDF 源码在 `C:/esp/v5.5.5/esp-idf`。GitHub 走代理 `curl --proxy http://127.0.0.1:7890`。
 - 系统有 pio（`C:\Users\m9291\.platformio\penv\Scripts\pio.exe`）；`tmp/pio_music` 是厂商 demo 的 PIO 对照工程，增量编译+上传约 25 秒，做显示实验比 IDF 全量快得多。
@@ -32,6 +33,7 @@ Klipper 远程显示屏：ESP32 固件（ESP-IDF 5.5.5）+ Windows 桌面端（M
 - CI  release 资产名**不带版本号**：固件 `ESP-IDFv5.5-<board>.zip`、桌面 `desktop-win-x86_64.zip` / `desktop-macos-arm64.zip`、Linux 上位机 `desktop-linux-x86_64.tar.gz` / `desktop-linux-arm64.tar.gz`（ubuntu-22.04 / ubuntu-22.04-arm runner 静态编译 SDL2+cJSON，glibc≥2.35；tarball 内含 bin/KlipperScreen-esp + scripts/linux 的 install/uninstall/systemd/启动脚本）（`ESP-IDFv5.5` 是构建框架版本，不表示目标芯片都是 ESP32）；文档站下载直链走 `releases/latest/download/...`；tag 含 `wip` 标为预发布。旧 `klipper-remote-*` 遗留资产由 release job 在新资产上传成功后自动按 id 清理。
 - **命名约定**：产品二进制与 systemd 服务统一叫 `KlipperScreen-esp`（`KlipperScreen-esp.exe` / `bin/KlipperScreen-esp` / `KlipperScreen-esp.service`），`klipper-remote` 一名已停用；Moonraker identify 的 client_name 同步为 `KlipperScreen-esp[-平台]`。开发模拟器仍叫 `klipper_remote_simulator`。**部署大坑**：桌面构建目录里 `KlipperScreen-esp`（真机）与 `klipper_remote_simulator`（mock 假数据）并存，往真机/Linux 上位机部署时必须拷 `build/KlipperScreen-esp`；误拷 simulator 表现为文件列表是假文件、无缩略图、不连 Moonraker。
 - CI 会强推移动标签 `latest` 到最新正式版提交。
+- Android APK 走 `android` job，产物名 `KlipperScreen-esp-android.apk`（artifact `android-apk-<ref>`）；**暂未接入 release job**——试用确认后再加进 needs/files 并换正式签名密钥（当前 release 构建用 debug 密钥签名，仅供侧载测试）。APK 的 versionName/versionCode 由 `app/build.gradle` 自动从 `src/core/version.h` 的 `KR_VERSION` 派生，无需单独维护。
 - 固件 zip 内的 `flash.cfg` 第四行是 `TOUCH_CAL=0/1`（CI 按板型名单写入，电阻屏=1）。用户侧刷机脚本 `tools/release/flash.bat` / `flash.sh` 开头询问中文/English（非 tty 默认英文；bat 靠 `chcp 65001`+UTF-8 存盘显中文，goto 结构避开 cmd 括号块 `%VAR%` 解析期展开的坑）；`TOUCH_CAL=1` 时刷完询问是否进入触摸校准，答 y 经串口发 `caltouch`（bat 用 `mode`+`echo > \\.\COMx`，已实测可靠；sh 用 esptool 必带的 pyserial）。开发路径 `tools/build-esp32.sh ... flash` 刷完同样会问（用 IDF python_env 的 pyserial）。
 - `src/ui/CMakeLists.txt` 是 GLOB 收集源文件：新增面板/字体文件后若链接报 undefined，先 touch 它触发 CMake 重配（不能加 CONFIGURE_DEPENDS，IDF script 模式会报错）。
 
@@ -67,6 +69,14 @@ Klipper 远程显示屏：ESP32 固件（ESP-IDF 5.5.5）+ Windows 桌面端（M
 - **触摸输入只走鼠标路径**（`bsp_sdl2.c`）：lv_sdl_mouse 处理 `SDL_FINGER*` 时把窗口归一化坐标乘逻辑分辨率（旋转 90/270 后宽高交换）→ release 坐标错位（下拉选错项、滑条拖不到头）。`bsp_init` 强制 `SDL_HINT_TOUCH_MOUSE_EVENTS=1`，`screen_input_filter` 丢弃全部 FINGER 事件，触摸统一经 SDL touch→mouse 合成（窗口像素坐标，任意旋转正确）。third_party/lvgl 是 CI 现拉的 vanilla 9.3.0（gitignored），不能靠改它修。
 - **后台线程投递 LVGL 必须加锁**：desktop 的 `LV_USE_OS=LV_OS_NONE`，`lv_async_call()` 会直接修改 timer 链表，并不是线程安全队列。POSIX worker 调用前后必须持 `bsp_lvgl_lock()`，与主循环的 `lv_timer_handler()` 互斥；否则随机 SIGSEGV/SIGABRT。
 - **Wayland kiosk 不让 LVGL SDL 驱动处理 QUIT/CLOSE**（`bsp_sdl2.c`）：LVGL 9.3 的顺序是 `SDL_Quit()` 后 `lv_deinit()`，显示析构器再 `SDL_Destroy*` 会跳进已卸载的 SDL 回调崩溃。全屏服务在 event filter 丢弃 compositor close 请求，并在 `SDL_Init()` 前设 `SDL_HINT_NO_SIGNAL_HANDLERS=1`，保证 systemd 的 SIGTERM 仍正常终止进程；普通桌面窗口行为不变。
+
+## Android 端口（src/ports/android）
+
+- 形态：SDL2 官方 android-project 模式（AGP 8.1.1 / Gradle 8.1.1 wrapper，jar 入库自 SDL 2.30.9 模板）——`MainActivity extends SDLActivity` 加载 `SDL2`+`main` 两个 so；`app/jni/CMakeLists.txt` 以源码子工程编 SDL2（`add_subdirectory($SDL2_ROOT)`，CI 传 `-DSDL2_ROOT`，默认 `third_party/SDL2`），`libmain.so` 与 desktop Linux 产品目标同源（POSIX sockets + bambu/wifi stub），入口同为 `src/ports/desktop/main.c` 的 `main`（SDL.h 在 `__ANDROID__` 下改名 `SDL_main`）。SDLActivity 胶水层 Java 与 `third_party/SDL2`、`third_party/cjson` 均 gitignored，`tools/fetch-android-deps.sh` 拉取/拷入。启动器图标由 `tools/android-launcher-icon.py` 从 `boot_logo_path.h` 渲染（纯标准库，PNG 已入库，注意 `.gitignore` 里有 `*.png` 全局规则的豁免）。
+- 能力面：与 macOS 相同的"非 Linux 上位机"裁剪——`BSP_HAS_LINUX_HOST` 在 `__ANDROID__` 下=0（无 sysfs 背光/电源键/本地 gcode 缩略图/检查更新），WiFi 走 `bsp_wifi_stub.c`（页面常灰，WiFi 由系统管理），`BSP_HAS_DISPLAY_ROTATION`=1（软旋转四档可用）。**Android 适配铁律**：`__linux__` 在 Android 上同样定义，凡按 `defined(__linux__)` 圈 Linux 上位机能力的守卫都要补 `&& !defined(__ANDROID__)`（`bsp_conf_default_printer` 已补：手机上 127.0.0.1 不是打印机、getpwuid 只得 u0_aXX 沙箱名）。
+- 显示/输入：`bsp_init` 里 Android 走"原生分辨率建窗"分支（先 `SDL_GetCurrentDisplayMode` 再 `lv_sdl_window_create`，禁止 zoom）——若按默认 320x240 建窗，SDL 全屏化后 LVGL 驱动的 `WINDOWEVENT_RESIZED` 处理器会在 UI 建好后改显示分辨率推翻布局。Activity manifest 锁 `sensorLandscape`（SDL 不支持窗口 resize 后续重排，竖屏靠应用内 0/90/180/270 软旋转）。`SDL_HINT_ENABLE_SCREEN_KEYBOARD=0`：LVGL SDL 驱动建窗即 `SDL_StartTextInput()`，Android 上会弹系统软键盘；关掉 ShowScreenKeyboard 不影响物理键盘的 SDL_TEXTINPUT，文本输入用应用自带 lv_keyboard。系统返回键映射 `SDLK_AC_BACK → UI_BTN_BACK`。
+- Manifest 要点：`usesCleartextTraffic=true`（Moonraker 局域网 ws/http 明文，targetSdk 28+ 默认禁明文必须开）、`INTERNET`/`ACCESS_NETWORK_STATE`、长 `configChanges`（防旋转/键盘事件重建 Activity）、`singleInstance`。配置存 `SDL_AndroidGetInternalStoragePath()`（bsp_conf_file.c 的 `__ANDROID__` 分支，应用卸载随包清除）。
+- 已知取舍：`bsp_restart()`（切语言/屏幕方向后）表现为退出应用需手动重开；息屏/背光设置无效（只打日志）；release 构建以 debug 密钥签名（AGP 自带 `~/.android/debug.keystore`，CI runner 自动生成），接入正式发版时换 secrets 里的专用密钥并加入 release job 的 needs/files。
 
 ---
 

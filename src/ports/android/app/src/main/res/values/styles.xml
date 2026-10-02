@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- SDL 全屏无标题栏主题（沿用 SDL android-project 模板） -->
+    <style name="AppTheme" parent="android:Theme.NoTitleBar.Fullscreen">
+    </style>
+</resources>

@@ -1,0 +1,63 @@
+// KlipperScreen-esp Android 应用模块。
+// 原生代码由 app/jni/CMakeLists.txt 构建（libmain.so + libSDL2.so）；
+// SDLActivity 胶水层 Java 源码不入库，构建前由 tools/fetch-android-deps.sh
+// 从 SDL2 源码树拷入 app/src/main/java/org/libsdl/app/。
+apply plugin: 'com.android.application'
+
+// 版本号与固件/桌面端同源：src/core/version.h 的 KR_VERSION
+def versionHeader = new File(rootDir, '../../src/core/version.h')
+def verName = '0.0.0'
+def verCode = 1
+def m = versionHeader.exists() ? (versionHeader.text =~ /KR_VERSION\s+"(\d+)\.(\d+)\.(\d+)"/) : null
+if (m && m.find()) {
+    verName = "${m.group(1)}.${m.group(2)}.${m.group(3)}"
+    verCode = (m.group(1) as int) * 10000 + (m.group(2) as int) * 100 + (m.group(3) as int)
+}
+
+// SDL2 源码树（tools/fetch-android-deps.sh 拉到 third_party/SDL2，可用环境变量覆盖）
+def sdl2Root = System.getenv('SDL2_ROOT') ?: new File(rootDir, '../../third_party/SDL2').absolutePath
+sdl2Root = sdl2Root.replace('\\', '/')
+
+android {
+    namespace 'com.umeiko.klipperscreenesp'
+    compileSdkVersion 34
+
+    // CI 用 -PndkVersion=<已安装版本> 显式指定；不设时走 AGP 默认 NDK
+    if (project.hasProperty('ndkVersion')) {
+        ndkVersion project.property('ndkVersion')
+    }
+
+    defaultConfig {
+        applicationId 'com.umeiko.klipperscreenesp'
+        minSdkVersion 21
+        targetSdkVersion 34
+        versionCode verCode
+        versionName verName
+        externalNativeBuild {
+            cmake {
+                arguments "-DSDL2_ROOT=${sdl2Root}"
+                // arm64 覆盖现代设备，armeabi-v7a 覆盖旧 32 位设备；模拟器自行加 x86_64
+                abiFilters 'arm64-v8a', 'armeabi-v7a'
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            // 试用阶段：release 构建用 debug 密钥签名，可直接侧载安装。
+            // 正式上架 release 资产前换成专用签名密钥（CI secrets）。
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path 'jni/CMakeLists.txt'
+        }
+    }
+
+    lint {
+        abortOnError false
+    }
+}

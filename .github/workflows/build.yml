@@ -474,6 +474,57 @@ jobs:
           name: desktop-linux-${{ matrix.arch }}-${{ github.ref_name }}
           path: desktop-linux-${{ matrix.arch }}.tar.gz
 
+  android:
+    # Android APK：SDL2 安卓工程（src/ports/android）复用 desktop 端全套 UI 代码，
+    # CMake 编 libmain.so + libSDL2.so，Gradle 打包。release 构建用 debug 密钥
+    # 签名（可直接侧载）；确认可用性之前不进 release job，只出 artifact。
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: gradle/actions/setup-gradle@v4   # 只图它的 Gradle 缓存，wrapper 用库内的
+
+      - name: Fetch LVGL v9.3.0 (third_party/lvgl is gitignored)
+        run: |
+          curl -L -o /tmp/lvgl.tar.gz https://github.com/lvgl/lvgl/archive/refs/tags/v9.3.0.tar.gz
+          tar xzf /tmp/lvgl.tar.gz -C /tmp
+          mkdir -p third_party
+          mv /tmp/lvgl-9.3.0 third_party/lvgl
+
+      - name: Fetch Android native deps (SDL2 2.30.9 + cJSON + SDLActivity glue)
+        run: bash tools/fetch-android-deps.sh
+
+      - name: Check Android SDK platform / NDK
+        run: |
+          if [ ! -d "$ANDROID_HOME/platforms/android-34" ]; then
+            yes | sdkmanager "platforms;android-34" "build-tools;34.0.0" >/dev/null
+          fi
+          NDK_VER=$(ls "$ANDROID_HOME/ndk" | sort -V | tail -1)
+          [ -n "$NDK_VER" ] || { echo "::error::no NDK installed in $ANDROID_HOME/ndk"; exit 1; }
+          echo "platforms: $(ls "$ANDROID_HOME/platforms" | tr '\n' ' ')"
+          echo "using NDK $NDK_VER"
+          echo "NDK_VER=$NDK_VER" >> "$GITHUB_ENV"
+
+      - name: Build APK (Gradle + CMake/NDK)
+        # bash gradlew：不依赖 git 提交时的 +x 位（Windows 上易丢）
+        env:
+          SDL2_ROOT: ${{ github.workspace }}/third_party/SDL2
+        run: |
+          cd src/ports/android
+          bash gradlew --no-daemon assembleRelease -PndkVersion="$NDK_VER"
+
+      - name: Package APK
+        run: |
+          mkdir -p dist-android
+          cp src/ports/android/app/build/outputs/apk/release/app-release.apk \
+             dist-android/KlipperScreen-esp-android.apk
+          ls -la dist-android
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-apk-${{ github.ref_name }}
+          path: dist-android/
+
   release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [package, desktop-win, desktop-mac, desktop-linux]

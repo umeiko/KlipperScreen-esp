@@ -54,8 +54,8 @@
 
 /* BSP_HAS_LINUX_HOST：Linux 上位机（红米等手机/树莓派）：
  * 背光写 /sys/class/backlight、电源键读 /dev/input（evdev KEY_POWER）。
- * Windows/macOS 桌面与 ESP32 为 0。 */
-#if defined(__linux__) && !defined(ESP_PLATFORM)
+ * Windows/macOS 桌面、Android（应用沙箱碰不到 sysfs/evdev）与 ESP32 为 0。 */
+#if defined(__linux__) && !defined(ESP_PLATFORM) && !defined(__ANDROID__)
 #define BSP_HAS_LINUX_HOST 1
 #else
 #define BSP_HAS_LINUX_HOST 0

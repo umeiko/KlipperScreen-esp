@@ -20,12 +20,23 @@ src/ports/esp32/dependencies.lock
 
 # 第三方与工具链（不入库，按文档拉取）
 third_party/lvgl/
+third_party/SDL2/
+third_party/cjson/
 .reff/
 tools/dl/
 tools/msys64/
 tools/fontgen/node_modules/
 tools/icongen/node_modules/
 tools/icongen/.venv/
+
+# Android 端口：gradle 产物、本机 SDK 配置、fetch-android-deps.sh 拷入的 SDL 胶水层
+src/ports/android/.gradle/
+src/ports/android/app/build/
+src/ports/android/app/.cxx/
+src/ports/android/local.properties
+src/ports/android/app/src/main/java/org/
+# 启动器图标是入库资产（tools/android-launcher-icon.py 生成），豁免上方 *.png 规则
+!src/ports/android/**/*.png
 
 # 临时
 tmp/

@@ -1,12 +1,13 @@
 /*
- * WiFi 空实现：macOS 桌面端。
- * Windows(netsh wlan) / Linux(nmcli) 的真实后端都带 OS 守卫，macOS 上两个都编不进去，
- * 这里补符号让链接通过：WiFi 页图标常灰，扫描直接报失败，连接请求立即失败。
- * 仅在 APPLE 构建时被 CMake 收进目标。
+ * WiFi 空实现：macOS 桌面端 / Android。
+ * Windows(netsh wlan) / Linux(nmcli) 的真实后端都带 OS 守卫，macOS 与 Android
+ * 上两个都编不进去，这里补符号让链接通过：WiFi 页图标常灰，扫描直接报失败，
+ * 连接请求立即失败。（Android 的 WiFi 由系统管理，应用无 nmcli 可用。）
+ * 仅在 APPLE / ANDROID 构建时被 CMake 收进目标。
  */
 #include "bsp_wifi.h"
 
-#ifdef __APPLE__
+#if defined(__APPLE__) || defined(__ANDROID__)
 
 void bsp_wifi_init(void) {}
 
@@ -40,4 +41,4 @@ bool bsp_wifi_current(char *ssid, size_t ssid_len, char *ip, size_t ip_len)
     return false;
 }
 
-#endif /* __APPLE__ */
+#endif /* __APPLE__ || __ANDROID__ */

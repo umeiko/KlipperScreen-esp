@@ -35,6 +35,24 @@ board 取值：`cyd_2432s028r` / `cyd_2432s028r_plus` / `e32r35t` / `esp32s3-st7
 
 在 Windows 上直接调 `idf.py` 要走 `tools/idf.ps1` 包装——Git Bash 会把 `MSYSTEM` 注入子进程，导致 `idf.py` 静默空转。
 
+## Android 端（APK）
+
+Android 端口（`src/ports/android`）复用桌面端的整套 UI/核心代码：SDL2 安卓工程 + CMake 编 `libmain.so`（入口同为 `src/ports/desktop/main.c`），Gradle 打 APK。平时出包直接用 CI 的 `android` job（artifact `android-apk-<ref>`），本地构建：
+
+1. 装 **JDK 17 + Android SDK**（platform android-34、build-tools 34.0.0、任一 NDK、CMake 3.22.1，Android Studio 装齐即可）。
+2. 拉取原生依赖（SDL2 2.30.9 源码 + cJSON + SDLActivity 胶水层，均不入库）：
+   ```bash
+   bash tools/fetch-android-deps.sh
+   ```
+3. 构建（`third_party/lvgl` 与桌面端共用，同样要先拉）：
+   ```bash
+   cd src/ports/android
+   bash gradlew assembleRelease          # NDK 非 AGP 默认版本时加 -PndkVersion=<版本>
+   # 产物：app/build/outputs/apk/release/app-release.apk
+   ```
+
+行为说明：Activity 锁定横屏（`sensorLandscape`），竖屏需求用应用内「显示设置 → 屏幕方向」软旋转；配置存应用私有目录；release 构建目前用 debug 密钥签名（可直接侧载，上架 release 前换正式密钥）；WiFi 由系统管理故应用内 WiFi 页不可用（同 macOS）；息屏/背光、本机 gcode 缩略图、检查更新为 Linux 上位机专属能力，Android 不提供；切换语言/屏幕方向后的「重启」表现为退出应用，重新打开即可。
+
 ## 字体生成与替换
 
 界面里所有字符串字面量的非 ASCII 字符会被自动提取，生成 CJK 子集字体。**改了任何 UI 字符串后必须重新生成**，否则新字显示为 □：

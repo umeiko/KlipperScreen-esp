@@ -1,0 +1,2 @@
+// KlipperScreen-esp Android 端口：SDL2 安卓工程 + CMake 编 libmain.so（复用 desktop 端全套 UI 代码）
+include ':app'
