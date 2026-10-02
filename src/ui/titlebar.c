@@ -5,6 +5,7 @@
 #include "panel_mgr.h"
 #include "printer.h"
 #include "bsp_wifi.h"
+#include "ui_nav.h"
 #include "widgets/confirm.h"
 #include "ui_anim.h"
 #include <time.h>
@@ -114,6 +115,10 @@ void titlebar_init(void)
 void titlebar_refresh(void)
 {
     if (bar) {
+        /* ui_nav 的 global_obj 持有返回键指针：必须在旧栏还活着时先摘除，
+           否则删栏后 ui_nav_activate 对悬垂指针 lv_group_remove_obj → UAF
+           （桌面端 freed 块内容常幸存所以不炸，bionic 立刻改写成堆元数据必崩） */
+        ui_nav_set_global_obj(NULL, false);
         /* 子对象（btn_back、btn_motoroff、各 lbl/ic）随父删除，
            titlebar_init 会全部重建并重赋值静态指针 */
         lv_obj_delete(bar);

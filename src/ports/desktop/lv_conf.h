@@ -15,6 +15,12 @@
 /* 必须 PARTIAL：SDL 驱动只在 PARTIAL 路径的 flush 里做 lv_draw_sw_rotate，
    默认 DIRECT 模式下 lv_display_set_rotation(90/270) 不转像素 → 花屏 */
 #define LV_SDL_RENDER_MODE LV_DISPLAY_RENDER_MODE_PARTIAL
+/* Android：建窗即带 SDL_WINDOW_FULLSCREEN——SDL Android 据此切沉浸式粘性全屏
+   （隐藏系统状态栏与三大金刚导航栏，顶部留给应用自带标题栏/返回键）；
+   桌面端保持窗口模式不设此 flag。 */
+#if defined(__ANDROID__)
+#define LV_SDL_FULLSCREEN 1
+#endif
 
 /* 字号 */
 #define LV_FONT_MONTSERRAT_12 1   /* 小屏（160x128）图标/大数字档 */
