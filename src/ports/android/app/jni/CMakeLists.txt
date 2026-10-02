@@ -6,6 +6,14 @@ project(KlipperScreenEspAndroid C)
 
 set(CMAKE_C_STANDARD 99)
 
+# bionic 的 aligned_alloc 是 API 28 才引入的；minSdk 21 下 LVGL SDL 驱动
+#（lv_sdl_window.c 的 texture_resize）编译报 implicit-function-declaration
+#（clang>=16 默认当成 error）。third_party/lvgl 是 vanilla 不能改，这里用
+# 宏把它映射到上古 API 就有的 memalign，并强制预引 <malloc.h> 提供声明。
+# 只影响 Android 目标编译；memalign 不要求是 size 的整数倍，语义兼容。
+add_compile_options(-include malloc.h)
+add_compile_definitions(aligned_alloc=memalign)
+
 # app/jni → 仓库根（jni → app → android → ports → src → 根）
 get_filename_component(SRC_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../.." ABSOLUTE)
 get_filename_component(REPO_ROOT "${SRC_ROOT}/.." ABSOLUTE)
