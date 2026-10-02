@@ -47,6 +47,10 @@ target_include_directories(cjson PUBLIC "${CJSON_ROOT}")
 
 # ---------- LVGL（与 desktop 端口同版本同 lv_conf） ----------
 set(DESKTOP_PORT "${SRC_ROOT}/ports/desktop")
+# LVGL os_desktop.cmake 未指定配置时在「顶层工程目录」找 lv_conf.h——desktop
+# 端口顶层恰好是 src/ports/desktop 所以能过；本工程顶层是 app/jni，必须显式
+# 用 LV_BUILD_CONF_PATH 指到与 desktop 端口共用的那份配置
+set(LV_BUILD_CONF_PATH "${DESKTOP_PORT}/lv_conf.h" CACHE PATH "" FORCE)
 add_subdirectory("${REPO_ROOT}/third_party/lvgl" "${CMAKE_BINARY_DIR}/lvgl")
 target_compile_definitions(lvgl PUBLIC LV_CONF_INCLUDE_SIMPLE)
 target_include_directories(lvgl PUBLIC "${DESKTOP_PORT}")      # lv_conf.h
