@@ -42,11 +42,24 @@ android {
         }
     }
 
+    signingConfigs {
+        debug {
+            // 固定测试密钥（入库）：CI 每次跑都是新 runner，AGP 自带的
+            // debug.keystore 每次生成都不同 → 覆盖安装必报签名冲突。
+            // 统一用本文件签名，测试期升级免卸载。仅用于侧载测试，
+            // 正式接入 release 发版时换 secrets 里的专用密钥。
+            storeFile file('../debug-test.p12')
+            storeType 'PKCS12'
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled false
-            // 试用阶段：release 构建用 debug 密钥签名，可直接侧载安装。
-            // 正式上架 release 资产前换成专用签名密钥（CI secrets）。
+            // 试用阶段：release 构建用（固定）debug 密钥签名，可直接侧载安装。
             signingConfig signingConfigs.debug
         }
     }
