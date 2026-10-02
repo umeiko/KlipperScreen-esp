@@ -55,6 +55,29 @@ add_subdirectory("${SDL2_ROOT}" "${CMAKE_BINARY_DIR}/sdl2" EXCLUDE_FROM_ALL)
 add_library(cjson STATIC "${CJSON_ROOT}/cJSON.c")
 target_include_directories(cjson PUBLIC "${CJSON_ROOT}")
 
+# ---------- mbedTLS（拓竹后端 TLS 传输；Linux 桌面共用同一实现） ----------
+set(MBEDTLS_ROOT "${REPO_ROOT}/third_party/mbedtls")
+set(CACERT_PEM "${REPO_ROOT}/third_party/cacert.pem")
+if(NOT EXISTS "${MBEDTLS_ROOT}/CMakeLists.txt")
+    message(FATAL_ERROR
+        "mbedtls not found at ${MBEDTLS_ROOT}\nRun tools/fetch-android-deps.sh first.")
+endif()
+if(NOT EXISTS "${CACERT_PEM}")
+    message(FATAL_ERROR
+        "cacert.pem not found at ${CACERT_PEM}\nRun tools/fetch-android-deps.sh first.")
+endif()
+# Mozilla CA bundle → C 数组（尾部补 NUL：mbedtls PEM 解析按含 NUL 长度计）
+file(READ ${CACERT_PEM} BAMBU_CA_HEX HEX)
+string(REGEX REPLACE "(..)" "0x\\1," BAMBU_CA_HEX "${BAMBU_CA_HEX}")
+set(BAMBU_CA_BUNDLE_C "${CMAKE_BINARY_DIR}/bambu_ca_bundle.c")
+file(WRITE "${BAMBU_CA_BUNDLE_C}"
+    "const unsigned char bambu_ca_bundle[]={${BAMBU_CA_HEX}0x00};\n"
+    "const unsigned int bambu_ca_bundle_len=sizeof(bambu_ca_bundle);\n")
+set(ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+set(ENABLE_PROGRAMS OFF CACHE BOOL "" FORCE)
+set(MBEDTLS_FATAL_WARNINGS OFF CACHE BOOL "" FORCE)
+add_subdirectory("${MBEDTLS_ROOT}" "${CMAKE_BINARY_DIR}/mbedtls" EXCLUDE_FROM_ALL)
+
 # ---------- LVGL（与 desktop 端口同版本同 lv_conf） ----------
 set(DESKTOP_PORT "${SRC_ROOT}/ports/desktop")
 # LVGL os_desktop.cmake 未指定配置时在「顶层工程目录」找 lv_conf.h——desktop
@@ -78,7 +101,8 @@ file(GLOB UI_SRCS
 )
 
 # 与 desktop 端口 Linux/macOS 分支的产品目标同源：
-# POSIX sockets 传输 + bambu stub；WiFi 用空实现（Android 无 netsh/nmcli，WiFi 由系统管理）。
+# POSIX sockets 传输；拓竹走 POSIX+mbedTLS 后端（与 Linux 上位机同一实现）；
+# WiFi 用空实现（Android 无 netsh/nmcli，WiFi 由系统管理）。
 add_library(main SHARED
     "${DESKTOP_PORT}/main.c"
     "${SRC_ROOT}/bsp/bsp_screen_power.c"
@@ -94,8 +118,10 @@ add_library(main SHARED
     "${SRC_ROOT}/core/klipper_api.c"
     "${SRC_ROOT}/core/moonraker_client_posix.c"
     "${SRC_ROOT}/core/bambu_status.c"
-    "${SRC_ROOT}/core/bambu_monitor_stub.c"
-    "${SRC_ROOT}/core/bambu_cloud_stub.c"
+    "${DESKTOP_PORT}/bambu_monitor_posix.c"
+    "${DESKTOP_PORT}/bambu_cloud_posix.c"
+    "${DESKTOP_PORT}/bambu_tls_mbedtls.c"
+    "${BAMBU_CA_BUNDLE_C}"
     "${DESKTOP_PORT}/bsp_wifi_stub.c"
     ${UI_SRCS}
 )
@@ -108,6 +134,7 @@ target_include_directories(main PRIVATE
     "${SRC_ROOT}/ui/panels"
     "${SRC_ROOT}/ui/widgets"
     "${SDL2_ROOT}/include"
+    "${MBEDTLS_ROOT}/include"
 )
 
-target_link_libraries(main PRIVATE lvgl cjson SDL2::SDL2)
+target_link_libraries(main PRIVATE lvgl cjson SDL2::SDL2 mbedtls mbedx509 mbedcrypto)

@@ -412,6 +412,12 @@ jobs:
           mkdir -p third_party
           mv /tmp/lvgl-9.3.0 third_party/lvgl
 
+      - name: Fetch mbedTLS + CA bundle (Bambu POSIX backend, static)
+        run: |
+          git clone --depth 1 --recurse-submodules --shallow-submodules \
+            --branch v3.6.5 https://github.com/Mbed-TLS/mbedtls.git third_party/mbedtls
+          curl -fL --retry 5 --retry-all-errors -o third_party/cacert.pem https://curl.se/ca/cacert.pem
+
       - name: Build static SDL2
         run: |
           curl -L -o /tmp/sdl2.tar.gz https://github.com/libsdl-org/SDL/releases/download/release-2.30.9/SDL2-2.30.9.tar.gz

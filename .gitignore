@@ -22,6 +22,8 @@ src/ports/esp32/dependencies.lock
 third_party/lvgl/
 third_party/SDL2/
 third_party/cjson/
+third_party/mbedtls/
+third_party/cacert.pem
 .reff/
 tools/dl/
 tools/msys64/

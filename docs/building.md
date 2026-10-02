@@ -15,6 +15,13 @@ For developers: toolchain setup, desktop and per-board firmware builds, and rege
    tools/msys64/usr/bin/bash.exe -lc "pacman -Sy --noconfirm mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-SDL2 mingw-w64-ucrt-x86_64-cjson"
    ```
 3. Clone **LVGL**: `git clone --depth 1 -b release/v9.3 https://gitee.com/mirrors/lvgl.git third_party/lvgl`
+4. **Bambu POSIX backend dependencies** (only for the Linux desktop port and Android; the Windows desktop uses winhttp/OpenSSL and ESP32 uses IDF's mbedTLS):
+   ```bash
+   git clone --depth 1 --recurse-submodules --shallow-submodules -b v3.6.5 \
+     https://github.com/Mbed-TLS/mbedtls.git third_party/mbedtls
+   curl -L -o third_party/cacert.pem https://curl.se/ca/cacert.pem
+   ```
+   Android builds get these automatically via `tools/fetch-android-deps.sh`.
 
 ## Build commands
 

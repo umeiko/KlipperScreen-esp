@@ -111,6 +111,43 @@ else()
         # brew 前缀（arm64=/opt/homebrew，intel=/usr/local）不在部分
         # CMake 版本的默认搜索路径里，显式补上
         list(APPEND CMAKE_PREFIX_PATH /opt/homebrew /usr/local)
+    else()
+        # Linux 上位机拓竹后端：POSIX 实现 + mbedTLS 静态库
+        #（不引入动态依赖，保持"二进制只依赖 glibc"的发行约定）。
+        # third_party/mbedtls 与 third_party/cacert.pem 由 CI/脚本拉取（gitignored）。
+        set(MBEDTLS_ROOT ${REPO_ROOT}/third_party/mbedtls)
+        set(CACERT_PEM ${REPO_ROOT}/third_party/cacert.pem)
+        if(NOT EXISTS "${MBEDTLS_ROOT}/CMakeLists.txt")
+            message(FATAL_ERROR "mbedtls not found at third_party/mbedtls (docs/building 有拉取命令)")
+        endif()
+        if(NOT EXISTS "${CACERT_PEM}")
+            message(FATAL_ERROR "cacert.pem not found at third_party/cacert.pem (docs/building 有拉取命令)")
+        endif()
+        # Mozilla CA bundle → C 数组（尾部补 NUL：mbedtls PEM 解析按含 NUL 长度计）
+        file(READ ${CACERT_PEM} BAMBU_CA_HEX HEX)
+        string(REGEX REPLACE "(..)" "0x\\1," BAMBU_CA_HEX "${BAMBU_CA_HEX}")
+        set(BAMBU_CA_BUNDLE_C ${CMAKE_CURRENT_BINARY_DIR}/bambu_ca_bundle.c)
+        file(WRITE ${BAMBU_CA_BUNDLE_C}
+            "const unsigned char bambu_ca_bundle[]={${BAMBU_CA_HEX}0x00};\n"
+            "const unsigned int bambu_ca_bundle_len=sizeof(bambu_ca_bundle);\n")
+        set(ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+        set(ENABLE_PROGRAMS OFF CACHE BOOL "" FORCE)
+        set(MBEDTLS_FATAL_WARNINGS OFF CACHE BOOL "" FORCE)
+        add_subdirectory(${MBEDTLS_ROOT} ${CMAKE_CURRENT_BINARY_DIR}/mbedtls EXCLUDE_FROM_ALL)
+        set(BAMBU_BACKEND_SRCS
+            bambu_monitor_posix.c
+            bambu_cloud_posix.c
+            bambu_tls_mbedtls.c
+            ${BAMBU_CA_BUNDLE_C}
+        )
+    endif()
+
+    # 默认拓竹后端是 stub（macOS、simulator）；Linux 产品目标在上方覆盖为 POSIX 实现
+    if(NOT BAMBU_BACKEND_SRCS)
+        set(BAMBU_BACKEND_SRCS
+            ${SRC_ROOT}/core/bambu_monitor_stub.c
+            ${SRC_ROOT}/core/bambu_cloud_stub.c
+        )
     endif()
 
     find_package(cJSON CONFIG QUIET)
@@ -137,13 +174,14 @@ else()
         ${SRC_ROOT}/core/klipper_api.c
         ${SRC_ROOT}/core/moonraker_client_posix.c
         ${SRC_ROOT}/core/bambu_status.c
-        ${SRC_ROOT}/core/bambu_monitor_stub.c
-        ${SRC_ROOT}/core/bambu_cloud_stub.c
+        ${BAMBU_BACKEND_SRCS}
     )
     configure_desktop_target(KlipperScreen-esp)
     if(NOT APPLE)
         # -rdynamic：崩溃处理器的 backtrace 才能打出符号名（仅 Linux 有意义）
         set_target_properties(KlipperScreen-esp PROPERTIES ENABLE_EXPORTS ON)
+        target_include_directories(KlipperScreen-esp PRIVATE ${MBEDTLS_ROOT}/include)
+        target_link_libraries(KlipperScreen-esp PRIVATE mbedtls mbedx509 mbedcrypto)
     endif()
     # 代码写的是 #include "cJSON.h"，而头文件实际装在 include/cjson/ 子目录。
     # config 包会把 CJSON_INCLUDE_DIR 预设成 .../include 本体（不含子目录），

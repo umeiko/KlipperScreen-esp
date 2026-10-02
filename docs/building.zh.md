@@ -15,6 +15,13 @@
    tools/msys64/usr/bin/bash.exe -lc "pacman -Sy --noconfirm mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-SDL2 mingw-w64-ucrt-x86_64-cjson"
    ```
 3. 克隆 **LVGL** 源码：`git clone --depth 1 -b release/v9.3 https://gitee.com/mirrors/lvgl.git third_party/lvgl`
+4. **拓竹 POSIX 后端依赖**（仅 Linux 桌面端与 Android 需要；Windows 桌面端用 winhttp/openssl、ESP32 用 IDF mbedTLS，均不涉及）：
+   ```bash
+   git clone --depth 1 --recurse-submodules --shallow-submodules -b v3.6.5 \
+     https://github.com/Mbed-TLS/mbedtls.git third_party/mbedtls
+   curl -L -o third_party/cacert.pem https://curl.se/ca/cacert.pem
+   ```
+   Android 端不用手动执行——`tools/fetch-android-deps.sh` 已包含这两项。
 
 ## 构建命令
 

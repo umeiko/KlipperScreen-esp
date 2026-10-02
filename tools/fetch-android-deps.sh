@@ -32,6 +32,22 @@ if [ ! -f third_party/cjson/cJSON.c ]; then
     mv "/tmp/cJSON-$CJSON_VER" third_party/cjson
 fi
 
+MBEDTLS_VER=3.6.5
+if [ ! -f third_party/mbedtls/framework/CMakeLists.txt ]; then
+    echo "== fetch mbedTLS $MBEDTLS_VER（拓竹后端 TLS；需 framework 子模块）"
+    # 官方无 3.6.5 的 Release 资产，源码包不含 framework 子模块 → 用 git clone
+    rm -rf third_party/mbedtls
+    git clone --depth 1 --recurse-submodules --shallow-submodules \
+        --branch "v$MBEDTLS_VER" \
+        https://github.com/Mbed-TLS/mbedtls.git third_party/mbedtls
+fi
+
+if [ ! -f third_party/cacert.pem ]; then
+    echo "== fetch Mozilla CA bundle（拓竹 TLS 证书校验）"
+    curl -fL --retry 5 --retry-all-errors -o third_party/cacert.pem \
+        "https://curl.se/ca/cacert.pem"
+fi
+
 JAVA_DST=src/ports/android/app/src/main/java/org/libsdl/app
 if [ ! -f "$JAVA_DST/SDLActivity.java" ]; then
     echo "== copy SDLActivity glue ($SDL_VER)"
