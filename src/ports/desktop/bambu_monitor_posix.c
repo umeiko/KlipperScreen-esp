@@ -11,6 +11,8 @@
 #include "bambu_cloud_internal.h"
 #include "bambu_tls.h"
 
+#include <SDL.h>   /* SDL_Log：Android 落 logcat，Linux 落 stderr/日志文件 */
+
 #include <pthread.h>
 #include <stdatomic.h>
 #include <stdint.h>
@@ -185,7 +187,11 @@ static int mqtt_read_packet(bambu_tls_t *tls, unsigned char *type,
         multiplier *= 128;
         if (i == 3) return -1;
     }
-    if (remaining > MQTT_PACKET_MAX) return -2;
+    if (remaining > MQTT_PACKET_MAX) {
+        SDL_Log("bambu: oversize packet type=0x%02x remaining=%zu (cap %d)",
+                fixed, remaining, MQTT_PACKET_MAX);
+        return -2;
+    }
     unsigned char *payload = malloc(remaining + 1);
     if (!payload) return -1;
     if (remaining && tls_read_exact(tls, payload, remaining, generation) != 0) {
@@ -272,7 +278,7 @@ static int run_session(monitor_args_t *args)
     const char *host = args->region == BAMBU_CLOUD_REGION_CHINA
                      ? "cn.mqtt.bambulab.com" : "us.mqtt.bambulab.com";
     bambu_tls_t *tls = bambu_tls_connect(host, MQTT_PORT, 6000);
-    if (!tls) return -1;
+    if (!tls) { SDL_Log("bambu: tls connect %s failed", host); return -1; }
 
     unsigned char random[6] = {0};
     srand((unsigned)(now_ms() ^ (uint64_t)(uintptr_t)&tls));
@@ -281,9 +287,11 @@ static int run_session(monitor_args_t *args)
     snprintf(client_id, sizeof(client_id), "bblp_%02x%02x%02x%02x%02x%02x",
              random[0], random[1], random[2], random[3], random[4], random[5]);
     if (mqtt_connect_packet(tls, client_id, args->user_id, args->token) != 0) {
+        SDL_Log("bambu: mqtt CONNECT send failed");
         bambu_tls_close(tls); return -1;
     }
     int ack = wait_connack(tls, args->generation);
+    SDL_Log("bambu: connack rc=%d (serial=%s)", ack, args->serial);
     if (ack != 0) { bambu_tls_close(tls); return ack; }
 
     char report[96], request[96];
@@ -292,19 +300,26 @@ static int run_session(monitor_args_t *args)
     if (mqtt_subscribe(tls, report) != 0 ||
         mqtt_publish(tls, request,
             "{\"pushing\":{\"sequence_id\":\"1\",\"command\":\"pushall\",\"version\":1,\"push_target\":1}}") != 0) {
+        SDL_Log("bambu: subscribe/pushall send failed");
         bambu_tls_close(tls); return -1;
     }
+    SDL_Log("bambu: subscribed %s, pushall sent", report);
     publish_connection(args->generation, BAMBU_MONITOR_CONNECTED, true,
                        "已连接，正在读取打印机状态…");
 
     uint64_t last_tx = now_ms();
     int sess_rc = 0;
+    int first_data = 1;
     while (generation_alive(args->generation)) {
         unsigned char type, *body = NULL;
         size_t len = 0;
         int rc = mqtt_read_packet(tls, &type, &body, &len, args->generation);
         if (rc < 0) { sess_rc = rc; break; }
         if (rc > 0) {
+            if (first_data) {
+                SDL_Log("bambu: first packet type=0x%02x len=%zu", type, len);
+                first_data = 0;
+            }
             if ((type >> 4) == 3) merge_publish(args->generation, type, body, len, report);
             free(body);
         }
@@ -314,6 +329,7 @@ static int run_session(monitor_args_t *args)
             last_tx = now;
         }
     }
+    SDL_Log("bambu: session end rc=%d tls_err=%d", sess_rc, bambu_tls_last_error(tls));
     bambu_tls_close(tls);
     return sess_rc;
 }
@@ -341,6 +357,7 @@ static void *monitor_worker(void *context)
                                "云端实时连接被拒绝，请重新登录");
             break;
         }
+        SDL_Log("bambu: session rc=%d, retry in %ums", rc, backoff_ms);
         if (rc == -2) {
             /* 与网络断开区分：拓竹 pushall 在带 AMS 的机器上可能很大，
                若反复出现说明 MQTT_PACKET_MAX 仍不够，需继续放宽 */
@@ -372,6 +389,7 @@ void bambu_monitor_start(const char *serial)
     bool same = g_enabled && strcmp(g_target, serial) == 0;
     pthread_mutex_unlock(&g_lock);
     if (same) return;
+    SDL_Log("bambu: monitor start serial=%s", serial);
 
     monitor_args_t *args = calloc(1, sizeof(*args));
     if (!args) return;

@@ -28,6 +28,9 @@ int bambu_tls_write_all(bambu_tls_t *tls, const void *buf, int len);
 /* 关闭会话并释放资源（NULL 安全）。 */
 void bambu_tls_close(bambu_tls_t *tls);
 
+/* 最近一次 read/write/connect 的底层错误码（mbedTLS 负值或 0）。诊断用。 */
+int bambu_tls_last_error(const bambu_tls_t *tls);
+
 #ifdef __cplusplus
 }
 #endif

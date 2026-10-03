@@ -13,6 +13,7 @@
 #include <mbedtls/ctr_drbg.h>
 #include <mbedtls/net_sockets.h>
 #include <mbedtls/error.h>
+#include <SDL.h>   /* SDL_Log：Android 落 logcat，Linux 落 stderr/日志文件 */
 
 #include <arpa/inet.h>
 #include <errno.h>
@@ -33,6 +34,7 @@ extern const unsigned int bambu_ca_bundle_len;
 
 struct bambu_tls {
     int fd;
+    int last_err;   /* 最近一次 ssl_read/write/handshake 的原始负错误码 */
     mbedtls_ssl_context ssl;
     mbedtls_ssl_config conf;
     mbedtls_ctr_drbg_context ctr_drbg;
@@ -131,6 +133,7 @@ bambu_tls_t *bambu_tls_connect(const char *host, const char *port, int timeout_m
     if (ok) {
         tls->fd = tcp_connect_timeout(host, port, timeout_ms);
         ok = tls->fd >= 0;
+        if (!ok) SDL_Log("bambu_tls: tcp connect %s:%s failed", host, port);
     }
     if (ok) {
         mbedtls_ssl_set_bio(&tls->ssl, &tls->fd, mbedtls_net_send,
@@ -139,11 +142,19 @@ bambu_tls_t *bambu_tls_connect(const char *host, const char *port, int timeout_m
         while ((rc = mbedtls_ssl_handshake(&tls->ssl)) != 0) {
             if (rc != MBEDTLS_ERR_SSL_WANT_READ &&
                 rc != MBEDTLS_ERR_SSL_WANT_WRITE) {
+                tls->last_err = rc;
                 ok = 0;
                 break;
             }
         }
         if (ok && mbedtls_ssl_get_verify_result(&tls->ssl) != 0) ok = 0;
+        if (!ok) {
+            char errbuf[128];
+            mbedtls_strerror(tls->last_err, errbuf, sizeof(errbuf));
+            SDL_Log("bambu_tls: handshake %s failed: -0x%04x %s verify=0x%lx",
+                    host, -tls->last_err, errbuf,
+                    (unsigned long)mbedtls_ssl_get_verify_result(&tls->ssl));
+        }
     }
     if (!ok) {
         bambu_tls_close(tls);
@@ -160,6 +171,7 @@ int bambu_tls_read(bambu_tls_t *tls, void *buf, int len)
     if (n == MBEDTLS_ERR_SSL_WANT_READ || n == MBEDTLS_ERR_SSL_WANT_WRITE ||
         n == MBEDTLS_ERR_SSL_TIMEOUT)
         return 0;   /* SO_RCVTIMEO 到点：调用方轮询 */
+    tls->last_err = n;
     return -1;      /* PEER_CLOSE_NOTIFY / 协议错误 / 断开 */
 }
 
@@ -173,11 +185,17 @@ int bambu_tls_write_all(bambu_tls_t *tls, const void *buf, int len)
         if (n <= 0) {
             if (n == MBEDTLS_ERR_SSL_WANT_READ || n == MBEDTLS_ERR_SSL_WANT_WRITE)
                 continue;
+            tls->last_err = n;
             return -1;
         }
         done += n;
     }
     return 0;
+}
+
+int bambu_tls_last_error(const bambu_tls_t *tls)
+{
+    return tls ? tls->last_err : 0;
 }
 
 void bambu_tls_close(bambu_tls_t *tls)
