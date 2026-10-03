@@ -297,19 +297,20 @@ static int run_session(monitor_args_t *args)
     char report[96], request[96];
     snprintf(report, sizeof(report), "device/%s/report", args->serial);
     snprintf(request, sizeof(request), "device/%s/request", args->serial);
-    if (mqtt_subscribe(tls, report) != 0 ||
-        mqtt_publish(tls, request,
-            "{\"pushing\":{\"sequence_id\":\"1\",\"command\":\"pushall\",\"version\":1,\"push_target\":1}}") != 0) {
-        SDL_Log("bambu: subscribe/pushall send failed");
+    /* 先订阅，等 SUBACK 之后再发 pushall（与 ESP32 版行为一致——那边是
+       事件驱动，订阅确认事件里才发；broker 侧的鉴权/会话注册对顺序敏感，
+       订阅和拉全量连着发曾在真机上被踢线） */
+    if (mqtt_subscribe(tls, report) != 0) {
+        SDL_Log("bambu: subscribe send failed");
         bambu_tls_close(tls); return -1;
     }
-    SDL_Log("bambu: subscribed %s, pushall sent", report);
     publish_connection(args->generation, BAMBU_MONITOR_CONNECTED, true,
                        "已连接，正在读取打印机状态…");
 
     uint64_t last_tx = now_ms();
     int sess_rc = 0;
     int first_data = 1;
+    bool pushall_sent = false;
     while (generation_alive(args->generation)) {
         unsigned char type, *body = NULL;
         size_t len = 0;
@@ -320,6 +321,15 @@ static int run_session(monitor_args_t *args)
                 SDL_Log("bambu: first packet type=0x%02x len=%zu", type, len);
                 first_data = 0;
             }
+            if ((type >> 4) == 9 && !pushall_sent) {   /* SUBACK 到齐才拉全量 */
+                static const char pushall[] =
+                    "{\"pushing\":{\"sequence_id\":\"1\",\"command\":\"pushall\",\"version\":1,\"push_target\":1}}";
+                if (mqtt_publish(tls, request, pushall) != 0) {
+                    sess_rc = -1; free(body); break;
+                }
+                pushall_sent = true;
+                SDL_Log("bambu: subscribed %s, pushall sent", report);
+            }
             if ((type >> 4) == 3) merge_publish(args->generation, type, body, len, report);
             free(body);
         }
@@ -329,7 +339,9 @@ static int run_session(monitor_args_t *args)
             last_tx = now;
         }
     }
-    SDL_Log("bambu: session end rc=%d tls_err=%d", sess_rc, bambu_tls_last_error(tls));
+    SDL_Log("bambu: session end rc=%d tls_err=%d errno=%d(%s)",
+            sess_rc, bambu_tls_last_error(tls), bambu_tls_last_errno(tls),
+            strerror(bambu_tls_last_errno(tls)));
     bambu_tls_close(tls);
     return sess_rc;
 }

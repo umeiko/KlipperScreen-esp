@@ -34,12 +34,45 @@ extern const unsigned int bambu_ca_bundle_len;
 
 struct bambu_tls {
     int fd;
-    int last_err;   /* 最近一次 ssl_read/write/handshake 的原始负错误码 */
+    int last_err;    /* 最近一次 ssl_read/write/handshake 的原始负错误码 */
+    int last_errno;  /* 底层 recv/send 的 errno（掉线定位的关键证据） */
     mbedtls_ssl_context ssl;
     mbedtls_ssl_config conf;
     mbedtls_ctr_drbg_context ctr_drbg;
     mbedtls_entropy_context entropy;
 };
+
+/* 自写收发回调（mbedtls_net_* 会把 errno 吞成笼统的 NET_RECV_FAILED） */
+static int net_recv_cb(void *ctx, unsigned char *buf, size_t len)
+{
+    bambu_tls_t *t = ctx;
+    ssize_t n = recv(t->fd, buf, len, 0);
+    if (n < 0) {
+        t->last_errno = errno;
+        if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
+            return MBEDTLS_ERR_SSL_WANT_READ;
+        if (errno == ECONNRESET || errno == EPIPE)
+            return MBEDTLS_ERR_NET_CONN_RESET;
+        return MBEDTLS_ERR_NET_RECV_FAILED;
+    }
+    if (n == 0) return MBEDTLS_ERR_NET_CONN_RESET;
+    return (int)n;
+}
+
+static int net_send_cb(void *ctx, const unsigned char *buf, size_t len)
+{
+    bambu_tls_t *t = ctx;
+    ssize_t n = send(t->fd, buf, len, MSG_NOSIGNAL);
+    if (n < 0) {
+        t->last_errno = errno;
+        if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
+            return MBEDTLS_ERR_SSL_WANT_WRITE;
+        if (errno == ECONNRESET || errno == EPIPE)
+            return MBEDTLS_ERR_NET_CONN_RESET;
+        return MBEDTLS_ERR_NET_SEND_FAILED;
+    }
+    return (int)n;
+}
 
 static int tcp_connect_timeout(const char *host, const char *port, int timeout_ms)
 {
@@ -86,7 +119,7 @@ static int tcp_connect_timeout(const char *host, const char *port, int timeout_m
     return fd;
 }
 
-static int load_ca_bundle(mbedtls_x509_crt *cacert)
+static mbedtls_x509_crt *ca_bundle(void)
 {
     static mbedtls_x509_crt bundle;
     static int state;   /* 0=未加载 1=可用 -1=失败 */
@@ -99,9 +132,7 @@ static int load_ca_bundle(mbedtls_x509_crt *cacert)
         else
             state = 1;
     }
-    if (state != 1) return -1;
-    *cacert = bundle;   /* 结构体浅拷贝：conf 只按指针引用链，不能 crt_free 副本 */
-    return 0;
+    return state == 1 ? &bundle : NULL;
 }
 
 bambu_tls_t *bambu_tls_connect(const char *host, const char *port, int timeout_ms)
@@ -114,17 +145,16 @@ bambu_tls_t *bambu_tls_connect(const char *host, const char *port, int timeout_m
     mbedtls_ssl_config_init(&tls->conf);
     mbedtls_ctr_drbg_init(&tls->ctr_drbg);
     mbedtls_entropy_init(&tls->entropy);
-    mbedtls_x509_crt cacert;
-
+    mbedtls_x509_crt *cacert = ca_bundle();
     int ok = mbedtls_ctr_drbg_seed(&tls->ctr_drbg, mbedtls_entropy_func,
                                    &tls->entropy, NULL, 0) == 0 &&
-             load_ca_bundle(&cacert) == 0 &&
+             cacert != NULL &&
              mbedtls_ssl_config_defaults(&tls->conf, MBEDTLS_SSL_IS_CLIENT,
                                          MBEDTLS_SSL_TRANSPORT_STREAM,
                                          MBEDTLS_SSL_PRESET_DEFAULT) == 0;
     if (ok) {
         mbedtls_ssl_conf_authmode(&tls->conf, MBEDTLS_SSL_VERIFY_REQUIRED);
-        mbedtls_ssl_conf_ca_chain(&tls->conf, &cacert, NULL);
+        mbedtls_ssl_conf_ca_chain(&tls->conf, cacert, NULL);
         mbedtls_ssl_conf_rng(&tls->conf, mbedtls_ctr_drbg_random, &tls->ctr_drbg);
         mbedtls_ssl_conf_min_tls_version(&tls->conf, MBEDTLS_SSL_VERSION_TLS1_2);
         ok = mbedtls_ssl_setup(&tls->ssl, &tls->conf) == 0 &&
@@ -136,8 +166,7 @@ bambu_tls_t *bambu_tls_connect(const char *host, const char *port, int timeout_m
         if (!ok) SDL_Log("bambu_tls: tcp connect %s:%s failed", host, port);
     }
     if (ok) {
-        mbedtls_ssl_set_bio(&tls->ssl, &tls->fd, mbedtls_net_send,
-                            mbedtls_net_recv, NULL);
+        mbedtls_ssl_set_bio(&tls->ssl, tls, net_send_cb, net_recv_cb, NULL);
         int rc;
         while ((rc = mbedtls_ssl_handshake(&tls->ssl)) != 0) {
             if (rc != MBEDTLS_ERR_SSL_WANT_READ &&
@@ -196,6 +225,11 @@ int bambu_tls_write_all(bambu_tls_t *tls, const void *buf, int len)
 int bambu_tls_last_error(const bambu_tls_t *tls)
 {
     return tls ? tls->last_err : 0;
+}
+
+int bambu_tls_last_errno(const bambu_tls_t *tls)
+{
+    return tls ? tls->last_errno : 0;
 }
 
 void bambu_tls_close(bambu_tls_t *tls)

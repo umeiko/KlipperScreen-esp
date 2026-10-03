@@ -30,6 +30,8 @@ void bambu_tls_close(bambu_tls_t *tls);
 
 /* 最近一次 read/write/connect 的底层错误码（mbedTLS 负值或 0）。诊断用。 */
 int bambu_tls_last_error(const bambu_tls_t *tls);
+/* 底层 recv/send 的 errno（0=无）。诊断用。 */
+int bambu_tls_last_errno(const bambu_tls_t *tls);
 
 #ifdef __cplusplus
 }

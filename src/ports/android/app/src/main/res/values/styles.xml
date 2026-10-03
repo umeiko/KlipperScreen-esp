@@ -2,5 +2,8 @@
 <resources>
     <!-- SDL 全屏无标题栏主题（沿用 SDL android-project 模板） -->
     <style name="AppTheme" parent="android:Theme.NoTitleBar.Fullscreen">
+        <!-- 刘海/挖孔屏：允许内容延伸到短边缺口区（横屏时左侧挖孔列不再留黑边） -->
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
     </style>
 </resources>
+
