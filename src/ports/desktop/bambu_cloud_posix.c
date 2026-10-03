@@ -160,16 +160,21 @@ static int http_read_exact(bambu_tls_t *tls, char *out, size_t len)
     return 0;
 }
 
-/* 读一行（不含 \r\n）：返回长度，-1=失败 */
+/* 读一行（不含 \r\n）：返回长度，-1=失败（含超时预算耗尽） */
 static int http_read_line(bambu_tls_t *tls, char *out, size_t cap)
 {
     size_t used = 0;
     char prev = 0;
+    int idle = 0;
     for (;;) {
         char c;
         int n = http_read_byte(tls, &c);
         if (n < 0) return -1;
-        if (n == 0) continue;   /* 超时重试（http_read_exact 外层控制预算） */
+        if (n == 0) {
+            if (++idle > HTTP_READ_IDLE_MAX) return -1;   /* 超时累计上限，防死等 */
+            continue;
+        }
+        idle = 0;
         if (c == '\n' && prev == '\r') {
             if (used) used--;   /* 去掉 \r */
             break;
@@ -239,11 +244,8 @@ static bool http_request(const char *host, const char *path, const char *method,
 
     /* 状态行 */
     char line[2048];
-    int idle = 0;
-    for (;;) {
-        int n = http_read_line(tls, line, sizeof(line));
-        if (n >= 0) break;
-        if (++idle > HTTP_READ_IDLE_MAX) { out->net_error = 1; bambu_tls_close(tls); return false; }
+    if (http_read_line(tls, line, sizeof(line)) < 0) {
+        out->net_error = 1; bambu_tls_close(tls); return false;
     }
     if (sscanf(line, "HTTP/%*s %d", &out->status) != 1) {
         out->net_error = 1; bambu_tls_close(tls); return false;
@@ -254,11 +256,8 @@ static bool http_request(const char *host, const char *path, const char *method,
     bool chunked = false;
     if (cookie_jar) copy_text(out->cookies, sizeof(out->cookies), cookie_jar);
     for (;;) {
-        idle = 0;
-        for (;;) {
-            int n = http_read_line(tls, line, sizeof(line));
-            if (n >= 0) break;
-            if (++idle > HTTP_READ_IDLE_MAX) { out->net_error = 1; bambu_tls_close(tls); return false; }
+        if (http_read_line(tls, line, sizeof(line)) < 0) {
+            out->net_error = 1; bambu_tls_close(tls); return false;
         }
         if (!line[0]) break;   /* 空行 = 头结束 */
         if (strncasecmp(line, "Set-Cookie:", 11) == 0) {
@@ -276,13 +275,7 @@ static bool http_request(const char *host, const char *path, const char *method,
     bool fail = false;
     if (chunked) {
         for (;;) {
-            idle = 0;
-            for (;;) {
-                int n = http_read_line(tls, line, sizeof(line));
-                if (n >= 0) break;
-                if (++idle > HTTP_READ_IDLE_MAX) { fail = true; break; }
-            }
-            if (fail) break;
+            if (http_read_line(tls, line, sizeof(line)) < 0) { fail = true; break; }
             long chunk = strtol(line, NULL, 16);
             if (chunk < 0) { fail = true; break; }
             if (chunk == 0) break;   /* 尾块（trailer 忽略，直接读到关闭即可） */
@@ -313,6 +306,7 @@ static bool http_request(const char *host, const char *path, const char *method,
     } else {
         /* Connection: close → 读到断（空转预算用完后等对端关） */
         char buf[8192];
+        int idle = 0;
         for (;;) {
             int n = bambu_tls_read(tls, buf, sizeof(buf));
             if (n > 0) {

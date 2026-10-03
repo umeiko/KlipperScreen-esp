@@ -21,7 +21,10 @@
 
 #define MQTT_PORT          "8883"
 #define MQTT_TOKEN_MAX       2048
-#define MQTT_PACKET_MAX  (64 * 1024)
+/* POSIX 内存充裕，包上限放宽到 1MB：拓竹 pushall 全量状态（多槽 AMS 时尤其大）
+ * 经常超过 64KB。ESP32 走流式解析无此问题；超过上限的包会断开重连（=反复横跳），
+ * 故超限断开时走单独的返回码，消息里能区分出来。 */
+#define MQTT_PACKET_MAX  (1024 * 1024)
 
 typedef struct {
     int generation;
@@ -165,7 +168,7 @@ static int mqtt_connect_packet(bambu_tls_t *tls, const char *client_id,
     return rc;
 }
 
-/* 1=packet, 0=idle timeout, -1=disconnect/protocol error. */
+/* 1=packet, 0=idle timeout, -1=disconnect/protocol error, -2=oversize packet. */
 static int mqtt_read_packet(bambu_tls_t *tls, unsigned char *type,
                             unsigned char **body, size_t *body_len,
                             int generation)
@@ -182,7 +185,7 @@ static int mqtt_read_packet(bambu_tls_t *tls, unsigned char *type,
         multiplier *= 128;
         if (i == 3) return -1;
     }
-    if (remaining > MQTT_PACKET_MAX) return -1;
+    if (remaining > MQTT_PACKET_MAX) return -2;
     unsigned char *payload = malloc(remaining + 1);
     if (!payload) return -1;
     if (remaining && tls_read_exact(tls, payload, remaining, generation) != 0) {
@@ -263,7 +266,7 @@ static void merge_publish(int generation, unsigned char fixed,
     pthread_mutex_unlock(&g_lock);
 }
 
-/* 0=normal disconnect, 4/5=MQTT auth failure, -1=network/protocol error. */
+/* 0=对端主动断开, 4/5=MQTT auth failure, -1=network/protocol error, -2=oversize packet. */
 static int run_session(monitor_args_t *args)
 {
     const char *host = args->region == BAMBU_CLOUD_REGION_CHINA
@@ -295,23 +298,24 @@ static int run_session(monitor_args_t *args)
                        "已连接，正在读取打印机状态…");
 
     uint64_t last_tx = now_ms();
+    int sess_rc = 0;
     while (generation_alive(args->generation)) {
         unsigned char type, *body = NULL;
         size_t len = 0;
         int rc = mqtt_read_packet(tls, &type, &body, &len, args->generation);
-        if (rc < 0) break;
+        if (rc < 0) { sess_rc = rc; break; }
         if (rc > 0) {
             if ((type >> 4) == 3) merge_publish(args->generation, type, body, len, report);
             free(body);
         }
         uint64_t now = now_ms();
         if (now - last_tx >= 30000) {
-            if (mqtt_send(tls, 0xC0, NULL, 0) != 0) break;
+            if (mqtt_send(tls, 0xC0, NULL, 0) != 0) { sess_rc = -1; break; }
             last_tx = now;
         }
     }
     bambu_tls_close(tls);
-    return 0;
+    return sess_rc;
 }
 
 static void *monitor_worker(void *context)
@@ -337,8 +341,15 @@ static void *monitor_worker(void *context)
                                "云端实时连接被拒绝，请重新登录");
             break;
         }
-        publish_connection(args->generation, BAMBU_MONITOR_NETWORK_ERROR, false,
-                           "实时连接中断，正在重试…");
+        if (rc == -2) {
+            /* 与网络断开区分：拓竹 pushall 在带 AMS 的机器上可能很大，
+               若反复出现说明 MQTT_PACKET_MAX 仍不够，需继续放宽 */
+            publish_connection(args->generation, BAMBU_MONITOR_NETWORK_ERROR, false,
+                               "状态数据包过大，正在重试…");
+        } else {
+            publish_connection(args->generation, BAMBU_MONITOR_NETWORK_ERROR, false,
+                               "实时连接中断，正在重试…");
+        }
         unsigned waited = 0;
         while (waited < backoff_ms && generation_alive(args->generation)) {
             sleep_ms(100);
