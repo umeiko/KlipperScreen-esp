@@ -14,7 +14,7 @@ void printer_set_refresh_hook(void (*fn)(void)) { refresh_hook = fn; }
 
 static struct {
     printer_state_t state;
-    float ext, bed, ext_t, bed_t;
+    float bed, bed_t;
     float pos[3];
     int homed[3];
     float e_pos;
@@ -23,11 +23,17 @@ static struct {
     uint32_t tick;         /* 秒计数 */
     uint32_t print_start_tick;
     float flow;
+    int tool_count;        /* 工具数，>=1 */
+    int current_tool;      /* 活动工具，0 起 */
+    float tool_temp[PRINTER_MAX_TOOLS];
+    float tool_target[PRINTER_MAX_TOOLS];
 } P = {
     .state = PRINTER_STATE_STANDBY,
-    .ext = 24.5f, .bed = 23.8f, .ext_t = 0, .bed_t = 0,
+    .bed = 23.8f, .bed_t = 0,
     .pos = {0, 0, 0}, .homed = {0, 0, 0},
     .progress = 0, .filename = "", .flow = 100,
+    .tool_count = 1, .current_tool = 0,
+    .tool_temp = {24.5f}, .tool_target = {0},
 };
 
 printer_state_t printer_state(void) { return P.state; }
@@ -45,9 +51,52 @@ printer_capabilities_t printer_capabilities(void)
 
 /* 截图演示用：直接注入状态（desktop 端 main.c 调用） */
 void printer_mock_set_state(printer_state_t s) { P.state = s; }
-float printer_temp_ext(void)  { return P.ext; }
+
+/* 演示多工具：注入后可显示 T0..T{n-1} 选择器 */
+void printer_mock_set_tool_count(int n)
+{
+    if (n < 1) n = 1;
+    if (n > PRINTER_MAX_TOOLS) n = PRINTER_MAX_TOOLS;
+    P.tool_count = n;
+    if (P.current_tool >= n) P.current_tool = 0;
+}
+
+int printer_tool_count(void)  { return P.tool_count >= 1 ? P.tool_count : 1; }
+
+int printer_current_tool(void)
+{
+    int t = P.current_tool;
+    if (t < 0 || t >= printer_tool_count()) return 0;
+    return t;
+}
+
+float printer_temp_tool(int tool)
+{
+    if (tool < 0 || tool >= printer_tool_count()) tool = 0;
+    return P.tool_temp[tool];
+}
+
+float printer_target_tool(int tool)
+{
+    if (tool < 0 || tool >= printer_tool_count()) tool = 0;
+    return P.tool_target[tool];
+}
+
+void printer_set_target_tool(int tool, float t)
+{
+    if (tool < 0 || tool >= P.tool_count) return;
+    P.tool_target[tool] = t;
+}
+
+void printer_select_tool(int tool)
+{
+    if (tool < 0 || tool >= P.tool_count) return;
+    P.current_tool = tool;
+}
+
+float printer_temp_ext(void)  { return printer_temp_tool(printer_current_tool()); }
 float printer_temp_bed(void)  { return P.bed; }
-float printer_target_ext(void){ return P.ext_t; }
+float printer_target_ext(void){ return printer_target_tool(printer_current_tool()); }
 float printer_target_bed(void){ return P.bed_t; }
 float printer_pos(int axis)   { return P.pos[axis]; }
 int printer_homed(int axis)   { return P.homed[axis]; }
@@ -78,7 +127,7 @@ uint32_t printer_print_eta_s(void)
 int printer_layer_current(void) { return 0; }
 int printer_layer_total(void) { return 0; }
 
-void printer_set_target_ext(float t) { P.ext_t = t; }
+void printer_set_target_ext(float t) { P.tool_target[printer_current_tool()] = t; }
 void printer_set_target_bed(float t) { P.bed_t = t; }
 
 void printer_jog(int axis, float dist)
@@ -118,14 +167,14 @@ void printer_emergency_stop(void)
     P.state = PRINTER_STATE_STANDBY;
     P.progress = 0;
     P.filename = "";
-    P.ext_t = 0;
+    for (int i = 0; i < PRINTER_MAX_TOOLS; i++) P.tool_target[i] = 0;
     P.bed_t = 0;
 }
 
 void printer_firmware_restart(void)
 {
     /* FIRMWARE_RESTART：下位机重启期间加热目标清零 */
-    P.ext_t = 0;
+    for (int i = 0; i < PRINTER_MAX_TOOLS; i++) P.tool_target[i] = 0;
     P.bed_t = 0;
 }
 
@@ -177,10 +226,10 @@ static void tick_1s(lv_timer_t *tm)
     LV_UNUSED(tm);
     P.tick++;
 
-    float rate = (P.ext_t > P.ext) ? 3.0f : 0.4f;   /* 升温快、降温慢 */
-    P.ext += (P.ext_t - P.ext) * 0.18f + ((float)(rand() % 10) - 5) * 0.02f;
+    for (int i = 0; i < PRINTER_MAX_TOOLS; i++)
+        P.tool_temp[i] += (P.tool_target[i] - P.tool_temp[i]) * 0.18f +
+                          ((float)(rand() % 10) - 5) * 0.02f;
     P.bed += (P.bed_t - P.bed) * 0.12f + ((float)(rand() % 10) - 5) * 0.015f;
-    LV_UNUSED(rate);
 
     if (P.state == PRINTER_STATE_PRINTING && P.progress < 1000) {
         P.progress += 2 + rand() % 3;               /* ~5~8 分钟打完一个 mock 件 */

@@ -37,9 +37,13 @@ enum {
     PRINTER_CAP_CANCEL           = 1u << 7,
     PRINTER_CAP_EMERGENCY_STOP   = 1u << 8,
     PRINTER_CAP_FIRMWARE_RESTART = 1u << 9,
+    PRINTER_CAP_TOOLS            = 1u << 10,
 };
 
-#define PRINTER_CAP_KLIPPER_ALL ((printer_capabilities_t)((1u << 10) - 1u))
+#define PRINTER_CAP_KLIPPER_ALL ((printer_capabilities_t)((1u << 11) - 1u))
+
+/* 多热端/工具切换上限（toolchanger T0..T7）。 */
+#define PRINTER_MAX_TOOLS 8
 
 /* 初始化并启动 1s 数据节拍（内部创建 LVGL timer，驱动 panel_mgr_tick） */
 void printer_init(void);
@@ -54,9 +58,9 @@ static inline bool printer_has_capability(printer_capabilities_t cap)
 
 /* ---- 读 ---- */
 printer_state_t printer_state(void);
-float printer_temp_ext(void);      /* 当前喷嘴温度 */
+float printer_temp_ext(void);      /* 当前喷嘴温度（活动工具） */
 float printer_temp_bed(void);
-float printer_target_ext(void);    /* 目标温度 */
+float printer_target_ext(void);    /* 目标温度（活动工具） */
 float printer_target_bed(void);
 float printer_pos(int axis);       /* 0=X 1=Y 2=Z */
 int  printer_homed(int axis);
@@ -68,6 +72,14 @@ int  printer_layer_current(void);       /* 0=后端未提供 */
 int  printer_layer_total(void);
 float printer_flow_pct(void);      /* 打印流量 % */
 int  printer_rtt_ms(void);         /* 到 Moonraker 的应用层心跳延迟 ms，0=未知/离线 */
+
+/* ---- 多工具（toolchanger）---- */
+int   printer_tool_count(void);            /* >=1；1 = 单挤出机 */
+int   printer_current_tool(void);          /* 活动工具索引，0 起 */
+float printer_temp_tool(int tool);         /* 指定工具喷嘴温度，越界回退到工具 0 */
+float printer_target_tool(int tool);       /* 指定工具目标温度，越界回退到工具 0 */
+void  printer_set_target_tool(int tool, float t);   /* M104 T{tool} S... */
+void  printer_select_tool(int tool);       /* 发送 T{tool} */
 
 /* 取走一条待提示的 klippy 错误（如 "Endstop not triggered"，来自 GCode "!!" 响应行）。
  * 有则拷入 out 并返回 true（取后清空），无则 false。UI 节拍轮询后弹 toast。 */

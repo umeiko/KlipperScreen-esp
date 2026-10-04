@@ -2,6 +2,8 @@
 /*
  * printer_model 给 moonraker_client 的内部接口（不在 printer.h 公共契约里）。
  */
+#include "printer.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -25,6 +27,10 @@ void printer_model_report_rpc_error(char *msg_heap);
 
 /* 更新应用层心跳 RTT（毫秒）。LVGL 上下文执行。 */
 void printer_model_set_rtt(int ms);
+
+/* 设置工具数量（moonraker objects.list 枚举后由传输层调用）。钳制到
+ * [1, PRINTER_MAX_TOOLS]；缩小后活动工具越界则回到 0。LVGL 上下文执行。 */
+void printer_model_set_tool_count(int n);
 
 #ifdef __cplusplus
 }

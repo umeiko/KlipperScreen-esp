@@ -327,6 +327,9 @@ static const dict_entry_t dict[] = {
      "確認關閉電機？\n所有步進馬達將失去保持力矩（M84）",
      "Arrêter les moteurs ?\nPerte du couple de maintien (M84)",
      "Disattivare i motori?\nPerdita della coppia di mantenimento (M84)"},
+    /* 多工具（toolchanger） */
+    {"工具",            "Tool",                "工具",              "Outil",                     "Strumento"},
+    {"工具 %d",         "Tool %d",             "工具 %d",           "Outil %d",                  "Strumento %d"},
 };
 /* clang-format on */
 
