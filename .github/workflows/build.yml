@@ -533,7 +533,7 @@ jobs:
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [package, desktop-win, desktop-mac, desktop-linux]
+    needs: [package, desktop-win, desktop-mac, desktop-linux, android]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -544,6 +544,11 @@ jobs:
         with:
           name: packages-${{ github.ref_name }}
           path: dl/pkg
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-apk-${{ github.ref_name }}
+          path: dl/android
 
       - uses: actions/download-artifact@v4
         with:
@@ -583,6 +588,8 @@ jobs:
           (cd dl/desktop-win && zip -r "$GITHUB_WORKSPACE/desktop-win-x86_64.zip" .)
           # artifact 往返可能丢 unix 执行位，zip 前先补回（zip 会保存权限位）
           (cd dl/desktop-mac && chmod +x KlipperScreen-esp klipper_remote_simulator && zip -r "$GITHUB_WORKSPACE/desktop-macos-arm64.zip" .)
+          # Android APK 已是成品（CI 已按固定测试密钥签名），直接搬上来
+          cp dl/android/KlipperScreen-esp-android.apk "$GITHUB_WORKSPACE/"
           # Linux 产物在构建 job 里已打成 tar.gz（保留执行位），直接搬上来
           cp dl/linux-x64/desktop-linux-x86_64.tar.gz dl/linux-arm64/desktop-linux-arm64.tar.gz \
              dl/linux-armhf/desktop-linux-armhf.tar.gz "$GITHUB_WORKSPACE/"
@@ -604,11 +611,12 @@ jobs:
             desktop-linux-x86_64.tar.gz.md5
             desktop-linux-arm64.tar.gz.md5
             desktop-linux-armhf.tar.gz.md5
+            KlipperScreen-esp-android.apk
           # 板型产物说明（引脚/接线/刷机地址）见文档站，自动生成 notes 会附加在其后
           body: |
             **Supported boards / 支持的板型**: https://umeiko.github.io/KlipperScreen-esp/boards/
 
-            每个 `ESP-IDFv5.5-<board>.zip` 是一种板型的固件刷机包（ESP-IDF v5.5.5 构建，资产名不带版本号）；`desktop-win-x86_64.zip` 与 `desktop-macos-arm64.zip` 是 Windows / macOS 桌面端；`desktop-linux-x86_64.tar.gz` / `desktop-linux-arm64.tar.gz` / `desktop-linux-armhf.tar.gz` 是 Linux 上位机预编译包（静态链接 SDL2，解压后运行 `install.sh`，可选 systemd 独占显示服务或桌面 App，支持 Wayland-weston / X11）。刷机前请先在上方页面确认你板子的产物名称、接线与刷机说明。
+            每个 `ESP-IDFv5.5-<board>.zip` 是一种板型的固件刷机包（ESP-IDF v5.5.5 构建，资产名不带版本号）；`desktop-win-x86_64.zip` 与 `desktop-macos-arm64.zip` 是 Windows / macOS 桌面端；`desktop-linux-x86_64.tar.gz` / `desktop-linux-arm64.tar.gz` / `desktop-linux-armhf.tar.gz` 是 Linux 上位机预编译包（静态链接 SDL2，解压后运行 `install.sh`，可选 systemd 独占显示服务或桌面 App，支持 Wayland-weston / X11）；`KlipperScreen-esp-android.apk` 是 Android 手机/平板端（方向跟随系统旋转，侧载安装，与桌面端同一套 UI）。刷机前请先在上方页面确认你板子的产物名称、接线与刷机说明。
 
             **本版更新 / What's new**
             - 新增：Linux 版"关于本机"内可检查更新——查询 GitHub latest release、下载对应架构包、md5 校验，可暂停/取消，确认后原地替换二进制并由 systemd 拉起 / In-app self-update for Linux hosts with pause/cancel, MD5 verification and atomic binary swap

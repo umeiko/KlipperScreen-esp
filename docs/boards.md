@@ -42,6 +42,7 @@ Flash packages are named `ESP-IDFv5.5-<board>.zip` (asset names carry no version
 | Windows desktop simulator | [desktop-win-x86_64.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/desktop-win-x86_64.zip) |
 | Linux host (x86_64) | [desktop-linux-x86_64.tar.gz](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/desktop-linux-x86_64.tar.gz) |
 | Linux host (arm64) | [desktop-linux-arm64.tar.gz](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/desktop-linux-arm64.tar.gz) |
+| Android phone/tablet | [KlipperScreen-esp-android.apk](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/KlipperScreen-esp-android.apk) |
 
 ---
 
@@ -575,3 +576,16 @@ Uninstall with the bundled `./uninstall.sh`.
 - Touch input works through the kernel's evdev/libinput stack — both weston and xinit backends forward it transparently.
 - On Klipper hosts (`~/printer_data` present), config lives in `~/printer_data/config/KlipperScreen-esp/` so fluidd/mainsail can view and edit it directly, and service logs land in `~/printer_data/logs/KlipperScreen-esp.log` (downloadable from the web UI). Every app-written config also refreshes a `.bak` checkpoint — if a hand edit breaks the main file, the last known-good copy is used instead of crashing. On first boot, printer slot 1 is pre-filled with the local Moonraker (`127.0.0.1`, named after the login user).
 - Building from source instead: see [Building from source](building.md).
+
+---
+
+## Android phone / tablet
+
+**Package**: [KlipperScreen-esp-android.apk](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/KlipperScreen-esp-android.apk)
+
+*No ESP32, no Linux reflash — an old phone or tablet with the APK becomes a Klipper remote screen (same UI as the desktop ports).*
+
+- Tap to install after downloading (sideload; allow "unknown sources"); arm64-v8a / armeabi-v7a, Android 5.0+.
+- Orientation fully follows the system (auto-rotate aware); immersive fullscreen without the system status/nav bars, including display-cutout areas.
+- Bambu cloud sign-in and live status monitoring are supported (same capability as the ESP32 firmware); WiFi is managed by the OS, so there is no in-app WiFi page.
+- Backlight/screen-off control, local gcode thumbnails and in-app self-update are ESP32/Linux-host capabilities and are not offered on Android.

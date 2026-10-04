@@ -42,6 +42,7 @@
 | Windows 桌面模拟器 | [desktop-win-x86_64.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/desktop-win-x86_64.zip) |
 | Linux 上位机（x86_64） | [desktop-linux-x86_64.tar.gz](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/desktop-linux-x86_64.tar.gz) |
 | Linux 上位机（arm64） | [desktop-linux-arm64.tar.gz](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/desktop-linux-arm64.tar.gz) |
+| Android 手机/平板 | [KlipperScreen-esp-android.apk](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/KlipperScreen-esp-android.apk) |
 
 ---
 
@@ -575,3 +576,16 @@ KR_BACKEND=wayland KR_START=0 ./install.sh
 - 触摸走内核 evdev/libinput，weston 和 xinit 后端都会透传。
 - Klipper 上位机（存在 `~/printer_data`）下，配置放在 `~/printer_data/config/KlipperScreen-esp/`，fluidd/mainsail 可直接查看编辑；服务日志写到 `~/printer_data/logs/KlipperScreen-esp.log`，网页端可直接下载。每次应用写配置会同步刷新 `.bak` 检查点——主文件被手改损坏时自动还原到最近一次已知良好的内容，不会崩。首次开机会把打印机槽 1 预填为本机 Moonraker（`127.0.0.1`，名称沿用登录用户名）。
 - 想从源码构建见 [从源码构建](building.md)。
+
+---
+
+## Android 手机/平板
+
+**安装包**: [KlipperScreen-esp-android.apk](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/KlipperScreen-esp-android.apk)
+
+*不用 ESP32、也不用刷 Linux——旧手机/平板直接装 APK 就是一块 Klipper 远程屏（与桌面端同一套 UI）。*
+
+- 下载后点按安装（侧载，需允许"未知来源"）；arm64-v8a / armeabi-v7a 双架构，Android 5.0+。
+- 显示方向完全跟随系统（系统开自动旋转则横竖屏自适应）；沉浸式全屏，系统状态栏/导航栏不遮挡界面，刘海/挖孔区也会利用上。
+- 支持拓竹云登录与实时状态监视（与 ESP32 固件同一能力面）；WiFi 由系统管理，应用内没有 WiFi 设置页。
+- 背光/自动息屏、本机 gcode 缩略图、应用内检查更新为 ESP32/Linux 上位机专属能力，Android 端不提供。
