@@ -1,7 +1,7 @@
 /*******************************************************************************
  * Size: 24 px
  * Bpp: 4
- * Opts: --font C:\Users\m9291\Desktop\Klipper-Remote-esp32-Displays\tools\fontgen\fonts\Lato-Regular.ttf --size 24 --bpp 4 --format lvgl --lv-include lvgl.h --range 0x20-0x7F,0xA0-0xFF --no-compress -o C:\Users\m9291\Desktop\Klipper-Remote-esp32-Displays\src\ui\assets\font_latin_24.c
+ * Opts: --font E:\Users\m9291\Desktop\mcuProgramming\KlipperScreen-esp\tools\fontgen\fonts\Lato-Regular.ttf --size 24 --bpp 4 --format lvgl --lv-include lvgl.h --range 0x20-0x7F,0xA0-0xFF --no-compress -o E:\Users\m9291\Desktop\mcuProgramming\KlipperScreen-esp\src\ui\assets\font_latin_24.c
  ******************************************************************************/
 
 #ifdef LV_LVGL_H_INCLUDE_SIMPLE

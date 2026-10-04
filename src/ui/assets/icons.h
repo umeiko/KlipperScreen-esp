@@ -94,6 +94,30 @@ LV_IMAGE_DECLARE(img_motor_off_sm);
 LV_IMAGE_DECLARE(img_klipper_logo_56_sm);
 LV_IMAGE_DECLARE(img_bambu_logo_56_sm);
 
+/* 菜单页（MDI 图标）：主菜单"菜单"入口 + 菜单行图标 */
+LV_IMAGE_DECLARE(img_menu);         /* 28px 列表 */
+LV_IMAGE_DECLARE(img_menu_56);      /* 56px 大屏 2x */
+LV_IMAGE_DECLARE(img_menu_112);     /* 112px 桌面 huge 档 */
+LV_IMAGE_DECLARE(img_menu_sm);
+LV_IMAGE_DECLARE(img_extrude_24);   /* 24px 挤出（菜单行，与行图标对齐） */
+LV_IMAGE_DECLARE(img_extrude_24_sm);
+LV_IMAGE_DECLARE(img_extrude_24_48);
+LV_IMAGE_DECLARE(img_sensors);      /* 24px 开关：传感器状态 */
+LV_IMAGE_DECLARE(img_sensors_sm);
+LV_IMAGE_DECLARE(img_sensors_48);
+LV_IMAGE_DECLARE(img_macro);        /* 24px 代码标签：宏 */
+LV_IMAGE_DECLARE(img_macro_sm);
+LV_IMAGE_DECLARE(img_macro_48);
+LV_IMAGE_DECLARE(img_console);      /* 24px 终端：控制台 */
+LV_IMAGE_DECLARE(img_console_sm);
+LV_IMAGE_DECLARE(img_console_48);
+LV_IMAGE_DECLARE(img_fan);          /* 24px 风扇 */
+LV_IMAGE_DECLARE(img_fan_sm);
+LV_IMAGE_DECLARE(img_fan_48);
+LV_IMAGE_DECLARE(img_zcal);         /* 24px 垂直双箭头：Z 校准 */
+LV_IMAGE_DECLARE(img_zcal_sm);
+LV_IMAGE_DECLARE(img_zcal_48);
+
 #ifdef __cplusplus
 }
 #endif

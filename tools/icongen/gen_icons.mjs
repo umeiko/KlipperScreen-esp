@@ -97,6 +97,29 @@ const ICONS = [
   ['wifi_weak',      48, 'wifi_1_48'],
   ['klipper_logo',  224, 'klipper_logo_224', 'RGB565A8'],
   ['bambu_logo',    224, 'bambu_logo_224',   'RGB565A8'],
+  // 菜单页（主菜单"菜单"入口 + 菜单行图标；SVG 来自 Material Design Icons, Apache-2.0）
+  ['menu',                 28, 'menu'],        // 主菜单"菜单"格
+  ['menu',                 13, 'menu_sm'],
+  ['menu',                 56, 'menu_56'],
+  ['menu',                112, 'menu_112'],
+  ['extrude',              24, 'extrude_24'],  // 菜单行：挤出（与 24px 行图标对齐）
+  ['extrude',              11, 'extrude_24_sm'],
+  ['extrude',              48, 'extrude_24_48'],
+  ['electric-switch',      24, 'sensors'],     // 菜单-传感器状态
+  ['electric-switch',      11, 'sensors_sm'],
+  ['electric-switch',      48, 'sensors_48'],
+  ['code-tags',            24, 'macro'],       // 菜单-宏
+  ['code-tags',            11, 'macro_sm'],
+  ['code-tags',            48, 'macro_48'],
+  ['console',              24, 'console'],     // 菜单-控制台
+  ['console',              11, 'console_sm'],
+  ['console',              48, 'console_48'],
+  ['fan',                  24, 'fan'],         // 菜单-风扇
+  ['fan',                  11, 'fan_sm'],
+  ['fan',                  48, 'fan_48'],
+  ['arrow-expand-vertical', 24, 'zcal'],       // 菜单-Z 校准
+  ['arrow-expand-vertical', 11, 'zcal_sm'],
+  ['arrow-expand-vertical', 48, 'zcal_48'],
 ];
 
 mkdirSync(OUT_PNG, { recursive: true });

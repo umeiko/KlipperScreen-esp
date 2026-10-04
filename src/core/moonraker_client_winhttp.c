@@ -261,6 +261,8 @@ bool moonraker_rpc(const char *method, const char *params_json,
 }
 
 /* ---------- Moonraker protocol ---------- */
+static cJSON *g_objects;   /* objects.list 结果（客户端线程持有），动态订阅用 */
+
 static void handshake_step_subscribe(void);
 
 static void on_subscribe_result(cJSON *result)
@@ -272,7 +274,8 @@ static void on_subscribe_result(cJSON *result)
 
 static void handshake_step_subscribe(void)
 {
-    const char *params =
+    char params[4096];
+    size_t n = (size_t)snprintf(params, sizeof(params),
         "{\"objects\":{"
         "\"webhooks\":null,"
         "\"print_stats\":[\"state\",\"filename\",\"print_duration\",\"total_duration\",\"message\"],"
@@ -284,14 +287,44 @@ static void handshake_step_subscribe(void)
         "\"heater_bed\":[\"temperature\",\"target\",\"power\"],"
         "\"fan\":[\"speed\"],"
         "\"idle_timeout\":[\"state\"],"
-        "\"pause_resume\":[\"is_paused\"]"
-        "}}";
+        "\"manual_probe\":[\"is_active\"],"
+        "\"pause_resume\":[\"is_paused\"]");
+    /* objects.list 里发现的可选对象动态补订（菜单页的风扇/断料传感器） */
+    if (g_objects) {
+        cJSON *it;
+        cJSON_ArrayForEach(it, g_objects) {
+            if (!cJSON_IsString(it) || !it->valuestring) continue;
+            const char *obj = it->valuestring;
+            const char *fields = NULL;
+            if (strncmp(obj, "fan_generic ", 12) == 0 ||
+                strncmp(obj, "heater_fan ", 11) == 0 ||
+                strncmp(obj, "controller_fan ", 15) == 0)
+                fields = "[\"speed\"]";
+            else if (strncmp(obj, "filament_switch_sensor ", 23) == 0 ||
+                     strncmp(obj, "filament_motion_sensor ", 23) == 0)
+                fields = "[\"enabled\",\"filament_detected\"]";
+            if (!fields) continue;
+            size_t left = sizeof(params) - n;
+            int w = snprintf(params + n, left, ",\"%s\":%s", obj, fields);
+            if (w > 0) n += (size_t)w < left ? (size_t)w : left - 1;
+        }
+    }
+    snprintf(params + n, sizeof(params) - n, "}}");
     send_rpc_cb("printer.objects.subscribe", params, on_subscribe_result);
+}
+
+static void set_objects_in_lvgl(void *p)
+{
+    printer_model_set_object_names((char *)p);
 }
 
 static void on_objects_list_result(cJSON *result)
 {
-    (void)result;
+    /* 对象清单：客户端留底（动态订阅）+ 转交数据层（宏/风扇/断料清单） */
+    cJSON_Delete(g_objects);
+    g_objects = cJSON_Duplicate(result, 1);
+    char *raw = result ? cJSON_PrintUnformatted(result) : NULL;
+    if (raw) post_to_lvgl(set_objects_in_lvgl, raw);
     handshake_step_subscribe();
 }
 
@@ -329,9 +362,10 @@ static void handle_notify(const char *method, cJSON *params)
     if (strcmp(method, "notify_status_update") == 0) {
         post_status(cJSON_GetArrayItem(params, 0));
     } else if (strcmp(method, "notify_gcode_response") == 0) {
+        /* 全量转发（控制台回显 + QUERY_ENDSTOP 回流解析在数据层）；
+           "!!" 错误行提示逻辑不变（数据层内判断） */
         cJSON *s = cJSON_GetArrayItem(params, 0);
-        if (cJSON_IsString(s) && s->valuestring &&
-            strncmp(s->valuestring, "!!", 2) == 0) {
+        if (cJSON_IsString(s) && s->valuestring) {
             char *copy = heap_copy(s->valuestring);
             if (copy) post_to_lvgl(report_gcode_in_lvgl, copy);
         }

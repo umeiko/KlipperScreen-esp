@@ -13,6 +13,12 @@ extern panel_def_t panel_job_status_def;
 extern panel_def_t panel_temperature_def;
 extern panel_def_t panel_move_def;
 extern panel_def_t panel_extrude_def;
+extern panel_def_t panel_menu_def;
+extern panel_def_t panel_sensors_def;
+extern panel_def_t panel_macros_def;
+extern panel_def_t panel_console_def;
+extern panel_def_t panel_fan_def;
+extern panel_def_t panel_zcalibrate_def;
 extern panel_def_t panel_files_def;
 extern panel_def_t panel_file_detail_def;
 extern panel_def_t panel_settings_def;
@@ -37,6 +43,12 @@ static panel_def_t *registry[] = {
     &panel_temperature_def,
     &panel_move_def,
     &panel_extrude_def,
+    &panel_menu_def,
+    &panel_sensors_def,
+    &panel_macros_def,
+    &panel_console_def,
+    &panel_fan_def,
+    &panel_zcalibrate_def,
     &panel_files_def,
     &panel_file_detail_def,
     &panel_settings_def,

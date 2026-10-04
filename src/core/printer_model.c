@@ -143,8 +143,67 @@ bool printer_take_error(char *out, size_t cap)
     return true;
 }
 
+/* 菜单页扩展能力的内部前置声明（实现在文件后段） */
+static void console_append(const char *text, int kind);
+static bool console_is_temp_line(const char *s);
+
+#define MACRO_MAX 24
+#define FAN_MAX 8
+#define FILS_MAX 4
+#define CONSOLE_MAX_LINES 80
+#define CONSOLE_LINE_MAX 96
+
+/* 菜单页扩展对象清单/状态（实现在文件后段；tentative 定义，初始化由语义字段把关） */
+typedef struct {
+    char name[48];    /* 原始对象名（gcode 用）：宏名 / "fan_generic xxx" / 传感器名 */
+    char label[48];   /* 显示名：宏去前缀下划线转空格；风扇/传感器用短名 */
+    bool writable;    /* 风扇用：fan/fan_generic=1，heater/controller_fan=0 */
+    float speed;      /* 风扇 0..1，-1 未知 */
+    bool enabled;     /* 断料 */
+    bool detected;    /* 断料 */
+} menu_obj_t;
+
+static menu_obj_t M_macros[MACRO_MAX];  static int M_macro_cnt;
+static menu_obj_t M_fans[FAN_MAX];      static int M_fan_cnt;
+static menu_obj_t M_fils[FILS_MAX];     static int M_fil_cnt;
+static int  M_endstop[3];
+static uint32_t M_endstop_ms;
+static bool M_endstop_fresh;            /* 已收到过至少一次 QUERY_ENDSTOP 结果 */
+static bool M_manual_probe_active;
+
+static struct { char text[CONSOLE_LINE_MAX]; uint8_t kind; } M_con[CONSOLE_MAX_LINES];
+static int M_con_head, M_con_cnt;       /* head=最旧 */
+
+/* gcode.help 的校准命令可用性（连接后按存在性建） */
+static char M_zcal_cmds[2][32];
+static int  M_zcal_cnt;
+static bool M_zcal_loaded;
+
 void printer_model_report_gcode_response(char *msg_heap)
 {
+    /* 温度轮询行（ok B:.. T0:..）不进控制台，避免刷屏 */
+    if (!console_is_temp_line(msg_heap)) {
+        int kind = 0;
+        const char *text = msg_heap;
+        if (strncmp(msg_heap, "!!", 2) == 0)      { kind = 2; text = msg_heap + 2; }
+        else if (strncmp(msg_heap, "//", 2) == 0) { kind = 3; text = msg_heap + 2; }
+        console_append(text, kind);
+
+        /* QUERY_ENDSTOP 回流："x:open" / "z:TRIGGERED"（可能多行） */
+        for (const char *p = msg_heap; *p; ) {
+            const char *eol = strchr(p, '\n');
+            size_t ln = eol ? (size_t)(eol - p) : strlen(p);
+            if (ln >= 3 && ln < 40 && p[1] == ':' &&
+                (p[0] == 'x' || p[0] == 'y' || p[0] == 'z')) {
+                int axis = p[0] - 'x';
+                M_endstop[axis] = strncmp(p + 2, "TRIGGERED", 9) == 0 ? 1 : 0;
+                M_endstop_ms = lv_tick_get();
+                M_endstop_fresh = true;
+            }
+            if (!eol) break;
+            p = eol + 1;
+        }
+    }
     if (strncmp(msg_heap, "!!", 2) == 0) {
         strncpy(M.gcode_err, msg_heap + 2, sizeof(M.gcode_err) - 1);
         M.gcode_err[sizeof(M.gcode_err) - 1] = 0;
@@ -359,7 +418,291 @@ void printer_file_delete(const char *name)
     klipper_file_delete(path);
 }
 
+/* ---------- 菜单页扩展能力（宏/风扇/断料/限位/控制台/Z 校准） ---------- */
+/* 存储声明在文件头部（report_gcode_response 要用 endstop 状态），此处只有实现 */
+
+static void on_gcode_store(char *result_json, void *ud);
+static void on_gcode_help(char *result_json, void *ud);
+
+static void copy_text(char *dst, size_t cap, const char *src)
+{
+    if (!dst || cap == 0) return;
+    if (!src) src = "";
+    strncpy(dst, src, cap - 1);
+    dst[cap - 1] = 0;
+}
+
+static void labelize(char *dst, size_t cap, const char *src)
+{
+    size_t i = 0;
+    for (; src[i] && i < cap - 1; i++) dst[i] = src[i] == '_' ? ' ' : src[i];
+    dst[i] = 0;
+}
+
+/* objects.list 结果数组 → 宏/风扇/断料清单。LVGL 上下文。 */
+void printer_model_set_object_names(char *json_heap)
+{
+    cJSON *arr = cJSON_Parse(json_heap);
+    free(json_heap);
+    if (!cJSON_IsArray(arr)) { cJSON_Delete(arr); return; }
+
+    M_macro_cnt = M_fan_cnt = M_fil_cnt = 0;
+    cJSON *it;
+    cJSON_ArrayForEach(it, arr) {
+        if (!cJSON_IsString(it) || !it->valuestring) continue;
+        const char *obj = it->valuestring;
+        if (strncmp(obj, "gcode_macro ", 12) == 0) {
+            const char *name = obj + 12;
+            if (name[0] == '_') continue;                    /* 内部宏不显示 */
+            if (strcmp(name, "LOAD_FILAMENT") == 0 ||
+                strcmp(name, "UNLOAD_FILAMENT") == 0) continue; /* 挤出页已有装料/退料 */
+            if (M_macro_cnt < MACRO_MAX) {
+                menu_obj_t *m = &M_macros[M_macro_cnt++];
+                copy_text(m->name, sizeof(m->name), name);
+                labelize(m->label, sizeof(m->label), name);
+                m->writable = true;
+            }
+        } else if (strcmp(obj, "fan") == 0 ||
+                   strncmp(obj, "fan_generic ", 12) == 0 ||
+                   strncmp(obj, "heater_fan ", 11) == 0 ||
+                   strncmp(obj, "controller_fan ", 15) == 0) {
+            if (M_fan_cnt < FAN_MAX) {
+                menu_obj_t *f = &M_fans[M_fan_cnt++];
+                memset(f, 0, sizeof(*f));
+                copy_text(f->name, sizeof(f->name), obj);
+                const char *short_name = strrchr(obj, ' ');
+                copy_text(f->label, sizeof(f->label), short_name ? short_name + 1 : obj);
+                f->writable = strcmp(obj, "fan") == 0 ||
+                              strncmp(obj, "fan_generic ", 12) == 0;
+                f->speed = -1;
+            }
+        } else if (strncmp(obj, "filament_switch_sensor ", 23) == 0 ||
+                   strncmp(obj, "filament_motion_sensor ", 23) == 0) {
+            if (M_fil_cnt < FILS_MAX) {
+                menu_obj_t *s = &M_fils[M_fil_cnt++];
+                memset(s, 0, sizeof(*s));
+                copy_text(s->name, sizeof(s->name), obj);
+                const char *short_name = strrchr(obj, ' ');
+                labelize(s->label, sizeof(s->label), short_name ? short_name + 1 : obj);
+            }
+        }
+    }
+    cJSON_Delete(arr);
+    refresh();
+}
+
+int printer_macro_count(void) { return klipper_active() ? M_macro_cnt : 0; }
+const char *printer_macro_name(int i)  { return (i >= 0 && i < M_macro_cnt) ? M_macros[i].name : ""; }
+const char *printer_macro_label(int i) { return (i >= 0 && i < M_macro_cnt) ? M_macros[i].label : ""; }
+void printer_macro_run(int i)
+{
+    if (!klipper_active() || i < 0 || i >= M_macro_cnt) return;
+    klipper_gcode_script(M_macros[i].name);
+}
+
+int printer_fan_count(void) { return klipper_active() ? M_fan_cnt : 0; }
+const char *printer_fan_name(int i) { return (i >= 0 && i < M_fan_cnt) ? M_fans[i].label : ""; }
+float printer_fan_speed(int i)      { return (i >= 0 && i < M_fan_cnt) ? M_fans[i].speed : -1; }
+bool printer_fan_writable(int i)    { return (i >= 0 && i < M_fan_cnt) ? M_fans[i].writable : false; }
+void printer_fan_set(int i, float speed)
+{
+    if (!klipper_active() || i < 0 || i >= M_fan_cnt || !M_fans[i].writable) return;
+    if (speed < 0) speed = 0;
+    if (speed > 1) speed = 1;
+    char g[64];
+    if (strcmp(M_fans[i].name, "fan") == 0)
+        snprintf(g, sizeof(g), "M106 S%d", (int)(speed * 255 + 0.5f));
+    else
+        snprintf(g, sizeof(g), "SET_FAN_SPEED FAN=%s SPEED=%.2f",
+                 M_fans[i].label, (double)speed);
+    klipper_gcode_script(g);
+}
+
+int printer_filsensor_count(void) { return klipper_active() ? M_fil_cnt : 0; }
+const char *printer_filsensor_name(int i) { return (i >= 0 && i < M_fil_cnt) ? M_fils[i].label : ""; }
+bool printer_filsensor_detected(int i) { return (i >= 0 && i < M_fil_cnt) && M_fils[i].detected; }
+bool printer_filsensor_enabled(int i)  { return (i >= 0 && i < M_fil_cnt) && M_fils[i].enabled; }
+void printer_filsensor_set_enabled(int i, bool en)
+{
+    if (!klipper_active() || i < 0 || i >= M_fil_cnt) return;
+    char g[96];
+    snprintf(g, sizeof(g), "SET_FILAMENT_SENSOR SENSOR=%s ENABLE=%d",
+             M_fils[i].label, en ? 1 : 0);
+    klipper_gcode_script(g);
+}
+
+void printer_endstop_refresh(void)
+{
+    if (!klipper_active()) return;
+    klipper_gcode_script("QUERY_ENDSTOP");
+}
+
+int printer_endstop_state(int axis)
+{
+    if (axis < 0 || axis > 2 || !M_endstop_fresh) return -1;
+    return M_endstop[axis];
+}
+
+uint32_t printer_endstop_age_ms(void)
+{
+    return M_endstop_fresh ? lv_tick_elaps(M_endstop_ms) : UINT32_MAX;
+}
+
+/* ---- 控制台 ---- */
+static void console_append(const char *text, int kind)
+{
+    if (!text || !text[0]) return;
+    int idx;
+    if (M_con_cnt < CONSOLE_MAX_LINES) {
+        idx = (M_con_head + M_con_cnt) % CONSOLE_MAX_LINES;
+        M_con_cnt++;
+    } else {
+        idx = M_con_head;                     /* 覆盖最旧 */
+        M_con_head = (M_con_head + 1) % CONSOLE_MAX_LINES;
+    }
+    copy_text(M_con[idx].text, sizeof(M_con[idx].text), text);
+    M_con[idx].kind = (uint8_t)kind;
+    refresh();
+}
+
+void printer_console_send(const char *cmd)
+{
+    if (!klipper_active() || !cmd || !cmd[0]) return;
+    char line[CONSOLE_LINE_MAX + 4];
+    snprintf(line, sizeof(line), "> %s", cmd);
+    console_append(line, 1);
+    klipper_gcode_script(cmd);
+}
+
+int printer_console_line_count(void) { return M_con_cnt; }
+
+const char *printer_console_line(int i, int *kind)
+{
+    if (i < 0 || i >= M_con_cnt) { if (kind) *kind = 0; return ""; }
+    int idx = (M_con_head + i) % CONSOLE_MAX_LINES;
+    if (kind) *kind = M_con[idx].kind;
+    return M_con[idx].text;
+}
+
+void printer_console_clear(void)
+{
+    M_con_head = M_con_cnt = 0;
+    refresh();
+}
+
+/* 温度轮询行（ok B:.. T:..）不进控制台 */
+static bool console_is_temp_line(const char *s)
+{
+    if (strncmp(s, "ok ", 3) == 0) s += 3;
+    if (s[0] == 'B' || s[0] == 'C') return s[1] == ':';
+    if (s[0] == 'T') {
+        const char *p = s + 1;
+        while (*p >= '0' && *p <= '9') p++;
+        return *p == ':';
+    }
+    return false;
+}
+
+void printer_console_load_history(void)
+{
+    /* 桌面客户端（winhttp/posix）与 ESP32 客户端都实现 moonraker_rpc */
+    moonraker_rpc("server.gcode_store", "{\"count\":100}", on_gcode_store, NULL);
+}
+
+static void on_gcode_store(char *result_json, void *ud)
+{
+    LV_UNUSED(ud);
+    cJSON *root = cJSON_Parse(result_json ? result_json : "");
+    free(result_json);
+    cJSON *store = root ? cJSON_GetObjectItem(root, "gcode_store") : NULL;
+    if (cJSON_IsArray(store)) {
+        cJSON *it;
+        cJSON_ArrayForEach(it, store) {
+            cJSON *type = cJSON_GetObjectItem(it, "type");
+            cJSON *msg = cJSON_GetObjectItem(it, "message");
+            if (!cJSON_IsString(msg) || !msg->valuestring) continue;
+            const char *m = msg->valuestring;
+            if (console_is_temp_line(m)) continue;
+            int kind = 0;
+            if (cJSON_IsString(type) && strcmp(type->valuestring, "command") == 0)
+                kind = 1;
+            else if (strncmp(m, "!!", 2) == 0) kind = 2;
+            else if (strncmp(m, "//", 2) == 0) kind = 3;
+            if (kind == 1) {
+                char line[CONSOLE_LINE_MAX + 4];
+                snprintf(line, sizeof(line), "> %s", m);
+                console_append(line, 1);
+            } else {
+                console_append(m + (kind == 2 ? 2 : kind == 3 ? 2 : 0), kind);
+            }
+        }
+    }
+    cJSON_Delete(root);
+    refresh();
+}
+
+/* ---- Z 校准 ---- */
+static void on_gcode_help(char *result_json, void *ud)
+{
+    LV_UNUSED(ud);
+    cJSON *root = cJSON_Parse(result_json ? result_json : "");
+    free(result_json);
+    M_zcal_cnt = 0;
+    if (root) {
+        if (cJSON_GetObjectItem(root, "PROBE_CALIBRATE"))
+            copy_text(M_zcal_cmds[M_zcal_cnt++], 32, "PROBE_CALIBRATE");
+        if (M_zcal_cnt < 2 && cJSON_GetObjectItem(root, "Z_ENDSTOP_CALIBRATE"))
+            copy_text(M_zcal_cmds[M_zcal_cnt++], 32, "Z_ENDSTOP_CALIBRATE");
+        M_zcal_loaded = true;
+    }
+    cJSON_Delete(root);
+    refresh();
+}
+
+int printer_zcal_command_count(void)
+{
+    if (!klipper_active()) return 0;
+    if (!M_zcal_loaded)
+        moonraker_rpc("printer.gcode.help", NULL, on_gcode_help, NULL);
+    return M_zcal_cnt;
+}
+
+bool printer_zcal_commands_pending(void)
+{
+    return klipper_active() && !M_zcal_loaded;
+}
+
+const char *printer_zcal_command(int i)
+{
+    return (i >= 0 && i < M_zcal_cnt) ? M_zcal_cmds[i] : "";
+}
+
+bool printer_zcal_active(void) { return klipper_active() && M_manual_probe_active; }
+
+void printer_zcal_start(const char *command)
+{
+    if (!klipper_active() || !command || !command[0]) return;
+    char g[160];
+    int n = snprintf(g, sizeof(g), "SET_GCODE_OFFSET Z=0\n");
+    if (!(M.homed[0] && M.homed[1] && M.homed[2]))
+        n += snprintf(g + n, sizeof(g) - n, "G28\n");
+    snprintf(g + n, sizeof(g) - n, "%s", command);
+    klipper_gcode_script(g);
+}
+
+void printer_zcal_testz(float mm)
+{
+    if (!klipper_active()) return;
+    char g[32];
+    snprintf(g, sizeof(g), "TESTZ Z=%.3f", (double)mm);
+    klipper_gcode_script(g);
+}
+
+void printer_zcal_accept(void) { if (klipper_active()) klipper_gcode_script("ACCEPT"); }
+void printer_zcal_abort(void)  { if (klipper_active()) klipper_gcode_script("ABORT"); }
+
 /* ---------- 状态机 ---------- */
+
 static void evaluate_state(void)
 {
     printer_state_t prev = M.state;
@@ -474,6 +817,25 @@ void printer_model_apply_status_json(char *json_heap)
     }
     if ((it = cJSON_GetObjectItem(status, "webhooks"))) {
         jstr(it, "state", M.klippy, sizeof(M.klippy));
+    }
+    /* 菜单页扩展对象的增量合入（订阅集在 client 按 objects.list 动态生成） */
+    for (int i = 0; i < M_fan_cnt; i++) {
+        cJSON *f = cJSON_GetObjectItem(status, M_fans[i].name);
+        if (!f) continue;
+        cJSON *s = cJSON_GetObjectItem(f, "speed");
+        if (cJSON_IsNumber(s)) M_fans[i].speed = (float)s->valuedouble;
+    }
+    for (int i = 0; i < M_fil_cnt; i++) {
+        cJSON *f = cJSON_GetObjectItem(status, M_fils[i].name);
+        if (!f) continue;
+        cJSON *en = cJSON_GetObjectItem(f, "enabled");
+        if (cJSON_IsBool(en)) M_fils[i].enabled = cJSON_IsTrue(en);
+        cJSON *det = cJSON_GetObjectItem(f, "filament_detected");
+        if (cJSON_IsBool(det)) M_fils[i].detected = cJSON_IsTrue(det);
+    }
+    if ((it = cJSON_GetObjectItem(status, "manual_probe"))) {
+        cJSON *a = cJSON_GetObjectItem(it, "is_active");
+        if (cJSON_IsBool(a)) M_manual_probe_active = cJSON_IsTrue(a);
     }
 
     cJSON_Delete(status);

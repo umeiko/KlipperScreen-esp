@@ -5,6 +5,7 @@
 #include "printer.h"
 #include "app_settings.h"
 #include "lvgl.h"
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -194,3 +195,131 @@ void printer_init(void)
 {
     lv_timer_create(tick_1s, 1000, NULL);
 }
+
+/* ---------- 菜单页扩展能力的模拟数据（宏/风扇/断料/限位/控制台/Z 校准） ---------- */
+static void mock_con_add(const char *text, int kind);
+
+static struct { const char *name; const char *label; } mock_macros[] = {
+    {"PRINT_START",   "PRINT START"},
+    {"END_PRINT",     "END PRINT"},
+    {"CLEAN_NOZZLE",  "CLEAN NOZZLE"},
+    {"PARK_TOOLHEAD", "PARK TOOLHEAD"},
+};
+int  printer_macro_count(void) { return (int)(sizeof(mock_macros) / sizeof(mock_macros[0])); }
+const char *printer_macro_name(int i)  { return (i >= 0 && i < printer_macro_count()) ? mock_macros[i].name : ""; }
+const char *printer_macro_label(int i) { return (i >= 0 && i < printer_macro_count()) ? mock_macros[i].label : ""; }
+void printer_macro_run(int i)
+{
+    if (i < 0 || i >= printer_macro_count()) return;
+    char line[64];
+    snprintf(line, sizeof(line), "> %s", mock_macros[i].name);
+    mock_con_add(line, 1);   /* 进控制台记录 */
+    mock_con_add("// 宏已执行（模拟）", 3);
+}
+
+static struct { const char *label; bool writable; float speed; } mock_fans[] = {
+    {"fan",     true,  0.65f},
+    {"chamber", true,  0.30f},
+    {"hotend",  false, 1.00f},
+};
+int  printer_fan_count(void) { return (int)(sizeof(mock_fans) / sizeof(mock_fans[0])); }
+const char *printer_fan_name(int i) { return (i >= 0 && i < printer_fan_count()) ? mock_fans[i].label : ""; }
+float printer_fan_speed(int i)      { return (i >= 0 && i < printer_fan_count()) ? mock_fans[i].speed : -1; }
+bool printer_fan_writable(int i)    { return (i >= 0 && i < printer_fan_count()) && mock_fans[i].writable; }
+void printer_fan_set(int i, float speed)
+{
+    if (i < 0 || i >= printer_fan_count() || !mock_fans[i].writable) return;
+    mock_fans[i].speed = speed < 0 ? 0 : speed > 1 ? 1 : speed;
+}
+
+static bool mock_fil_enabled = true, mock_fil_detected = true;
+int  printer_filsensor_count(void) { return 1; }
+const char *printer_filsensor_name(int i) { return i == 0 ? "runout" : ""; }
+bool printer_filsensor_detected(int i) { (void)i; return mock_fil_detected; }
+bool printer_filsensor_enabled(int i)  { (void)i; return mock_fil_enabled; }
+void printer_filsensor_set_enabled(int i, bool en) { (void)i; mock_fil_enabled = en; }
+
+static int mock_endstop[3] = { 0, 0, 1 };   /* z 触发，x/y 未触发 */
+static uint32_t mock_endstop_ms;
+void printer_endstop_refresh(void) { mock_endstop_ms = lv_tick_get(); }
+int  printer_endstop_state(int axis) { return (axis >= 0 && axis < 3 && mock_endstop_ms) ? mock_endstop[axis] : -1; }
+uint32_t printer_endstop_age_ms(void)
+{
+    return mock_endstop_ms ? lv_tick_elaps(mock_endstop_ms) : UINT32_MAX;
+}
+
+#define MOCK_CON_MAX 80
+static struct { char text[96]; uint8_t kind; } mock_con[MOCK_CON_MAX];
+static int mock_con_head, mock_con_cnt;
+
+static void mock_con_add(const char *text, int kind)
+{
+    int idx;
+    if (mock_con_cnt < MOCK_CON_MAX) {
+        idx = (mock_con_head + mock_con_cnt) % MOCK_CON_MAX;
+        mock_con_cnt++;
+    } else {
+        idx = mock_con_head;
+        mock_con_head = (mock_con_head + 1) % MOCK_CON_MAX;
+    }
+    strncpy(mock_con[idx].text, text, sizeof(mock_con[idx].text) - 1);
+    mock_con[idx].text[sizeof(mock_con[idx].text) - 1] = 0;
+    mock_con[idx].kind = (uint8_t)kind;
+}
+
+void printer_console_send(const char *cmd)
+{
+    if (!cmd || !cmd[0]) return;
+    char line[100];
+    snprintf(line, sizeof(line), "> %s", cmd);
+    mock_con_add(line, 1);
+    if (strcmp(cmd, "QUERY_ENDSTOP") == 0) {
+        mock_con_add("x:open y:open z:TRIGGERED", 0);
+        mock_endstop_ms = lv_tick_get();
+    } else if (strncmp(cmd, "G28", 3) == 0) {
+        P.homed[0] = P.homed[1] = P.homed[2] = 1;
+        mock_con_add("ok", 0);
+    } else {
+        mock_con_add("ok", 0);
+    }
+}
+
+int  printer_console_line_count(void) { return mock_con_cnt; }
+const char *printer_console_line(int i, int *kind)
+{
+    if (i < 0 || i >= mock_con_cnt) { if (kind) *kind = 0; return ""; }
+    int idx = (mock_con_head + i) % MOCK_CON_MAX;
+    if (kind) *kind = mock_con[idx].kind;
+    return mock_con[idx].text;
+}
+void printer_console_clear(void) { mock_con_head = mock_con_cnt = 0; }
+void printer_console_load_history(void)
+{
+    if (mock_con_cnt) return;   /* 只补一次 */
+    mock_con_add("// 模拟器控制台历史", 3);
+    mock_con_add("> M115", 1);
+    mock_con_add("FIRMWARE_NAME:Klipper (mock)", 0);
+}
+
+static bool mock_zcal_active;
+int  printer_zcal_command_count(void) { return 2; }
+bool printer_zcal_commands_pending(void) { return false; }
+const char *printer_zcal_command(int i)
+{
+    static const char *cmds[] = { "PROBE_CALIBRATE", "Z_ENDSTOP_CALIBRATE" };
+    return (i >= 0 && i < 2) ? cmds[i] : "";
+}
+bool printer_zcal_active(void) { return mock_zcal_active; }
+void printer_zcal_start(const char *command)
+{
+    (void)command;
+    P.homed[0] = P.homed[1] = P.homed[2] = 1;
+    mock_zcal_active = true;
+}
+void printer_zcal_testz(float mm)
+{
+    P.pos[2] += mm;
+    if (P.pos[2] < 0) P.pos[2] = 0;
+}
+void printer_zcal_accept(void) { mock_zcal_active = false; }
+void printer_zcal_abort(void)  { mock_zcal_active = false; }

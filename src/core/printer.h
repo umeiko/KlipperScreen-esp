@@ -112,6 +112,55 @@ void printer_files_cancel(void);
 
 void printer_file_delete(const char *name);   /* 删除 gcodes 下的文件 */
 
+/* ---- 菜单页扩展能力（Klipper only；ESP32 客户端暂未接线，返回空/默认） ---- */
+
+/* 宏：来自 objects.list 的 "gcode_macro *"（剔除 '_' 开头与 LOAD/UNLOAD_FILAMENT）。
+ * label 为显示名（下划线转空格）；run 发送宏名本体（无参数）。 */
+int  printer_macro_count(void);
+const char *printer_macro_name(int i);
+const char *printer_macro_label(int i);
+void printer_macro_run(int i);
+
+/* 风扇：fan / fan_generic 可写（M106 / SET_FAN_SPEED），heater_fan / controller_fan 只读。
+ * speed 为 0..1（未订阅到为 -1）。 */
+int  printer_fan_count(void);
+const char *printer_fan_name(int i);
+float printer_fan_speed(int i);
+bool printer_fan_writable(int i);
+void printer_fan_set(int i, float speed);
+
+/* 断料传感器（filament_switch_sensor / filament_motion_sensor） */
+int  printer_filsensor_count(void);
+const char *printer_filsensor_name(int i);
+bool printer_filsensor_detected(int i);   /* 有料 */
+bool printer_filsensor_enabled(int i);
+void printer_filsensor_set_enabled(int i, bool en);
+
+/* XYZ 限位：QUERY_ENDSTOP 的结果经 gcode 响应文本（"x:open"）回流解析。
+ * refresh 发送查询；state：-1 未知 / 0 未触发 / 1 触发。 */
+void printer_endstop_refresh(void);
+int  printer_endstop_state(int axis);     /* 0=X 1=Y 2=Z */
+uint32_t printer_endstop_age_ms(void);    /* UINT32_MAX = 从未刷新 */
+
+/* 控制台：发送 + 历史环形缓冲（新行追加；notify_gcode_response 全局推送）。
+ * line(0) 最旧。kind：0 普通响应，1 本机发出的命令，2 错误(!!)，3 警告(//)。 */
+void printer_console_send(const char *cmd);
+int  printer_console_line_count(void);
+const char *printer_console_line(int i, int *kind);
+void printer_console_clear(void);
+void printer_console_load_history(void);  /* 拉取 server.gcode_store（打开控制台时） */
+
+/* Z 校准：PROBE_CALIBRATE / Z_ENDSTOP_CALIBRATE 的可用性来自 printer.gcode.help；
+ * 校准活跃态来自 manual_probe.is_active 订阅。 */
+int  printer_zcal_command_count(void);
+const char *printer_zcal_command(int i);   /* "PROBE_CALIBRATE" 等 */
+bool printer_zcal_commands_pending(void);  /* gcode.help 还在路上 */
+bool printer_zcal_active(void);
+void printer_zcal_start(const char *command);
+void printer_zcal_testz(float mm);
+void printer_zcal_accept(void);
+void printer_zcal_abort(void);
+
 #ifdef __cplusplus
 }
 #endif

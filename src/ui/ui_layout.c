@@ -248,6 +248,13 @@ static const struct { const lv_image_dsc_t *base, *sm; } icon_sm_map[] = {
     { &img_motor_off,       &img_motor_off_sm },
     { &img_klipper_logo_56, &img_klipper_logo_56_sm },
     { &img_bambu_logo_56,   &img_bambu_logo_56_sm },
+    { &img_menu,            &img_menu_sm },
+    { &img_extrude_24,      &img_extrude_24_sm },
+    { &img_sensors,         &img_sensors_sm },
+    { &img_macro,           &img_macro_sm },
+    { &img_console,         &img_console_sm },
+    { &img_fan,             &img_fan_sm },
+    { &img_zcal,            &img_zcal_sm },
 };
 
 static const lv_image_dsc_t *icon_sm(const lv_image_dsc_t *base)
@@ -281,6 +288,13 @@ static const struct { const lv_image_dsc_t *big, *lg; } icon_lg_map[] = {
     { &img_wifi_1,           &img_wifi_1_48 },
     { &img_klipper_logo_112, &img_klipper_logo_224 },
     { &img_bambu_logo_112,   &img_bambu_logo_224 },
+    { &img_menu_56,          &img_menu_112 },
+    { &img_extrude_24,       &img_extrude_24_48 },
+    { &img_sensors,          &img_sensors_48 },
+    { &img_macro,            &img_macro_48 },
+    { &img_console,          &img_console_48 },
+    { &img_fan,              &img_fan_48 },
+    { &img_zcal,             &img_zcal_48 },
 };
 
 static const lv_image_dsc_t *icon_lg(const lv_image_dsc_t *big_icon)

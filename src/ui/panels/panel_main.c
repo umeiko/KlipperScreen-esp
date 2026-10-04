@@ -121,7 +121,9 @@ static void update_state(void)
     /* 温度和打印页始终保留为监视入口；其余入口由后端能力开放。 */
     set_available(menu_btns[0], true);
     set_available(menu_btns[1], printer_has_capability(PRINTER_CAP_MOVE));
-    set_available(menu_btns[2], printer_has_capability(PRINTER_CAP_EXTRUDE));
+    /* 菜单内全是 Klipper 专属功能（挤出/传感器/宏/控制台/风扇/Z 校准），
+       拓竹模式禁用整格 */
+    set_available(menu_btns[2], printer_has_capability(PRINTER_CAP_MOVE));
     set_available(menu_btns[3], printer_has_capability(PRINTER_CAP_FILES));
     set_available(menu_btns[4], true);
     set_available(menu_btns[5], true);
@@ -231,7 +233,7 @@ static lv_obj_t *create(void)
     const struct { const lv_image_dsc_t *icon; const char *text, *panel; } items[] = {
         {ui_icon(&img_heater,   &img_heater_56),   "温度", "temperature"},
         {ui_icon(&img_move,     &img_move_56),     "移动", "move"},
-        {ui_icon(&img_extrude,  &img_extrude_56),  "挤出", "extrude"},
+        {ui_icon(&img_menu,     &img_menu_56),     "菜单", "menu"},
         {ui_icon(&img_files,    &img_files_56),    "文件", "files"},
         {ui_icon(&img_printer,  &img_printer_56),  "打印", "job_status"},
         {ui_icon(&img_settings, &img_settings_56), "设置", "settings"},

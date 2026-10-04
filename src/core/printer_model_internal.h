@@ -16,8 +16,14 @@ void printer_model_apply_status_json(char *json_heap);
 void printer_model_set_online(int online);
 
 /* 上报一条 GCode 响应行（notify_gcode_response，如 "!! Endstop not triggered"）。
- * LVGL 上下文执行；msg_heap 由本函数释放。仅 "!!" 错误行会被记录待 UI 提示。 */
+ * LVGL 上下文执行；msg_heap 由本函数释放。
+ * "!!" 行记为待 UI 提示的错误；全部行追加进控制台环形缓冲；
+ * "x:open"/"y:TRIGGERED" 等行解析为限位状态（QUERY_ENDSTOP 回流）。 */
 void printer_model_report_gcode_response(char *msg_heap);
+
+/* objects.list 的结果数组（["extruder","gcode_macro FOO",...]）JSON 文本，
+ * 用于构建宏/风扇/断料传感器清单与动态订阅项。LVGL 上下文执行，函数负责释放。 */
+void printer_model_set_object_names(char *json_heap);
 
 /* 上报一条 JSON-RPC 层错误（如点动未归位时 moonraker 直接回 RPC error，
  * 不走 gcode 响应行）。LVGL 上下文执行；msg_heap 由本函数释放。 */
