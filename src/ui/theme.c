@@ -306,6 +306,25 @@ lv_obj_t *theme_row_dropdown(lv_obj_t *scr, const char *key, const char *options
     return row;
 }
 
+/* 裸下拉框的标准收尾（与 theme_row_dropdown 的列表处理一致） */
+void theme_dropdown_finish(lv_obj_t *dd)
+{
+    lv_dropdown_set_symbol(dd, NULL);   /* CJK 字库无 LV_SYMBOL_DOWN 字形 */
+    lv_obj_set_style_text_font(dd, THEME_FONT_S, 0);
+    lv_obj_set_style_text_color(dd, theme_col(THEME_COL_TEXT), 0);
+    lv_obj_set_style_bg_color(dd, theme_col(THEME_COL_SURFACE2), 0);
+    lv_obj_set_style_border_width(dd, 0, 0);
+    lv_obj_t *list = lv_dropdown_get_list(dd);
+    lv_obj_set_height(list, ui_px(120));
+    lv_obj_set_style_max_height(list, ui_px(120), 0);
+    lv_obj_set_style_text_font(list, THEME_FONT_S, 0);
+    lv_obj_set_style_text_color(list, theme_col(THEME_COL_TEXT), 0);
+    lv_obj_set_style_bg_color(list, theme_col(THEME_COL_SURFACE), 0);
+    lv_obj_set_style_bg_color(list, theme_col(THEME_COL_SURFACE2), LV_PART_SELECTED);
+    lv_obj_set_style_bg_opa(list, LV_OPA_COVER, LV_PART_SELECTED);
+    lv_obj_add_event_cb(dd, dd_list_top_cb, LV_EVENT_READY, NULL);
+}
+
 /* 带开关的设置行（反色/旋转用） */
 lv_obj_t *theme_row_switch(lv_obj_t *scr, const char *key, int y, int on, lv_event_cb_t cb)
 {

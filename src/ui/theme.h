@@ -82,6 +82,11 @@ lv_obj_t *theme_row_dropdown(lv_obj_t *parent, const char *key, const char *opti
                              int y, int sel, lv_event_cb_t cb, const void *icon);
 lv_obj_t *theme_row_switch(lv_obj_t *parent, const char *key, int y, int on, lv_event_cb_t cb);
 
+/* 裸 lv_dropdown 的标准收尾：去箭头符号（CJK 字库无 LV_SYMBOL_DOWN 字形）、
+ * 列表字体/配色跟随主题、打开时挪到 layer_top（否则被标题栏压住点不到）。
+ * theme_row_dropdown 内部已含；单独创建下拉框时（如 Z 校准页）用它。 */
+void theme_dropdown_finish(lv_obj_t *dd);
+
 /* 浮点格式化（避免 %f：内置 lv_snprintf 不支持，newlib-nano 也会因此膨胀）
  * decimals 仅支持 0 或 1。例: theme_fmt_float(buf, n, 24.56f, 1) -> "24.6" */
 void theme_fmt_float(char *buf, size_t n, float v, int decimals);

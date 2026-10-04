@@ -87,6 +87,7 @@ static const dict_entry_t dict[] = {
     {"输入 GCode 命令", "Enter G-code command", "輸入 GCode 指令",    "Entrer une commande G-code",  "Inserisci comando G-code"},
     {"输入命令",        "Input",               "輸入指令",            "Saisir",                      "Inserisci"},
     {"清除",            "Clear",               "清除",                "Effacer",                     "Cancella"},
+    {"未连接",          "Not connected",       "未連線",              "Non connecté",                "Non connesso"},
     {"暂无回显",        "No output yet",       "尚無回應",            "Pas encore de sortie",        "Nessuna risposta"},
     {"校准已开始",      "Calibration started", "校正已開始",          "Calibration démarrée",        "Calibrazione avviata"},
     {"抬升",            "Raise",               "抬升",                "Monter",                      "Alza"},

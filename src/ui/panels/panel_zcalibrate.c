@@ -77,9 +77,17 @@ static void rebuild_cmd_dropdown(void)
     for (int i = 0; i < n; i++)
         len += snprintf(opts + len, sizeof(opts) - len, "%s%s",
                         i ? "\n" : "", printer_zcal_command(i));
-    if (n == 0)
-        snprintf(opts, sizeof(opts), "%s",
-                 printer_zcal_commands_pending() ? TR("读取中…") : TR("无可用校准命令"));
+    if (n == 0) {
+        const char *s;
+        if (printer_state() == PRINTER_STATE_DISCONNECTED ||
+            printer_state() == PRINTER_STATE_ERROR)
+            s = TR("未连接");
+        else if (printer_zcal_commands_pending())
+            s = TR("读取中…");
+        else
+            s = TR("无可用校准命令");
+        snprintf(opts, sizeof(opts), "%s", s);
+    }
     lv_dropdown_set_options(dd_cmd, opts);
     set_enabled(btn_start, n > 0);
 }
@@ -159,7 +167,7 @@ static lv_obj_t *create(void)
     lv_dropdown_set_options(dd_cmd, TR("读取中…"));
     lv_obj_set_size(dd_cmd, col_c_w, ui_px(30));
     lv_obj_align(dd_cmd, LV_ALIGN_TOP_LEFT, col_c_x, top);
-    lv_obj_set_style_text_font(dd_cmd, THEME_FONT_S, 0);
+    theme_dropdown_finish(dd_cmd);   /* 列表字体/配色/顶层化与设置页下拉一致 */
 
     btn_start = theme_button(scr, LV_SYMBOL_PLAY, "开始", 1);
     lv_obj_set_size(btn_start, col_c_w, ui_px(38));

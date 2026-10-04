@@ -183,6 +183,7 @@ static int M_con_head, M_con_cnt;       /* head=最旧 */
 static char M_zcal_cmds[2][32];
 static int  M_zcal_cnt;
 static bool M_zcal_loaded;
+static bool M_zcal_loading;   /* gcode.help 在途（失败下一拍重试，避免每拍重发） */
 
 void printer_model_report_gcode_response(char *msg_heap)
 {
@@ -662,8 +663,9 @@ static void on_gcode_help(char *result_json, void *ud)
     LV_UNUSED(ud);
     cJSON *root = cJSON_Parse(result_json ? result_json : "");
     free(result_json);
-    M_zcal_cnt = 0;
+    M_zcal_loading = false;
     if (root) {
+        M_zcal_cnt = 0;
         if (cJSON_GetObjectItem(root, "PROBE_CALIBRATE"))
             copy_text(M_zcal_cmds[M_zcal_cnt++], 32, "PROBE_CALIBRATE");
         if (M_zcal_cnt < 2 && cJSON_GetObjectItem(root, "Z_ENDSTOP_CALIBRATE"))
@@ -677,14 +679,15 @@ static void on_gcode_help(char *result_json, void *ud)
 int printer_zcal_command_count(void)
 {
     if (!klipper_active()) return 0;
-    if (!M_zcal_loaded)
-        moonraker_rpc("printer.gcode.help", NULL, on_gcode_help, NULL);
+    if (!M_zcal_loaded && !M_zcal_loading &&
+        moonraker_rpc("printer.gcode.help", NULL, on_gcode_help, NULL))
+        M_zcal_loading = true;
     return M_zcal_cnt;
 }
 
 bool printer_zcal_commands_pending(void)
 {
-    return klipper_active() && !M_zcal_loaded;
+    return klipper_active() && M.online && !M_zcal_loaded;
 }
 
 bool printer_probe_present(void)
