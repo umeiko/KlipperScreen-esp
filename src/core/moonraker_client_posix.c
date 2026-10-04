@@ -405,7 +405,7 @@ static void handshake_step_subscribe(void)
         "\"print_stats\":[\"state\",\"filename\",\"print_duration\",\"total_duration\",\"message\"],"
         "\"virtual_sdcard\":[\"progress\",\"is_active\"],"
         "\"display_status\":[\"progress\",\"message\"],"
-        "\"gcode_move\":[\"speed_factor\",\"extrude_factor\"],"
+        "\"gcode_move\":[\"speed_factor\",\"extrude_factor\",\"homing_origin\"],"
         "\"toolhead\":[\"position\",\"homed_axes\"],"
         "\"extruder\":[\"temperature\",\"target\",\"power\"],"
         "\"heater_bed\":[\"temperature\",\"target\",\"power\"],"
@@ -413,7 +413,7 @@ static void handshake_step_subscribe(void)
         "\"idle_timeout\":[\"state\"],"
         "\"manual_probe\":[\"is_active\"],"
         "\"pause_resume\":[\"is_paused\"]");
-    /* objects.list 里发现的可选对象动态补订（菜单页的风扇/断料传感器） */
+    /* objects.list 里发现的可选对象动态补订（菜单页的风扇/断料传感器/探针） */
     if (g_objects) {
         cJSON *it;
         cJSON_ArrayForEach(it, g_objects) {
@@ -427,6 +427,8 @@ static void handshake_step_subscribe(void)
             else if (strncmp(obj, "filament_switch_sensor ", 23) == 0 ||
                      strncmp(obj, "filament_motion_sensor ", 23) == 0)
                 fields = "[\"enabled\",\"filament_detected\"]";
+            else if (strcmp(obj, "probe") == 0 || strcmp(obj, "bltouch") == 0)
+                fields = "[\"z_offset\"]";
             if (!fields) continue;
             size_t left = sizeof(params) - n;
             int w = snprintf(params + n, left, ",\"%s\":%s", obj, fields);

@@ -166,6 +166,11 @@ typedef struct {
 static menu_obj_t M_macros[MACRO_MAX];  static int M_macro_cnt;
 static menu_obj_t M_fans[FAN_MAX];      static int M_fan_cnt;
 static menu_obj_t M_fils[FILS_MAX];     static int M_fil_cnt;
+static bool M_probe_present;                /* objects.list 有 probe/bltouch 等 */
+static float M_probe_z_offset;              /* probe/bltouch 订阅的 z_offset */
+static bool  M_probe_z_valid;
+static float M_home_origin_z;               /* gcode_move.homing_origin[2] */
+static bool  M_home_origin_valid;
 static int  M_endstop[3];
 static uint32_t M_endstop_ms;
 static bool M_endstop_fresh;            /* 已收到过至少一次 QUERY_ENDSTOP 结果 */
@@ -181,28 +186,32 @@ static bool M_zcal_loaded;
 
 void printer_model_report_gcode_response(char *msg_heap)
 {
-    /* 温度轮询行（ok B:.. T0:..）不进控制台，避免刷屏 */
-    if (!console_is_temp_line(msg_heap)) {
+    /* 先按行解析限位回流（QUERY_ENDSTOP："x:open" / "z:TRIGGERED"，可单行可多行），
+     * 且整段全是限位行时不进控制台——那是传感器页的自动刷新噪音，不是用户命令回显 */
+    bool all_endstop = true;
+    for (const char *p = msg_heap; *p; ) {
+        const char *eol = strchr(p, '\n');
+        size_t ln = eol ? (size_t)(eol - p) : strlen(p);
+        bool is_endstop = false;
+        if (ln >= 3 && ln < 40 && p[1] == ':' &&
+            (p[0] == 'x' || p[0] == 'y' || p[0] == 'z')) {
+            int axis = p[0] - 'x';
+            M_endstop[axis] = strncmp(p + 2, "TRIGGERED", 9) == 0 ? 1 : 0;
+            M_endstop_ms = lv_tick_get();
+            M_endstop_fresh = true;
+            is_endstop = true;
+        }
+        if (!is_endstop) all_endstop = false;
+        if (!eol) break;
+        p = eol + 1;
+    }
+    /* 温度轮询行（ok B:.. T0:..）与限位回流都不进控制台，避免刷屏 */
+    if (!all_endstop && !console_is_temp_line(msg_heap)) {
         int kind = 0;
         const char *text = msg_heap;
         if (strncmp(msg_heap, "!!", 2) == 0)      { kind = 2; text = msg_heap + 2; }
         else if (strncmp(msg_heap, "//", 2) == 0) { kind = 3; text = msg_heap + 2; }
         console_append(text, kind);
-
-        /* QUERY_ENDSTOP 回流："x:open" / "z:TRIGGERED"（可能多行） */
-        for (const char *p = msg_heap; *p; ) {
-            const char *eol = strchr(p, '\n');
-            size_t ln = eol ? (size_t)(eol - p) : strlen(p);
-            if (ln >= 3 && ln < 40 && p[1] == ':' &&
-                (p[0] == 'x' || p[0] == 'y' || p[0] == 'z')) {
-                int axis = p[0] - 'x';
-                M_endstop[axis] = strncmp(p + 2, "TRIGGERED", 9) == 0 ? 1 : 0;
-                M_endstop_ms = lv_tick_get();
-                M_endstop_fresh = true;
-            }
-            if (!eol) break;
-            p = eol + 1;
-        }
     }
     if (strncmp(msg_heap, "!!", 2) == 0) {
         strncpy(M.gcode_err, msg_heap + 2, sizeof(M.gcode_err) - 1);
@@ -447,6 +456,8 @@ void printer_model_set_object_names(char *json_heap)
     if (!cJSON_IsArray(arr)) { cJSON_Delete(arr); return; }
 
     M_macro_cnt = M_fan_cnt = M_fil_cnt = 0;
+    M_probe_present = false;
+    M_probe_z_valid = false;
     cJSON *it;
     cJSON_ArrayForEach(it, arr) {
         if (!cJSON_IsString(it) || !it->valuestring) continue;
@@ -485,6 +496,10 @@ void printer_model_set_object_names(char *json_heap)
                 const char *short_name = strrchr(obj, ' ');
                 labelize(s->label, sizeof(s->label), short_name ? short_name + 1 : obj);
             }
+        } else if (strcmp(obj, "probe") == 0 || strcmp(obj, "bltouch") == 0 ||
+                   strcmp(obj, "smart_effector") == 0 ||
+                   strcmp(obj, "probe_eddy_current") == 0) {
+            M_probe_present = true;   /* Z 校准页显示已存偏移用 */
         }
     }
     cJSON_Delete(arr);
@@ -509,7 +524,7 @@ void printer_fan_set(int i, float speed)
     if (!klipper_active() || i < 0 || i >= M_fan_cnt || !M_fans[i].writable) return;
     if (speed < 0) speed = 0;
     if (speed > 1) speed = 1;
-    char g[64];
+    char g[96];   /* SET_FAN_SPEED FAN=<label> SPEED=x.xx 最坏 ~77B，64 放不下（-Werror=format-truncation） */
     if (strcmp(M_fans[i].name, "fan") == 0)
         snprintf(g, sizeof(g), "M106 S%d", (int)(speed * 255 + 0.5f));
     else
@@ -672,6 +687,25 @@ bool printer_zcal_commands_pending(void)
     return klipper_active() && !M_zcal_loaded;
 }
 
+bool printer_probe_present(void)
+{
+    return klipper_active() && M_probe_present;
+}
+
+bool printer_probe_z_offset(float *out)
+{
+    if (!klipper_active() || !M_probe_z_valid || !out) return false;
+    *out = M_probe_z_offset;
+    return true;
+}
+
+bool printer_homing_origin_z(float *out)
+{
+    if (!klipper_active() || !M_home_origin_valid || !out) return false;
+    *out = M_home_origin_z;
+    return true;
+}
+
 const char *printer_zcal_command(int i)
 {
     return (i >= 0 && i < M_zcal_cnt) ? M_zcal_cmds[i] : "";
@@ -690,11 +724,16 @@ void printer_zcal_start(const char *command)
     klipper_gcode_script(g);
 }
 
+/* 校准中=TESTZ 微调；空闲时=普通相对移动（KlipperScreen zcalibrate 的
+ * 抬/降喷嘴按钮双模式，TESTZ 仅在手动探测模式下合法） */
 void printer_zcal_testz(float mm)
 {
     if (!klipper_active()) return;
-    char g[32];
-    snprintf(g, sizeof(g), "TESTZ Z=%.3f", (double)mm);
+    char g[64];
+    if (M_manual_probe_active)
+        snprintf(g, sizeof(g), "TESTZ Z=%.3f", (double)mm);
+    else
+        snprintf(g, sizeof(g), "G91\nG1 Z%.3f F600\nG90", (double)mm);
     klipper_gcode_script(g);
 }
 
@@ -836,6 +875,18 @@ void printer_model_apply_status_json(char *json_heap)
     if ((it = cJSON_GetObjectItem(status, "manual_probe"))) {
         cJSON *a = cJSON_GetObjectItem(it, "is_active");
         if (cJSON_IsBool(a)) M_manual_probe_active = cJSON_IsTrue(a);
+    }
+    if ((it = cJSON_GetObjectItem(status, "probe")) ||
+        (it = cJSON_GetObjectItem(status, "bltouch"))) {
+        cJSON *z = cJSON_GetObjectItem(it, "z_offset");
+        if (cJSON_IsNumber(z)) { M_probe_z_offset = (float)z->valuedouble; M_probe_z_valid = true; }
+    }
+    if ((it = cJSON_GetObjectItem(status, "gcode_move"))) {
+        cJSON *ho = cJSON_GetObjectItem(it, "homing_origin");
+        if (cJSON_IsArray(ho)) {
+            cJSON *z = cJSON_GetArrayItem(ho, 2);
+            if (cJSON_IsNumber(z)) { M_home_origin_z = (float)z->valuedouble; M_home_origin_valid = true; }
+        }
     }
 
     cJSON_Delete(status);

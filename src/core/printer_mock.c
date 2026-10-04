@@ -274,7 +274,7 @@ void printer_console_send(const char *cmd)
     snprintf(line, sizeof(line), "> %s", cmd);
     mock_con_add(line, 1);
     if (strcmp(cmd, "QUERY_ENDSTOP") == 0) {
-        mock_con_add("x:open y:open z:TRIGGERED", 0);
+        /* 与真实端一致：限位回流只进传感器页，不进控制台 */
         mock_endstop_ms = lv_tick_get();
     } else if (strncmp(cmd, "G28", 3) == 0) {
         P.homed[0] = P.homed[1] = P.homed[2] = 1;
@@ -304,6 +304,14 @@ void printer_console_load_history(void)
 static bool mock_zcal_active;
 int  printer_zcal_command_count(void) { return 2; }
 bool printer_zcal_commands_pending(void) { return false; }
+bool printer_probe_present(void) { return true; }
+bool printer_probe_z_offset(float *out) { if (!out) return false; *out = 1.84f; return true; }
+bool printer_homing_origin_z(float *out)
+{
+    if (!out) return false;
+    *out = mock_zcal_active ? 1.72f : 0.0f;   /* 校准中演示一个进行中的新偏移 */
+    return true;
+}
 const char *printer_zcal_command(int i)
 {
     static const char *cmds[] = { "PROBE_CALIBRATE", "Z_ENDSTOP_CALIBRATE" };

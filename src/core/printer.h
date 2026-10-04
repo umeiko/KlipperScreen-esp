@@ -155,6 +155,9 @@ void printer_console_load_history(void);  /* 拉取 server.gcode_store（打开�
 int  printer_zcal_command_count(void);
 const char *printer_zcal_command(int i);   /* "PROBE_CALIBRATE" 等 */
 bool printer_zcal_commands_pending(void);  /* gcode.help 还在路上 */
+bool printer_probe_present(void);          /* objects.list 有 probe/bltouch 等 */
+bool printer_probe_z_offset(float *out);   /* 已保存的探测偏移（订阅 probe/bltouch） */
+bool printer_homing_origin_z(float *out);  /* 校准中的新偏移（gcode_move.homing_origin[2]） */
 bool printer_zcal_active(void);
 void printer_zcal_start(const char *command);
 void printer_zcal_testz(float mm);
