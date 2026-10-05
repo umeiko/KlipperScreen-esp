@@ -23,7 +23,7 @@
 #define SAVER_BG_SOLID  0x5BA9E6   /* 纯色背景（天蓝） */
 #define SAVER_TXT_TIME  0xFFD500   /* 时间：明黄 */
 #define SAVER_TXT_MAIN  0x14305C   /* 深蓝黑（备用） */
-#define SAVER_TXT_DATE  0x9C6B3A   /* 日期/预报标签：褐色 */
+#define SAVER_TXT_DATE  0x000000   /* 日期/预报标签：黑色 */
 #define SAVER_TXT_LUNAR 0x9A6B2F   /* 农历：赭金 */
 #define SAVER_TXT_CITY  0x2F7D4F   /* 城市：墨绿 */
 #define SAVER_TXT_DESC  0x4A5A72   /* 天气描述：灰蓝 */
