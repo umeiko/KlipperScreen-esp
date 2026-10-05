@@ -38,7 +38,7 @@ static supd_status_t g_status;
 static atomic_int g_busy;        /* worker 在跑 */
 static atomic_int g_cancel;      /* 取消请求 */
 static atomic_int g_pause;       /* 暂停请求 */
-static char g_url[512];          /* 本次下载地址 */
+static char g_url[2048];         /* 本次下载地址 */
 static long g_size;              /* 期望字节数 */
 
 static void once_init(void)
@@ -74,7 +74,7 @@ static void publish_progress(long got, long total)
 
 struct url_parts {
     char host[128];
-    char path[384];
+    char path[2048];   /* GitHub 资产签名 URL 的 path+query 实测 ~900 字符 */
 };
 
 static int split_url(const char *url, struct url_parts *out)
@@ -95,26 +95,27 @@ static int split_url(const char *url, struct url_parts *out)
 static int https_get(const char *url, const char *save_as,
                      char *body_buf, size_t body_cap, long *size_out)
 {
-    char cur[512];
+    char cur[2048];
     snprintf(cur, sizeof(cur), "%s", url);
     for (int hop = 0; hop < 4; hop++) {
         struct url_parts u;
         if (split_url(cur, &u) != 0) return -1;
         bambu_tls_t *tls = bambu_tls_connect(u.host, "443", 8000);
         if (!tls) return -1;
-        char head[1024];
+        char head[4096];
         int hn = snprintf(head, sizeof(head),
             "GET %s HTTP/1.1\r\nHost: %s\r\n"
             "User-Agent: KlipperScreen-esp-updater\r\n"
             "Accept: */*\r\nConnection: close\r\n\r\n", u.path, u.host);
+        if (hn >= (int)sizeof(head)) { bambu_tls_close(tls); return -1; }
         if (bambu_tls_write_all(tls, head, hn) != 0) { bambu_tls_close(tls); return -1; }
 
         /* 状态行 + 头 */
-        char line[1024];
+        char line[2048];
         int status = 0;
         long content_length = -1;
         int chunked = 0;
-        char location[512] = {0};
+        char location[2048] = {0};
         int head_done = 0;
         while (!head_done) {
             int len = 0;
@@ -159,7 +160,11 @@ static int https_get(const char *url, const char *save_as,
             }
             continue;
         }
-        if (status != 200) { bambu_tls_close(tls); return -1; }
+        if (status != 200) {
+            SDL_Log("supd: GET %s -> %d (hop %d)", u.host, status, hop);
+            bambu_tls_close(tls);
+            return -1;
+        }
 
         /* 正文：流式落盘或入缓冲 */
         FILE *fp = save_as ? fopen(save_as, "wb") : NULL;
@@ -281,7 +286,7 @@ static void *update_worker(void *unused)
     cJSON *root = cJSON_Parse(body);
     free(body);
     const char *tag = NULL;
-    char dl_url[512] = {0};
+    char dl_url[2048] = {0};
     long dl_size = 0;
     if (root) {
         cJSON *t = cJSON_GetObjectItem(root, "tag_name");
@@ -321,12 +326,14 @@ static void *update_worker(void *unused)
 
     /* 2) 下载 APK（跟随重定向，流式落盘） */
     publish_state(SUPD_DOWNLOADING);
+    publish_progress(0, 1);   /* 清掉元信息下载留下的 100% 残留进度 */
     char path[1100];
     const char *dir = SDL_AndroidGetInternalStoragePath();
     snprintf(path, sizeof(path), "%s%s", dir, DL_FILE);
     snprintf(g_url, sizeof(g_url), "%s", dl_url);
     g_size = dl_size;
     rc = https_get(g_url, path, NULL, 0, NULL);
+    SDL_Log("supd: apk download rc=%d (%s)", rc, rc == 1 ? "ok" : rc == 0 ? "cancelled" : "failed");
     if (rc == 0) {   /* 取消 */
         remove(path);
         publish_state(SUPD_IDLE);
@@ -342,7 +349,7 @@ static void *update_worker(void *unused)
 
     /* 3) md5 校验（.md5 边车） */
     publish_state(SUPD_VERIFYING);
-    char md5_url[560];
+    char md5_url[2120];
     snprintf(md5_url, sizeof(md5_url), "%s.md5", g_url);
     char md5_text[128] = {0};
     rc = https_get(md5_url, NULL, md5_text, sizeof(md5_text) - 1, NULL);
