@@ -95,13 +95,32 @@ static void open_param(lv_event_t *e)
     ui_desktop_textarea_begin(ta_line);
 }
 
-static void on_macro(lv_event_t *e)
+static void do_run(int idx)
 {
-    int idx = (int)(intptr_t)lv_event_get_user_data(e);
     printer_macro_run(idx);
     char buf[96];
     snprintf(buf, sizeof(buf), TR("已发送 %s"), printer_macro_name(idx));
     ui_toast(buf, THEME_COL_ACCENT);
+}
+
+static void on_macro(lv_event_t *e)
+{
+    /* 行点击 / ▶ 图标点击都执行 */
+    do_run((int)(intptr_t)lv_event_get_user_data(e));
+}
+
+static void on_run_icon(lv_event_t *e)
+{
+    /* 图标自己的点击拦下，不再冒泡到行（否则宏被执行两次） */
+    lv_event_stop_bubbling(e);
+    do_run((int)(intptr_t)lv_event_get_user_data(e));
+}
+
+static void on_edit(lv_event_t *e)
+{
+    /* 编辑图标：只打开参数弹层，不触发行的执行 */
+    lv_event_stop_bubbling(e);
+    open_param(e);
 }
 
 static lv_obj_t *create(void)
@@ -125,16 +144,27 @@ static lv_obj_t *create(void)
         lv_obj_align(row, LV_ALIGN_TOP_MID, 0, y);
         lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_add_event_cb(row, on_macro, LV_EVENT_CLICKED, (void *)(intptr_t)i);
-        lv_obj_add_event_cb(row, open_param, LV_EVENT_LONG_PRESSED, (void *)(intptr_t)i);
 
+        /* 文字区给尾部两个图标按钮让位 */
         lv_obj_t *lbl = theme_label(row, printer_macro_label(i),
                                     THEME_FONT_M, THEME_COL_TEXT);
-        lv_obj_set_width(lbl, ui_content_w() - 2 * THEME_PAD - ui_px(30));
+        lv_obj_set_width(lbl, ui_content_w() - 2 * THEME_PAD - ui_px(62));
         lv_label_set_long_mode(lbl, LV_LABEL_LONG_SCROLL_CIRCULAR);
         lv_obj_align(lbl, LV_ALIGN_LEFT_MID, ui_px(4), 0);
 
+        /* 尾部：✏️ 参数输入（打开预填宏名的弹层） */
+        lv_obj_t *edit = theme_label(row, LV_SYMBOL_EDIT, THEME_FONT_ICON, THEME_COL_ACCENT);
+        lv_obj_align(edit, LV_ALIGN_RIGHT_MID, -ui_px(30), 0);
+        lv_obj_add_flag(edit, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_event_cb(edit, on_edit, LV_EVENT_CLICKED, (void *)(intptr_t)i);
+        theme_focusable(edit);
+
+        /* 尾部最右：▶ 直接执行（与行点击同效） */
         lv_obj_t *run = theme_label(row, LV_SYMBOL_PLAY, THEME_FONT_ICON, THEME_COL_OK);
         lv_obj_align(run, LV_ALIGN_RIGHT_MID, -ui_px(4), 0);
+        lv_obj_add_flag(run, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_event_cb(run, on_run_icon, LV_EVENT_CLICKED, (void *)(intptr_t)i);
+        theme_focusable(run);
         y += step;
     }
 
