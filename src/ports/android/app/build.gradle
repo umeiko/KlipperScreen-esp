@@ -5,7 +5,8 @@
 apply plugin: 'com.android.application'
 
 // 版本号与固件/桌面端同源：src/core/version.h 的 KR_VERSION
-def versionHeader = new File(rootDir, '../../src/core/version.h')
+// （rootDir = src/ports/android，要上三级才到仓库根）
+def versionHeader = new File(rootDir, '../../../src/core/version.h')
 def verName = '0.0.0'
 def verCode = 1
 def m = versionHeader.exists() ? (versionHeader.text =~ /KR_VERSION\s+"(\d+)\.(\d+)\.(\d+)"/) : null
