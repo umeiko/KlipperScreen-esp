@@ -9,8 +9,10 @@
 #include "lunar.h"
 #include "assets/icons.h"
 #include "assets/weather_icons.h"
+#include "assets/saver_anim.h"
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 #include <time.h>
 #include <math.h>
 
@@ -154,6 +156,8 @@ static void update_clock(void)
     update_hands(tmv->tm_hour, tmv->tm_min, tmv->tm_sec);
 }
 
+static void rebuild_anim(int ic);   /* 前向声明（天气动态背景） */
+
 static void update_weather(void)
 {
     weather_data_t wd;
@@ -166,6 +170,7 @@ static void update_weather(void)
         lv_obj_set_style_text_color(lbl_desc, lv_color_hex(SAVER_TXT_DESC), 0);
         lv_label_set_text(lbl_temp, "--°");
         lv_obj_set_style_bg_color(scr_layer, lv_color_hex(SAVER_BG_SOLID), 0);
+        rebuild_anim(WEATHER_UNKNOWN);
         lv_obj_add_flag(img_wx, LV_OBJ_FLAG_HIDDEN);
         for (int i = 0; i < 3; i++) {
             lv_obj_add_flag(fx_img[i], LV_OBJ_FLAG_HIDDEN);
@@ -183,8 +188,9 @@ static void update_weather(void)
     weather_icon_t ic = weather_icon_from_code(wd.icon);
     lv_img_set_src(img_wx, wx_icons[ic]);
     lv_obj_remove_flag(img_wx, LV_OBJ_FLAG_HIDDEN);
-    /* 整屏背景随当前天气变化 */
+    /* 整屏背景随当前天气变化 + 动态背景动画 */
     lv_obj_set_style_bg_color(scr_layer, lv_color_hex(s_bg_by_wx[ic]), 0);
+    rebuild_anim(ic);
     /* 天气描述用高德原文（更精确），否则用归并名 */
     lv_label_set_text(lbl_desc, wd.category[0] ? wd.category : wx_desc[ic]);
     lv_obj_set_style_text_color(lbl_desc, lv_color_hex(SAVER_TXT_DESC), 0);
@@ -220,6 +226,132 @@ static void on_clock(lv_timer_t *t)
     lv_obj_set_style_image_recolor(img_wifi, theme_col(col), 0);
 }
 
+/* ---- 天气动态背景：LVGL 对象动画（云飘/雨落/雪舞/雾流），无帧动画的 flash 开销 ---- */
+#define ANIM_MAX 12
+typedef struct {
+    lv_obj_t *obj;      /* 对象：img/line/dot/bar */
+    float x, y;         /* 当前位置 */
+    float vx, vy;       /* 速度 px/tick */
+    uint8_t type;       /* 0=img 1=line雨 2=dot雪 3=bar雾 */
+    uint8_t w, h;       /* 逻辑尺寸（回绕用） */
+    float ph;           /* 雪花抖动相位 */
+    lv_point_precise_t pts[2];  /* 雨丝线段 */
+} anim_item_t;
+static anim_item_t s_anim[ANIM_MAX];
+static int s_anim_n = 0;
+static lv_timer_t *s_anim_timer = NULL;
+static int s_anim_ic = -1;
+
+static void anim_add(lv_obj_t *obj, float x, float y, float vx, float vy, uint8_t type, uint8_t w, uint8_t h)
+{
+    if (s_anim_n >= ANIM_MAX) return;
+    anim_item_t *it = &s_anim[s_anim_n++];
+    it->obj = obj; it->x = x; it->y = y; it->vx = vx; it->vy = vy;
+    it->type = type; it->w = w; it->h = h;
+    it->ph = (float)(rand() % 628) / 100.0f;
+    lv_obj_move_to_index(obj, 0);   /* 沉底：背景色之上、文字之下 */
+}
+
+static void rebuild_anim(int ic)
+{
+    if (ic == s_anim_ic) return;
+    s_anim_ic = ic;
+    for (int i = 0; i < s_anim_n; i++)
+        if (s_anim[i].obj) lv_obj_del(s_anim[i].obj);
+    s_anim_n = 0;
+    if (!active) return;
+
+    switch (ic) {
+    case WEATHER_SUN:
+    case WEATHER_PARTLY: {
+        lv_obj_t *c1 = lv_img_create(scr_layer);
+        lv_img_set_src(c1, &img_anim_cloud);
+        anim_add(c1, 210, 34, -1.2f, 0, 0, 64, 32);
+        lv_obj_t *c2 = lv_img_create(scr_layer);
+        lv_img_set_src(c2, &img_anim_cloud);
+        anim_add(c2, 90, 72, -0.8f, 0, 0, 64, 32);
+        break;
+    }
+    case WEATHER_OVERCAST: {
+        lv_obj_t *c = lv_img_create(scr_layer);
+        lv_img_set_src(c, &img_anim_cloudbig);
+        anim_add(c, 270, 26, -1.5f, 0, 0, 128, 48);
+        break;
+    }
+    case WEATHER_RAIN: {
+        for (int i = 0; i < 3; i++) {
+            lv_obj_t *ln = lv_line_create(scr_layer);
+            lv_obj_set_style_line_width(ln, 2, 0);
+            lv_obj_set_style_line_color(ln, lv_color_hex(0x9FD8FF), 0);
+            lv_line_set_points(ln, NULL, 0);
+            anim_add(ln, 60 + i * 90, -30 - i * 60, -1.5f, 5.0f, 1, 14, 14);
+        }
+        break;
+    }
+    case WEATHER_SNOW: {
+        for (int i = 0; i < 8; i++) {
+            lv_obj_t *dt = lv_obj_create(scr_layer);
+            lv_obj_set_size(dt, 4, 4);
+            lv_obj_set_style_bg_color(dt, lv_color_white(), 0);
+            lv_obj_set_style_bg_opa(dt, LV_OPA_70, 0);
+            lv_obj_set_style_radius(dt, LV_RADIUS_CIRCLE, 0);
+            lv_obj_set_style_border_width(dt, 0, 0);
+            lv_obj_remove_flag(dt, LV_OBJ_FLAG_SCROLLABLE);
+            anim_add(dt, (float)(rand() % 310), (float)(rand() % 240), (rand() % 2 ? 0.5f : -0.5f), 2.5f, 2, 4, 4);
+        }
+        break;
+    }
+    case WEATHER_FOG: {
+        for (int i = 0; i < 2; i++) {
+            lv_obj_t *bar = lv_obj_create(scr_layer);
+            lv_obj_set_size(bar, 200, 5);
+            lv_obj_set_style_bg_color(bar, lv_color_white(), 0);
+            lv_obj_set_style_bg_opa(bar, LV_OPA_30, 0);
+            lv_obj_set_style_radius(bar, 3, 0);
+            lv_obj_set_style_border_width(bar, 0, 0);
+            lv_obj_remove_flag(bar, LV_OBJ_FLAG_SCROLLABLE);
+            anim_add(bar, (i == 0 ? -160.0f : 240.0f), 60 + i * 90, (i == 0 ? 1.3f : -1.1f), 0, 3, 200, 5);
+        }
+        break;
+    }
+    default: break;   /* unknown：静态背景 */
+    }
+}
+
+static void on_anim(lv_timer_t *t)
+{
+    (void)t;
+    for (int i = 0; i < s_anim_n; i++) {
+        anim_item_t *it = &s_anim[i];
+        it->x += it->vx; it->y += it->vy;
+        switch (it->type) {
+        case 0:   /* 云 */
+            if (it->x < -(int)it->w - 10) it->x = 330;
+            else if (it->x > 330) it->x = -(int)it->w - 10;
+            break;
+        case 1:   /* 雨丝 */
+            if (it->y > 250) { it->y = -20 - (rand() % 80); it->x = rand() % 300; }
+            break;
+        case 2:   /* 雪花 */
+            it->x += sinf(it->ph) * 1.2f; it->ph += 0.35f;
+            if (it->y > 244) { it->y = -6; it->x = rand() % 300; }
+            break;
+        case 3:   /* 雾带 */
+            if (it->vx > 0 && it->x > 330) it->x = -(int)it->w - 10;
+            if (it->vx < 0 && it->x < -(int)it->w - 10) it->x = 330;
+            break;
+        default: break;
+        }
+        if (it->type == 1) {
+            it->pts[0].x = it->x; it->pts[0].y = it->y;
+            it->pts[1].x = it->x + it->w * 0.6f; it->pts[1].y = it->y + it->h;
+            lv_line_set_points(it->obj, it->pts, 2);
+        } else {
+            lv_obj_set_pos(it->obj, (lv_coord_t)it->x, (lv_coord_t)it->y);
+        }
+    }
+}
+
 static void show(void)
 {
     if (active) return;
@@ -227,6 +359,7 @@ static void show(void)
     last_wx_upd = 0;
     lv_obj_remove_flag(scr_layer, LV_OBJ_FLAG_HIDDEN);
     lv_timer_resume(clock_timer);
+    if (s_anim_timer) lv_timer_resume(s_anim_timer);
     on_clock(clock_timer);   /* 立即刷新一次 */
 }
 
@@ -236,6 +369,7 @@ static void hide(void)
     active = 0;
     lv_obj_add_flag(scr_layer, LV_OBJ_FLAG_HIDDEN);
     lv_timer_pause(clock_timer);
+    if (s_anim_timer) lv_timer_pause(s_anim_timer);
 }
 
 /* 表盘 12 个数字刻度（固定位置） */
@@ -377,6 +511,9 @@ void screensaver_init(void)
 
     clock_timer = lv_timer_create(on_clock, 1000, NULL);
     lv_timer_pause(clock_timer);
+
+    s_anim_timer = lv_timer_create(on_anim, 50, NULL);
+    lv_timer_pause(s_anim_timer);
 
     lv_obj_add_flag(scr_layer, LV_OBJ_FLAG_HIDDEN);
 }
