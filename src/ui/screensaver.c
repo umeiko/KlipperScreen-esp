@@ -26,6 +26,17 @@
 #define SAVER_TXT_DESC  0x4A5A72   /* 天气描述：灰蓝 */
 #define SAVER_TXT_TEMP  0xE05A1F   /* 温度：橙红（醒目） */
 #define SAVER_TXT_DIM   0x44505C   /* 次要文字：深灰蓝 */
+
+/* 整屏背景随当前天气变化（手机天气 App 风格），索引见 weather_icon_t */
+static const uint32_t s_bg_by_wx[7] = {
+    0x66B5F0,  /* 0 晴  晴空蓝 */
+    0x8EC8F2,  /* 1 多云 浅蓝 */
+    0xA2B4C8,  /* 2 阴  灰蓝 */
+    0x7E93AC,  /* 3 雨  深灰蓝 */
+    0xC9DAEA,  /* 4 雪  青灰白 */
+    0xB9C5D2,  /* 5 雾  浅灰 */
+    0x5BA9E6,  /* 6 未知 默认天蓝 */
+};
 #define SAVER_TIME_COL_2 0xFFC531  /* 分针金黄 */
 
 /* 模拟表盘参数（右侧，顶部与首排文字 y12 齐平） */
@@ -154,8 +165,9 @@ static void update_weather(void)
         settings_load_weather_city_name(cname, sizeof(cname));
         lv_label_set_text(lbl_city, cname[0] ? cname : "--");
         lv_label_set_text(lbl_desc, "天气未配置");
-        lv_obj_set_style_text_color(lbl_desc, lv_color_white(), 0);
+        lv_obj_set_style_text_color(lbl_desc, lv_color_hex(SAVER_TXT_DESC), 0);
         lv_label_set_text(lbl_temp, "--°");
+        lv_obj_set_style_bg_color(scr_layer, lv_color_hex(SAVER_BG_SOLID), 0);
         lv_obj_add_flag(img_wx, LV_OBJ_FLAG_HIDDEN);
         for (int i = 0; i < 3; i++) {
             lv_obj_add_flag(fx_img[i], LV_OBJ_FLAG_HIDDEN);
@@ -174,9 +186,11 @@ static void update_weather(void)
     weather_icon_t ic = weather_icon_from_code(wd.icon);
     lv_img_set_src(img_wx, wx_icons[ic]);
     lv_obj_remove_flag(img_wx, LV_OBJ_FLAG_HIDDEN);
+    /* 整屏背景随当前天气变化 */
+    lv_obj_set_style_bg_color(scr_layer, lv_color_hex(s_bg_by_wx[ic]), 0);
     /* 天气描述用高德原文（更精确），否则用归并名 */
     lv_label_set_text(lbl_desc, wd.category[0] ? wd.category : wx_desc[ic]);
-    lv_obj_set_style_text_color(lbl_desc, lv_color_white(), 0);
+    lv_obj_set_style_text_color(lbl_desc, lv_color_hex(SAVER_TXT_DESC), 0);
 
     lv_label_set_text_fmt(lbl_temp, "%d°", wd.temp_c);
 
