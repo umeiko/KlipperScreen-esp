@@ -84,7 +84,6 @@ static const dict_entry_t dict[] = {
     {"断料检测已暂停",  "Filament sensor paused",  "斷料偵測已暫停",  "Détection filament en pause", "Sensore filamento in pausa"},
     {"未发现可用宏（需已连接 Klipper）", "No macros found (Klipper not connected)", "未發現可用巨集（需連線 Klipper）", "Aucune macro (Klipper non connecté)", "Nessuna macro (Klipper non connesso)"},
     {"已发送 %s",       "Sent %s",             "已發送 %s",           "%s envoyé",                   "%s inviato"},
-    {"%s（后面可追加参数）", "%s (append params after)", "%s（後面可追加參數）", "%s (paramètres en plus)", "%s (parametri aggiuntivi)"},
     {"输入 GCode 命令", "Enter G-code command", "輸入 GCode 指令",    "Entrer une commande G-code",  "Inserisci comando G-code"},
     {"输入命令",        "Input",               "輸入指令",            "Saisir",                      "Inserisci"},
     {"清除",            "Clear",               "清除",                "Effacer",                     "Cancella"},

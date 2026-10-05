@@ -188,26 +188,23 @@ static bool M_zcal_loading;   /* gcode.help 在途（失败下一拍重试，避
 void printer_model_report_gcode_response(char *msg_heap)
 {
     /* 先按行解析限位回流（QUERY_ENDSTOPS："x:open" / "z:TRIGGERED"，可单行可多行），
-     * 且整段全是限位行时不进控制台——那是传感器页的自动刷新噪音，不是用户命令回显 */
-    bool all_endstop = true;
+     * 喂给传感器页；行本身照常进控制台——刷新已改为手动触发，用户
+     * 自己发的 M119/QUERY_ENDSTOPS 理应看到回显（自动轮询时代才需要过滤） */
     for (const char *p = msg_heap; *p; ) {
         const char *eol = strchr(p, '\n');
         size_t ln = eol ? (size_t)(eol - p) : strlen(p);
-        bool is_endstop = false;
         if (ln >= 3 && ln < 40 && p[1] == ':' &&
             (p[0] == 'x' || p[0] == 'y' || p[0] == 'z')) {
             int axis = p[0] - 'x';
             M_endstop[axis] = strncmp(p + 2, "TRIGGERED", 9) == 0 ? 1 : 0;
             M_endstop_ms = lv_tick_get();
             M_endstop_fresh = true;
-            is_endstop = true;
         }
-        if (!is_endstop) all_endstop = false;
         if (!eol) break;
         p = eol + 1;
     }
-    /* 温度轮询行（ok B:.. T0:..）与限位回流都不进控制台，避免刷屏 */
-    if (!all_endstop && !console_is_temp_line(msg_heap)) {
+    /* 温度轮询行（ok B:.. T0:..）不进控制台，避免刷屏 */
+    if (!console_is_temp_line(msg_heap)) {
         int kind = 0;
         const char *text = msg_heap;
         if (strncmp(msg_heap, "!!", 2) == 0)      { kind = 2; text = msg_heap + 2; }

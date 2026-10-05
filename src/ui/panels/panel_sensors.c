@@ -1,7 +1,7 @@
 /*
- * 传感器状态：X/Y/Z 限位开关状态（QUERY_ENDSTOPS 经 gcode 响应回流解析，
- * 页面打开期间每 2s 自动刷新）+ 断料传感器（filament_switch/motion_sensor）
- * 的检出状态与启用开关。
+ * 传感器状态：X/Y/Z 限位开关状态（printer.query_endstops.status 结构化
+ * RPC，进页面拉一次 + 标题右侧手动刷新按钮）+ 断料传感器
+ *（filament_switch/motion_sensor）的检出状态与启用开关。
  */
 #include "../theme.h"
 #include "../lang.h"
@@ -13,8 +13,6 @@
 
 static lv_obj_t *lbl_endstop[3];
 static lv_obj_t *lbl_endstop_hint;
-static lv_timer_t *refresh_timer;
-static uint32_t last_refresh_ms;
 
 #define FIL_ROW_MAX 4
 static lv_obj_t *fil_rows[FIL_ROW_MAX];
@@ -64,30 +62,16 @@ static void update_view(void)
     }
 }
 
-static void refresh_timer_cb(lv_timer_t *t)
+static void on_refresh(lv_event_t *e)
 {
-    LV_UNUSED(t);
-    /* 页面存活期间每 2s 查询一次限位 */
-    printer_endstop_refresh();
-    last_refresh_ms = lv_tick_get();
+    LV_UNUSED(e);
+    printer_endstop_refresh();   /* 手动刷新一次（结构化 RPC 回流后 update_view 更新） */
 }
 
 static void on_show(void)
 {
-    printer_endstop_refresh();
-    last_refresh_ms = lv_tick_get();
-    if (!refresh_timer)
-        refresh_timer = lv_timer_create(refresh_timer_cb, 2000, NULL);
+    printer_endstop_refresh();   /* 进页面先拉一次，之后按需手动刷新 */
     update_view();
-}
-
-static void on_hide_destroy(lv_event_t *e)
-{
-    /* 页面销毁/离开时停掉自动刷新 */
-    if (lv_event_get_code(e) == LV_EVENT_DELETE && refresh_timer) {
-        lv_timer_delete(refresh_timer);
-        refresh_timer = NULL;
-    }
 }
 
 static void on_fil_toggle(lv_event_t *e)
@@ -104,14 +88,18 @@ static lv_obj_t *create(void)
     lv_obj_t *scr = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(scr, theme_col(THEME_COL_BG), 0);
     lv_obj_set_scroll_dir(scr, LV_DIR_VER);
-    lv_obj_add_event_cb(scr, on_hide_destroy, LV_EVENT_DELETE, NULL);
 
     int y = THEME_TITLEBAR_H + ui_px(4);
     const int step = ui_px(39);
 
-    /* ---- 限位开关 ---- */
+    /* ---- 限位开关（标题行右侧挂手动刷新按钮，进页面已拉过一次） ---- */
     lv_obj_t *hdr = theme_label(scr, TR("限位开关"), THEME_FONT_S, THEME_COL_TEXT_DIM);
     lv_obj_align(hdr, LV_ALIGN_TOP_MID, 0, y);
+    lv_obj_t *btn_refresh = theme_label(scr, LV_SYMBOL_REFRESH, THEME_FONT_ICON, THEME_COL_ACCENT);
+    lv_obj_align(btn_refresh, LV_ALIGN_TOP_RIGHT, -ui_px(12), y - ui_px(2));
+    lv_obj_add_flag(btn_refresh, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(btn_refresh, on_refresh, LV_EVENT_CLICKED, NULL);
+    theme_focusable(btn_refresh);
     y += ui_px(18);
 
     static const char axis_names[] = { 'X', 'Y', 'Z' };

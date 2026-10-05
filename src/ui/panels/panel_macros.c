@@ -63,9 +63,7 @@ static void open_param(lv_event_t *e)
     lv_obj_set_style_bg_color(param_overlay, theme_col(THEME_COL_BG), 0);
     lv_obj_set_style_bg_opa(param_overlay, LV_OPA_COVER, 0);
 
-    char title[96];
-    snprintf(title, sizeof(title), TR("%s（后面可追加参数）"), printer_macro_label(idx));
-    lv_obj_t *lbl = theme_label(param_overlay, title, THEME_FONT_M, THEME_COL_TEXT);
+    lv_obj_t *lbl = theme_label(param_overlay, printer_macro_label(idx), THEME_FONT_M, THEME_COL_TEXT);
     lv_obj_set_width(lbl, LV_MIN(ui_px(300), ui_content_w()));
     lv_label_set_long_mode(lbl, LV_LABEL_LONG_SCROLL_CIRCULAR);
     lv_obj_align(lbl, LV_ALIGN_TOP_MID, 0, ui_px(8));

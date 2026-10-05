@@ -204,6 +204,8 @@ static struct { const char *name; const char *label; } mock_macros[] = {
     {"END_PRINT",     "END PRINT"},
     {"CLEAN_NOZZLE",  "CLEAN NOZZLE"},
     {"PARK_TOOLHEAD", "PARK TOOLHEAD"},
+    {"M900",          "M900"},
+    {"SET_PRESSURE_ADVANCE", "SET PRESSURE ADVANCE"},
 };
 int  printer_macro_count(void) { return (int)(sizeof(mock_macros) / sizeof(mock_macros[0])); }
 const char *printer_macro_name(int i)  { return (i >= 0 && i < printer_macro_count()) ? mock_macros[i].name : ""; }
