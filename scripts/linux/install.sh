@@ -137,6 +137,8 @@ EOF
     sudo adduser "$USER" video >/dev/null 2>&1 || true
     sudo adduser "$USER" input >/dev/null 2>&1 || true
     sudo adduser "$USER" render >/dev/null 2>&1 || true
+    # WiFi 管理（应用内 nmcli 扫描/连接）需要 NetworkManager 授权
+    sudo adduser "$USER" netdev >/dev/null 2>&1 || true
 }
 
 # ---------- 4. 既有 KlipperScreen 冲突 ----------
@@ -227,6 +229,25 @@ HandlePowerKey=ignore
 EOF
     sudo systemctl restart systemd-logind 2>/dev/null || true
     echo_ok "Power key bound to screen off (logind HandlePowerKey=ignore)"
+
+    # WiFi 管理（应用内 nmcli 扫描/连接）：kiosk 服务没有活跃桌面会话，
+    # polkit 对 NetworkManager 的 allow_active 默认规则覆盖不到它；
+    # 不赌发行版是否给 netdev 组默认授权，显式装一条规则。
+    if getent group netdev >/dev/null 2>&1; then
+        sudo tee /etc/polkit-1/rules.d/49-KlipperScreen-esp-network.rules > /dev/null <<'EOF'
+/* KlipperScreen-esp kiosk：netdev 组成员可管理网络（WiFi 页 nmcli）。
+ * 服务模式无活跃会话，polkit 的 allow_active 不适用，显式放行。 */
+polkit.addRule(function(action, subject) {
+    if (action.id.indexOf("org.freedesktop.NetworkManager.") === 0 &&
+        subject.isInGroup("netdev")) {
+        return polkit.Result.YES;
+    }
+});
+EOF
+        echo_ok "NetworkManager polkit rule installed (group netdev)"
+    else
+        echo_text "No netdev group on this system; WiFi page may be unavailable in service mode"
+    fi
 }
 
 # ---------- 8. 桌面 App 入口 ----------
