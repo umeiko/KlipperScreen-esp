@@ -63,7 +63,7 @@ static lv_obj_t *fx_text[3];
 static lv_obj_t *line_hour;
 static lv_obj_t *line_min;
 static lv_obj_t *line_sec;
-static lv_point_precise_t pt_hour[2], pt_min[2], pt_sec[2];
+static lv_point_precise_t pt_hour[2], pt_min[2], pt_sec[3];
 static lv_timer_t *clock_timer;
 static int active;
 static uint64_t last_wx_upd;
@@ -117,10 +117,12 @@ static void update_hands(int hour, int min, int sec)
     pt_sec[0].x = CLK_CX;   pt_sec[0].y = CLK_CY;
     pt_sec[1].x = CLK_CX + (lv_coord_t)(CLK_R * 0.82 * sin(sa));
     pt_sec[1].y = CLK_CY - (lv_coord_t)(CLK_R * 0.82 * cos(sa));
+    pt_sec[2].x = CLK_CX - (lv_coord_t)(CLK_R * 0.14 * sin(sa));   /* 秒针尾针 */
+    pt_sec[2].y = CLK_CY + (lv_coord_t)(CLK_R * 0.14 * cos(sa));
 
     lv_line_set_points(line_hour, pt_hour, 2);
     lv_line_set_points(line_min,  pt_min,  2);
-    lv_line_set_points(line_sec,  pt_sec,  2);
+    lv_line_set_points(line_sec,  pt_sec,  3);
 }
 
 static void update_clock(void)
@@ -363,21 +365,24 @@ static void hide(void)
     if (s_anim_timer) lv_timer_pause(s_anim_timer);
 }
 
-/* 表盘 12 个数字刻度（固定位置） */
+/* 表盘 60 格分钟刻度（无数字）：整点刻度加粗加长，其余细刻度 */
 static void create_dial_ticks(lv_obj_t *parent)
 {
-    static const char *num[12] = { "12", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11" };
-    for (int k = 0; k < 12; k++) {
-        double a = k * M_PI / 6.0;
-        lv_coord_t x = CLK_CX + (lv_coord_t)((CLK_R - 15) * sin(a));
-        lv_coord_t y = CLK_CY - (lv_coord_t)((CLK_R - 15) * cos(a));
-        lv_obj_t *lb = lv_label_create(parent);
-        lv_obj_set_style_text_font(lb, &lv_font_montserrat_16, 0);
-        lv_obj_set_style_text_color(lb, lv_color_white(), 0);
-        lv_label_set_text(lb, num[k]);
-        /* 两位数字（10/11/12）稍宽，微调居中 */
-        lv_coord_t off = (k == 0 || k >= 10) ? 18 : 9;
-        lv_obj_align(lb, LV_ALIGN_TOP_LEFT, x - off, y - 9);
+    for (int k = 0; k < 60; k++) {
+        double a = k * M_PI / 30.0;
+        int major = (k % 5 == 0);
+        lv_coord_t r0 = CLK_R - (major ? 13 : 8);
+        lv_coord_t r1 = CLK_R - 2;
+        lv_point_precise_t pts[2];
+        pts[0].x = CLK_CX + (lv_coord_t)(r0 * sin(a));
+        pts[0].y = CLK_CY - (lv_coord_t)(r0 * cos(a));
+        pts[1].x = CLK_CX + (lv_coord_t)(r1 * sin(a));
+        pts[1].y = CLK_CY - (lv_coord_t)(r1 * cos(a));
+        lv_obj_t *tk = lv_line_create(parent);
+        lv_obj_set_style_line_width(tk, major ? 2 : 1, 0);
+        lv_obj_set_style_line_color(tk, lv_color_white(), 0);
+        lv_obj_set_style_line_opa(tk, major ? LV_OPA_COVER : LV_OPA_50, 0);
+        lv_line_set_points(tk, pts, 2);
     }
 }
 
@@ -462,7 +467,7 @@ void screensaver_init(void)
     lv_obj_set_style_radius(face, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_pad_all(face, 0, 0);
     lv_obj_remove_flag(face, LV_OBJ_FLAG_SCROLLABLE);
-    create_dial_ticks(face);
+    create_dial_ticks(scr_layer);   /* 刻度用屏幕绝对坐标，覆盖在表盘上 */
 
     line_hour = lv_line_create(scr_layer);
     lv_obj_set_style_line_width(line_hour, 3, 0);
@@ -480,8 +485,8 @@ void screensaver_init(void)
     lv_line_set_points(line_sec, pt_sec, 2);
 
     lv_obj_t *hub = lv_obj_create(scr_layer);
-    lv_obj_set_size(hub, 8, 8);
-    lv_obj_align(hub, LV_ALIGN_TOP_LEFT, CLK_CX - 4, CLK_CY - 4);
+    lv_obj_set_size(hub, 5, 5);
+    lv_obj_align(hub, LV_ALIGN_TOP_LEFT, CLK_CX - 2, CLK_CY - 2);
     lv_obj_set_style_bg_color(hub, lv_color_white(), 0);
     lv_obj_set_style_border_width(hub, 0, 0);
     lv_obj_set_style_radius(hub, LV_RADIUS_CIRCLE, 0);
