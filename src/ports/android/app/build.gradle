@@ -14,6 +14,11 @@ if (m && m.find()) {
     verName = "${m.group(1)}.${m.group(2)}.${m.group(3)}"
     verCode = (m.group(1) as int) * 10000 + (m.group(2) as int) * 100 + (m.group(3) as int)
 }
+println "KlipperScreen-esp version: ${verName} (${verCode}) <- ${versionHeader.absolutePath}"
+if (verName == '0.0.0') {
+    // 静默 0.0.0 包绝不能出厂（曾经因为路径少一级全部 APK 都是 0.0.0/1）
+    throw new GradleException("version.h 未找到或未匹配: ${versionHeader.absolutePath} (rootDir=${rootDir})")
+}
 
 // SDL2 源码树（tools/fetch-android-deps.sh 拉到 third_party/SDL2，可用环境变量覆盖）
 def sdl2Root = System.getenv('SDL2_ROOT') ?: new File(rootDir, '../../third_party/SDL2').absolutePath
