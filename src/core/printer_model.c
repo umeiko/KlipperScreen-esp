@@ -185,6 +185,12 @@ static int  M_zcal_cnt;
 static bool M_zcal_loaded;
 static bool M_zcal_loading;   /* gcode.help 在途（失败下一拍重试，避免每拍重发） */
 
+#if !defined(ESP_PLATFORM)
+static void on_configfile(char *result_json, void *ud);
+static bool M_cfg_loading, M_cfg_loaded;
+static int M_mparam_cnt[MACRO_MAX];
+#endif
+
 void printer_model_report_gcode_response(char *msg_heap)
 {
     /* 先按行解析限位回流（QUERY_ENDSTOPS："x:open" / "z:TRIGGERED"，可单行可多行），
@@ -507,10 +513,199 @@ void printer_model_set_object_names(char *json_heap)
         }
     }
     cJSON_Delete(arr);
+#if !defined(ESP_PLATFORM)
+    /* 宏列表到手后整配拉一次（解析宏参数表单用）；失败下一拍由面板侧
+       的 loading 状态引导用户稍后再开表单（下一连接周期会重试） */
+    if (M_macro_cnt > 0 && !M_cfg_loading && !M_cfg_loaded) {
+        if (moonraker_rpc("printer.objects.query",
+                          "{\"objects\":{\"configfile\":null}}", on_configfile, NULL))
+            M_cfg_loading = true;
+    }
+#endif
     refresh();
 }
 
 int printer_macro_count(void) { return klipper_active() ? M_macro_cnt : 0; }
+
+/* 宏参数解析（仅桌面端非 ESP32：configfile 整配一次拉取，按宏扫
+ * {params.X|default(...)|type_hint}；ESP32 不编译、不占 RAM） */
+#if !defined(ESP_PLATFORM)
+#define MACRO_PARAM_MAX 8
+typedef struct {
+    char name[32];
+    char dflt[24];
+    bool numeric;   /* int/float → 数字键盘 */
+} macro_param_t;
+static macro_param_t M_mparams[MACRO_MAX][MACRO_PARAM_MAX];
+static int  M_mparam_cnt[MACRO_MAX];
+static bool M_cfg_loading, M_cfg_loaded;
+
+static void on_configfile(char *result_json, void *ud);
+
+/* 找一行里第一个 "params." 之后的标识符：名字写入 name，后续
+ * |default(...) 与 |hint 一并解析。返回该行是否有匹配。 */
+static bool parse_param_line(const char *line, char *name, size_t name_cap,
+                             char *dflt, size_t dflt_cap, bool *numeric)
+{
+    /* 与 KlipperScreen 一致：只认以 '{' 开头且含 "params." 的行 */
+    while (*line == ' ' || *line == '\t') line++;
+    if (*line != '{' || !strstr(line, "params.")) return false;
+    const char *p = strstr(line, "params.") + 7;
+    size_t n = 0;
+    while ((p[n] >= 'A' && p[n] <= 'Z') || (p[n] >= 'a' && p[n] <= 'z') ||
+           (p[n] >= '0' && p[n] <= '9') || p[n] == '_')
+        n++;
+    if (!n || n >= name_cap) return false;
+    memcpy(name, p, n);
+    name[n] = 0;
+    p += n;
+    dflt[0] = 0;
+    *numeric = false;
+    for (;;) {
+        while (*p == ' ' || *p == '\t') p++;
+        if (*p != '|') break;
+        p++;
+        while (*p == ' ' || *p == '\t') p++;
+        if (strncmp(p, "default(", 8) == 0) {
+            p += 8;
+            size_t dl = 0;
+            while (p[dl] && p[dl] != ')' && dl < dflt_cap - 1) dl++;
+            memcpy(dflt, p, dl);
+            dflt[dl] = 0;
+            p += dl;
+        } else {
+            size_t hl = 0;
+            char hint[16];
+            while ((p[hl] >= 'A' && p[hl] <= 'Z') || (p[hl] >= 'a' && p[hl] <= 'z') ||
+                   (p[hl] >= '0' && p[hl] <= '9') || p[hl] == '_')
+                hl++;
+            if (hl && hl < sizeof(hint)) {
+                memcpy(hint, p, hl);
+                hint[hl] = 0;
+                if (strcmp(hint, "int") == 0 || strcmp(hint, "float") == 0)
+                    *numeric = true;
+            }
+            p += hl;
+        }
+    }
+    return true;
+}
+
+static void parse_macro_params(int macro_idx, const char *gcode)
+{
+    int cnt = 0;
+    for (const char *line = gcode; *line && cnt < MACRO_PARAM_MAX; ) {
+        const char *eol = strchr(line, '\n');
+        size_t ln = eol ? (size_t)(eol - line) : strlen(line);
+        if (ln > 0 && ln < 256) {
+            char buf[256];
+            memcpy(buf, line, ln);
+            buf[ln] = 0;
+            macro_param_t *pr = &M_mparams[macro_idx][cnt];
+            if (parse_param_line(buf, pr->name, sizeof(pr->name),
+                                 pr->dflt, sizeof(pr->dflt), &pr->numeric)) {
+                /* 同宏内参数名去重 */
+                bool dup = false;
+                for (int k = 0; k < cnt; k++)
+                    if (strcmp(M_mparams[macro_idx][k].name, pr->name) == 0) { dup = true; break; }
+                if (!dup) cnt++;
+            }
+        }
+        if (!eol) break;
+        line = eol + 1;
+    }
+    M_mparam_cnt[macro_idx] = cnt;
+}
+
+static void on_configfile(char *result_json, void *ud)
+{
+    LV_UNUSED(ud);
+    M_cfg_loading = false;
+    cJSON *root = cJSON_Parse(result_json ? result_json : "");
+    free(result_json);
+    cJSON *cfg = root ? cJSON_GetObjectItem(root, "configfile") : NULL;
+    cJSON *config = cfg ? cJSON_GetObjectItem(cfg, "config") : NULL;
+    if (config) {
+        for (int i = 0; i < M_macro_cnt; i++) {
+            char section[72];
+            snprintf(section, sizeof(section), "gcode_macro %s", M_macros[i].name);
+            cJSON *sec = cJSON_GetObjectItem(config, section);
+            cJSON *gcode = sec ? cJSON_GetObjectItem(sec, "gcode") : NULL;
+            M_mparam_cnt[i] = 0;
+            if (cJSON_IsString(gcode) && gcode->valuestring)
+                parse_macro_params(i, gcode->valuestring);
+        }
+        M_cfg_loaded = true;
+    }
+    cJSON_Delete(root);
+    refresh();
+}
+
+bool printer_macro_params_loading(void)
+{
+    return klipper_active() && M_cfg_loading;
+}
+
+int printer_macro_param_count(int macro_idx)
+{
+    if (!klipper_active() || macro_idx < 0 || macro_idx >= M_macro_cnt) return 0;
+    return M_mparam_cnt[macro_idx];
+}
+
+bool printer_macro_param_info(int macro_idx, int p, char *name, size_t name_cap,
+                              char *dflt, size_t dflt_cap, bool *is_numeric)
+{
+    if (!klipper_active() || macro_idx < 0 || macro_idx >= M_macro_cnt ||
+        p < 0 || p >= M_mparam_cnt[macro_idx])
+        return false;
+    copy_text(name, name_cap, M_mparams[macro_idx][p].name);
+    copy_text(dflt, dflt_cap, M_mparams[macro_idx][p].dflt);
+    if (is_numeric) *is_numeric = M_mparams[macro_idx][p].numeric;
+    return true;
+}
+#else
+bool printer_macro_params_loading(void) { return false; }
+int  printer_macro_param_count(int macro_idx) { (void)macro_idx; return 0; }
+bool printer_macro_param_info(int macro_idx, int p, char *name, size_t name_cap,
+                              char *dflt, size_t dflt_cap, bool *is_numeric)
+{
+    (void)macro_idx; (void)p; (void)name; (void)name_cap;
+    (void)dflt; (void)dflt_cap; (void)is_numeric;
+    return false;
+}
+#endif /* !ESP_PLATFORM */
+
+/* M/G 编号宏（M900/G123）参数用空格风格（对齐 KlipperScreen 的规则） */
+static bool macro_is_mg_code(const char *name)
+{
+    if (!name || (name[0] != 'G' && name[0] != 'M')) return false;
+    size_t n = strlen(name);
+    if (n < 2 || n > 4) return false;
+    for (size_t i = 1; i < n; i++)
+        if (name[i] < '0' || name[i] > '9') return false;
+    return true;
+}
+
+void printer_macro_run_with(int macro_idx, const char *const *values)
+{
+    if (!klipper_active() || macro_idx < 0 || macro_idx >= M_macro_cnt) return;
+    int pcnt = printer_macro_param_count(macro_idx);
+    if (pcnt == 0 || !values) { printer_macro_run(macro_idx); return; }
+    bool gcmd = macro_is_mg_code(M_macros[macro_idx].name);
+    char line[256];
+    int n = snprintf(line, sizeof(line), "%s", M_macros[macro_idx].name);
+    for (int p = 0; p < pcnt && n > 0 && n < (int)sizeof(line) - 1; p++) {
+        if (!values[p] || !values[p][0]) continue;
+        char pname[32], d[24];
+        if (!printer_macro_param_info(macro_idx, p, pname, sizeof(pname),
+                                      d, sizeof(d), NULL))
+            continue;
+        n += snprintf(line + n, sizeof(line) - n,
+                      gcmd ? " %s%s" : " %s=%s", pname, values[p]);
+    }
+    klipper_gcode_script(line);
+}
+
 const char *printer_macro_name(int i)  { return (i >= 0 && i < M_macro_cnt) ? M_macros[i].name : ""; }
 const char *printer_macro_label(int i) { return (i >= 0 && i < M_macro_cnt) ? M_macros[i].label : ""; }
 void printer_macro_run(int i)

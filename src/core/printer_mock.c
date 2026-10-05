@@ -219,6 +219,63 @@ void printer_macro_run(int i)
     mock_con_add("// 宏已执行（模拟）", 3);
 }
 
+/* 宏参数（模拟）：M900 → K|default(0.5)|float；SET_PRESSURE_ADVANCE → ADVANCE|default(0.05)|float */
+static struct { const char *name; const char *dflt; bool numeric; } mock_params_m900[] = {
+    {"K", "0.5", true},
+};
+static struct { const char *name; const char *dflt; bool numeric; } mock_params_pa[] = {
+    {"ADVANCE", "0.05", true},
+};
+
+static int mock_param_list(int macro_idx, const void **out)
+{
+    if (macro_idx == 4) { *out = mock_params_m900; return 1; }
+    if (macro_idx == 5) { *out = mock_params_pa; return 1; }
+    *out = NULL;
+    return 0;
+}
+
+bool printer_macro_params_loading(void) { return false; }
+int  printer_macro_param_count(int macro_idx)
+{
+    const void *list;
+    return mock_param_list(macro_idx, &list);
+}
+
+bool printer_macro_param_info(int macro_idx, int p, char *name, size_t name_cap,
+                              char *dflt, size_t dflt_cap, bool *is_numeric)
+{
+    const void *list;
+    int cnt = mock_param_list(macro_idx, &list);
+    if (p < 0 || p >= cnt) return false;
+    const typeof(mock_params_m900[0]) *pr = list;
+    strncpy(name, pr[p].name, name_cap - 1);
+    name[name_cap - 1] = 0;
+    strncpy(dflt, pr[p].dflt, dflt_cap - 1);
+    dflt[dflt_cap - 1] = 0;
+    if (is_numeric) *is_numeric = pr[p].numeric;
+    return true;
+}
+
+void printer_macro_run_with(int macro_idx, const char *const *values)
+{
+    if (macro_idx < 0 || macro_idx >= printer_macro_count()) return;
+    const char *name = mock_macros[macro_idx].name;
+    int pcnt = printer_macro_param_count(macro_idx);
+    char line[128];
+    int n = snprintf(line, sizeof(line), "> %s", name);
+    bool gcmd = (name[0] == 'G' || name[0] == 'M');
+    for (int p = 0; p < pcnt && n > 0 && n < (int)sizeof(line) - 1; p++) {
+        if (!values || !values[p] || !values[p][0]) continue;
+        char pname[32], d[24];
+        if (!printer_macro_param_info(macro_idx, p, pname, sizeof(pname), d, sizeof(d), NULL))
+            continue;
+        n += snprintf(line + n, sizeof(line) - n, gcmd ? " %s%s" : " %s=%s", pname, values[p]);
+    }
+    mock_con_add(line, 1);
+    mock_con_add("// 宏已执行（模拟）", 3);
+}
+
 static struct { const char *label; bool writable; float speed; } mock_fans[] = {
     {"fan",     true,  0.65f},
     {"chamber", true,  0.30f},

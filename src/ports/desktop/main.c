@@ -203,6 +203,11 @@ int main(int argc, char **argv)
             queue_encoder_ip_demo(0);
         if (argc >= 5 && strcmp(argv[4], "encoder-ip-save") == 0)
             queue_encoder_ip_demo(1);
+        if (argc >= 5 && strcmp(argv[4], "macro-form") == 0) {
+            /* 演示参数表单：argv[3] 打开的宏页上弹出第 4 个宏（M900）的表单 */
+            extern void panel_macros_demo_open_form(void *);
+            lv_async_call((lv_async_cb_t)panel_macros_demo_open_form, (void *)(intptr_t)4);
+        }
 #endif
 
     }

@@ -115,11 +115,23 @@ void printer_file_delete(const char *name);   /* 删除 gcodes 下的文件 */
 /* ---- 菜单页扩展能力（Klipper only；ESP32 客户端暂未接线，返回空/默认） ---- */
 
 /* 宏：来自 objects.list 的 "gcode_macro *"（剔除 '_' 开头与 LOAD/UNLOAD_FILAMENT）。
- * label 为显示名（下划线转空格）；run 发送宏名本体（无参数）。 */
+ * label 为显示名（原名）；run 发送宏名本体（无参数）。 */
 int  printer_macro_count(void);
 const char *printer_macro_name(int i);
 const char *printer_macro_label(int i);
 void printer_macro_run(int i);
+
+/* 宏参数表单（仅桌面端非 ESP32：configfile 的 {params.X|default()|type_hint}
+ * 解析；ESP32 恒 loading=false/count=0，面板按纯列表处理）。
+ * 参数值一般是数字：数值型（int|float）走浮点数字键盘，其余走文本键盘。 */
+bool printer_macro_params_loading(void);
+int  printer_macro_param_count(int macro_idx);
+/* 读第 p 个参数信息：名字/默认值/是否数值型。无则 false。 */
+bool printer_macro_param_info(int macro_idx, int p, char *name, size_t name_cap,
+                              char *dflt, size_t dflt_cap, bool *is_numeric);
+/* 带参数执行：values[p] 为空串则省略该参数；M/G 编号宏用空格风格（M900 K 0.05），
+ * 其余用等号风格（NAME=value）。 */
+void printer_macro_run_with(int macro_idx, const char *const *values);
 
 /* 风扇：fan / fan_generic 可写（M106 / SET_FAN_SPEED），heater_fan / controller_fan 只读。
  * speed 为 0..1（未订阅到为 -1）。 */
