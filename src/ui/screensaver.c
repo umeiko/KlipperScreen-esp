@@ -9,7 +9,6 @@
 #include "lunar.h"
 #include "assets/icons.h"
 #include "assets/weather_icons.h"
-#include "assets/saver_bg.h"
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -18,8 +17,7 @@
 /* 充电触发 / 退出电压（与旧版一致） */
 #define SAVER_CHG_MV    4150
 #define SAVER_EXIT_MV   4100
-#define SAVER_BG_TOP    0x8FD0F8   /* 渐变上缘（浅天蓝） */
-#define SAVER_BG_BOT    0x5BA9E6   /* 渐变下缘（天蓝） */
+#define SAVER_BG_SOLID  0x0A2244   /* 纯色背景（深海军蓝，与表盘同色系，白字可读） */
 #define SAVER_TIME_COL_2 0xFFC531  /* 分针金黄 */
 
 /* 模拟表盘参数（右侧，顶部与首排文字 y12 齐平） */
@@ -247,15 +245,12 @@ void screensaver_init(void)
     scr_layer = lv_obj_create(lv_layer_top());
     lv_obj_set_size(scr_layer, 320, 240);
     lv_obj_align(scr_layer, LV_ALIGN_TOP_MID, 0, 0);
-    lv_obj_set_style_bg_color(scr_layer, lv_color_hex(SAVER_BG_BOT), 0);
+    lv_obj_set_style_bg_color(scr_layer, lv_color_hex(SAVER_BG_SOLID), 0);
     lv_obj_set_style_border_width(scr_layer, 0, 0);
     lv_obj_set_style_pad_all(scr_layer, 0, 0);
     lv_obj_remove_flag(scr_layer, LV_OBJ_FLAG_SCROLLABLE);
 
-    /* 背景：用户图片（320x240 全屏，最先创建保证在最底层） */
-    lv_obj_t *img_bg = lv_img_create(scr_layer);
-    lv_img_set_src(img_bg, &img_saver_bg);
-    lv_obj_align(img_bg, LV_ALIGN_TOP_LEFT, 0, 0);
+    /* 背景：纯色（SAVER_BG_SOLID，见上方 scr_layer 底色） */
 
     /* ---- 左侧：大号时间（24h）---- */
     lbl_time = lv_label_create(scr_layer);
