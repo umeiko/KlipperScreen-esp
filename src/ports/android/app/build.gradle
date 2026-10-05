@@ -6,13 +6,20 @@ apply plugin: 'com.android.application'
 
 // 版本号与固件/桌面端同源：src/core/version.h 的 KR_VERSION
 // （rootDir = src/ports/android，要上三级才到仓库根）
+// 解析全用字面字符串操作（tokenize/replace），不用正则——正则写法在 CI 上
+// 神秘失配过（exists=true、内容正确、find()=false），不再给它机会。
 def versionHeader = new File(rootDir, '../../../src/core/version.h')
 def verName = '0.0.0'
 def verCode = 1
-def m = versionHeader.exists() ? (versionHeader.text =~ /KR_VERSION\s+"(\d+)\.(\d+)\.(\d+)"/) : null
-if (m && m.find()) {
-    verName = "${m.group(1)}.${m.group(2)}.${m.group(3)}"
-    verCode = (m.group(1) as int) * 10000 + (m.group(2) as int) * 100 + (m.group(3) as int)
+versionHeader.eachLine('UTF-8') { line ->
+    def p = line.trim().tokenize()
+    if (p.size() == 3 && p[0] == '#define' && p[1] == 'KR_VERSION') {
+        def nums = p[2].replace('"', '').tokenize('.')
+        if (nums.size() == 3) {
+            verName = "${nums[0]}.${nums[1]}.${nums[2]}"
+            verCode = (nums[0] as int) * 10000 + (nums[1] as int) * 100 + (nums[2] as int)
+        }
+    }
 }
 println "KlipperScreen-esp version: ${verName} (${verCode}) <- ${versionHeader.absolutePath} [exists=${versionHeader.exists()}]"
 if (versionHeader.exists()) {
