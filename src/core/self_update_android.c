@@ -267,6 +267,16 @@ static int semver_cmp(const char *a, const char *b)
 
 /* ---------------- worker ---------------- */
 
+/* SDL_AndroidGetInternalStoragePath 是否带尾斜杠依 SDL 版本/设备而定，
+   拼接下载文件路径必须自己补 '/'（否则 filesupdate.apk 这种文件会写到
+   包根目录，FileProvider 的 files/ root 盖不住它，安装必抛异常） */
+static void join_dl_path(char *out, size_t cap)
+{
+    const char *dir = SDL_AndroidGetInternalStoragePath();
+    snprintf(out, cap, "%s%s%s", dir,
+             (dir[0] && dir[strlen(dir) - 1] == '/') ? "" : "/", DL_FILE);
+}
+
 static void *update_worker(void *unused)
 {
     (void)unused;
@@ -328,8 +338,14 @@ static void *update_worker(void *unused)
     publish_state(SUPD_DOWNLOADING);
     publish_progress(0, 1);   /* 清掉元信息下载留下的 100% 残留进度 */
     char path[1100];
-    const char *dir = SDL_AndroidGetInternalStoragePath();
-    snprintf(path, sizeof(path), "%s%s", dir, DL_FILE);
+    join_dl_path(path, sizeof(path));
+    /* 旧版无斜杠拼接写出的残留（包根目录 filesupdate.apk）顺手清掉 */
+    {
+        char legacy[1100];
+        const char *d = SDL_AndroidGetInternalStoragePath();
+        snprintf(legacy, sizeof(legacy), "%s%s", d, DL_FILE);
+        if (strcmp(legacy, path) != 0) remove(legacy);
+    }
     snprintf(g_url, sizeof(g_url), "%s", dl_url);
     g_size = dl_size;
     rc = https_get(g_url, path, NULL, 0, NULL);
@@ -489,8 +505,7 @@ bool supd_apply(void)
     supd_poll(&s);
     if (s.state != SUPD_READY) return false;
     char path[1100];
-    snprintf(path, sizeof(path), "%s%s",
-             SDL_AndroidGetInternalStoragePath(), DL_FILE);
+    join_dl_path(path, sizeof(path));
     return jni_install_apk(path);
 }
 
