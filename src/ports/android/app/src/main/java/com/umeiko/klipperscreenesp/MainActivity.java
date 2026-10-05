@@ -1,5 +1,10 @@
 package com.umeiko.klipperscreenesp;
 
+import android.content.Intent;
+import android.net.Uri;
+import androidx.core.content.FileProvider;
+import java.io.File;
+
 import org.libsdl.app.SDLActivity;
 
 /**
@@ -13,5 +18,17 @@ public class MainActivity extends SDLActivity {
             "SDL2",
             "main"
         };
+    }
+
+    /** 自更新：用系统安装器打开已下载的 APK（self_update_android.c 经 JNI 调用） */
+    public void installApk(String path) {
+        File file = new File(path);
+        Uri uri = FileProvider.getUriForFile(this,
+                "com.umeiko.klipperscreenesp.fileprovider", file);
+        Intent intent = new Intent(Intent.ACTION_VIEW);
+        intent.setDataAndType(uri, "application/vnd.android.package-archive");
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        startActivity(intent);
     }
 }

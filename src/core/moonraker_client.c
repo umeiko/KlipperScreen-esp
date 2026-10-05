@@ -254,23 +254,54 @@ static void on_subscribe_result(cJSON *result)
     bsp_time_sync_from_host(conf.host, conf.port);   /* 内网对时：取 Moonraker HTTP Date */
 }
 
+static cJSON *g_objects;   /* objects.list 结果（WS 任务持有），动态订阅用 */
+
+static void set_objects_in_lvgl(void *p)
+{
+    printer_model_set_object_names((char *)p);
+}
+
 static void handshake_step_subscribe(void)
 {
-    /* 订阅最小集（不订 configfile/bed_mesh/motion_report，对齐 docs §10 裁剪） */
-    const char *params =
+    /* 最小集 + objects.list 发现的可选对象（菜单页：风扇/断料/探针偏移）；
+       静态缓冲避免 WS 任务栈压力 */
+    static char params[4096];
+    size_t n = (size_t)snprintf(params, sizeof(params),
         "{\"objects\":{"
         "\"webhooks\":null,"
         "\"print_stats\":[\"state\",\"filename\",\"print_duration\",\"total_duration\",\"message\"],"
         "\"virtual_sdcard\":[\"progress\",\"is_active\"],"
         "\"display_status\":[\"progress\",\"message\"],"
-        "\"gcode_move\":[\"speed_factor\",\"extrude_factor\"],"
+        "\"gcode_move\":[\"speed_factor\",\"extrude_factor\",\"homing_origin\"],"
         "\"toolhead\":[\"position\",\"homed_axes\"],"
         "\"extruder\":[\"temperature\",\"target\",\"power\"],"
         "\"heater_bed\":[\"temperature\",\"target\",\"power\"],"
         "\"fan\":[\"speed\"],"
         "\"idle_timeout\":[\"state\"],"
-        "\"pause_resume\":[\"is_paused\"]"
-        "}}";
+        "\"manual_probe\":[\"is_active\"],"
+        "\"pause_resume\":[\"is_paused\"]");
+    if (g_objects) {
+        cJSON *it;
+        cJSON_ArrayForEach(it, g_objects) {
+            if (!cJSON_IsString(it) || !it->valuestring) continue;
+            const char *obj = it->valuestring;
+            const char *fields = NULL;
+            if (strncmp(obj, "fan_generic ", 12) == 0 ||
+                strncmp(obj, "heater_fan ", 11) == 0 ||
+                strncmp(obj, "controller_fan ", 15) == 0)
+                fields = "[\"speed\"]";
+            else if (strncmp(obj, "filament_switch_sensor ", 23) == 0 ||
+                     strncmp(obj, "filament_motion_sensor ", 23) == 0)
+                fields = "[\"enabled\",\"filament_detected\"]";
+            else if (strcmp(obj, "probe") == 0 || strcmp(obj, "bltouch") == 0)
+                fields = "[\"z_offset\"]";
+            if (!fields) continue;
+            size_t left = sizeof(params) - n;
+            int w = snprintf(params + n, left, ",\"%s\":%s", obj, fields);
+            if (w > 0) n += (size_t)w < left ? (size_t)w : left - 1;
+        }
+    }
+    snprintf(params + n, sizeof(params) - n, "}}");
     if (!send_rpc_cb("printer.objects.subscribe", params, on_subscribe_result)) {
         ESP_LOGW(TAG, "subscribe send failed, retry in 2s");
         esp_timer_start_once(subscribe_timer, 2000000);
@@ -279,7 +310,11 @@ static void handshake_step_subscribe(void)
 
 static void on_objects_list_result(cJSON *result)
 {
-    (void)result;   /* v1 不做动态设备枚举，固定 extruder + heater_bed */
+    /* 对象清单：客户端留底（动态订阅）+ 转交数据层（宏/风扇/断料清单） */
+    cJSON_Delete(g_objects);
+    g_objects = cJSON_Duplicate(result, 1);
+    char *raw = result ? cJSON_PrintUnformatted(result) : NULL;
+    if (raw) post_to_lvgl(set_objects_in_lvgl, raw);
     handshake_step_subscribe();
 }
 
@@ -383,10 +418,10 @@ static void handle_notify(const char *method, cJSON *params)
         cJSON *status = cJSON_GetArrayItem(params, 0);
         post_status(status);
     } else if (strcmp(method, "notify_gcode_response") == 0) {
-        /* params = ["!! Endstop not triggered", eventtime]；只关心 "!!" 错误行，
-           投递给模型存为待提示错误，UI 节拍弹 toast（无错误不上屏） */
+        /* 全量转发（控制台回显 + QUERY_ENDSTOP 回流解析在数据层）；
+           "!!" 错误行提示逻辑不变（数据层内判断） */
         cJSON *s = cJSON_GetArrayItem(params, 0);
-        if (cJSON_IsString(s) && s->valuestring && strncmp(s->valuestring, "!!", 2) == 0) {
+        if (cJSON_IsString(s) && s->valuestring) {
             char *heap = malloc(strlen(s->valuestring) + 1);
             if (heap) {
                 strcpy(heap, s->valuestring);

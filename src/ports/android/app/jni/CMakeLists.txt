@@ -118,6 +118,7 @@ add_library(main SHARED
     "${SRC_ROOT}/core/klipper_api.c"
     "${SRC_ROOT}/core/moonraker_client_posix.c"
     "${SRC_ROOT}/core/bambu_status.c"
+    "${SRC_ROOT}/core/self_update_android.c"
     "${DESKTOP_PORT}/bambu_monitor_posix.c"
     "${DESKTOP_PORT}/bambu_cloud_posix.c"
     "${DESKTOP_PORT}/bambu_tls_mbedtls.c"

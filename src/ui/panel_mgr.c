@@ -33,7 +33,7 @@ extern panel_def_t panel_bambu_link_def;
 extern panel_def_t panel_bambu_setup_def;
 extern panel_def_t panel_printers_def;
 extern panel_def_t panel_brightness_def;
-#if BSP_HAS_LINUX_HOST
+#if BSP_HAS_LINUX_HOST || defined(__ANDROID__)
 extern panel_def_t panel_update_def;
 #endif
 
@@ -63,7 +63,7 @@ static panel_def_t *registry[] = {
     &panel_bambu_setup_def,
     &panel_printers_def,
     &panel_brightness_def,
-#if BSP_HAS_LINUX_HOST
+#if BSP_HAS_LINUX_HOST || defined(__ANDROID__)
     &panel_update_def,
 #endif
 };

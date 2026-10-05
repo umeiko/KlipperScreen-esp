@@ -593,8 +593,8 @@ jobs:
           # Linux 产物在构建 job 里已打成 tar.gz（保留执行位），直接搬上来
           cp dl/linux-x64/desktop-linux-x86_64.tar.gz dl/linux-arm64/desktop-linux-arm64.tar.gz \
              dl/linux-armhf/desktop-linux-armhf.tar.gz "$GITHUB_WORKSPACE/"
-          # md5 边车：Linux 上位机"检查更新"下载后据此校验完整性
-          for f in desktop-linux-x86_64.tar.gz desktop-linux-arm64.tar.gz desktop-linux-armhf.tar.gz; do
+          # md5 边车：Linux 上位机与 Android 自更新下载后据此校验完整性
+          for f in desktop-linux-x86_64.tar.gz desktop-linux-arm64.tar.gz desktop-linux-armhf.tar.gz KlipperScreen-esp-android.apk; do
             (cd "$GITHUB_WORKSPACE" && md5sum "$f" > "$f.md5")
           done
           ls -la "$GITHUB_WORKSPACE"/*.zip "$GITHUB_WORKSPACE"/*.tar.gz "$GITHUB_WORKSPACE"/*.md5
@@ -612,6 +612,7 @@ jobs:
             desktop-linux-arm64.tar.gz.md5
             desktop-linux-armhf.tar.gz.md5
             KlipperScreen-esp-android.apk
+            KlipperScreen-esp-android.apk.md5
           # 板型产物说明（引脚/接线/刷机地址）见文档站，自动生成 notes 会附加在其后
           body: |
             **Supported boards / 支持的板型**: https://umeiko.github.io/KlipperScreen-esp/boards/
@@ -619,11 +620,12 @@ jobs:
             每个 `ESP-IDFv5.5-<board>.zip` 是一种板型的固件刷机包（ESP-IDF v5.5.5 构建，资产名不带版本号）；`desktop-win-x86_64.zip` 与 `desktop-macos-arm64.zip` 是 Windows / macOS 桌面端；`desktop-linux-x86_64.tar.gz` / `desktop-linux-arm64.tar.gz` / `desktop-linux-armhf.tar.gz` 是 Linux 上位机预编译包（静态链接 SDL2，解压后运行 `install.sh`，可选 systemd 独占显示服务或桌面 App，支持 Wayland-weston / X11）；`KlipperScreen-esp-android.apk` 是 Android 手机/平板端（方向跟随系统旋转，侧载安装，与桌面端同一套 UI）。刷机前请先在上方页面确认你板子的产物名称、接线与刷机说明。
 
             **本版更新 / What's new**
-            - 新增：Linux 版"关于本机"内可检查更新——查询 GitHub latest release、下载对应架构包、md5 校验，可暂停/取消，确认后原地替换二进制并由 systemd 拉起 / In-app self-update for Linux hosts with pause/cancel, MD5 verification and atomic binary swap
-            - 新增：Linux 崩溃信号（SIGSEGV 等）backtrace 落盘到日志，启动脚本按自然日轮转（保留一天），日志不再无限增长 / Crash backtraces logged to file on Linux; daily log rotation
-            - 新增：desktop-linux-armhf（32 位 ARM，如旧款树莓派）构建 / New desktop-linux-armhf build for 32-bit ARM hosts
-            - 完善：Linux 板型显示带工具链与架构（如 GCC-Linux-arm64）；检查更新页显示来源与包名；关于页双行子栏不再嵌套滚动；亮度下限钳到 5% / Board name now shows toolchain+arch; about panel no nested scrolling; brightness floor at 5%
-            - 修复：归零 XY 只归零 X；90/270° 旋转及长列表时下拉框被标题栏遮挡点不到首项 / Fix G28 XY homing only X; fix dropdown lists hidden under the title bar
+            - 新增：Android 手机/平板端（`KlipperScreen-esp-android.apk`）——与桌面端同一套 UI，方向跟随系统旋转、沉浸式全屏、拓竹云登录与实时状态监视、应用内检查更新（下载 APK + 校验 + 跳系统安装器）/ New Android app: system-followed rotation, immersive fullscreen, Bambu cloud sign-in + live status, in-app self-update
+            - 新增：菜单页（主界面"挤出"改为"菜单"）——传感器状态（XYZ 限位 + 断料检测开关）、宏（点击执行）、控制台（输入+回显）、风扇调速、Z 校准（对标 KlipperScreen）/ New Menu page: sensors, macros, console, fans, Z-calibrate
+            - 新增：Linux 上位机拓竹云登录与云监视（POSIX + mbedTLS 后端，与 Android 共用）/ Bambu cloud sign-in + monitor for Linux hosts
+            - 新增：ESP32 固件同步接线菜单页数据源（桌面端已实测，固件侧待实机验证）/ ESP32 firmware wires the same menu data sources (untested on hardware yet)
+            - 改进：桌面/Android 端窗口尺寸变化时 UI 动态重建；语言/主题切换免重启 / UI rebuilds live on window resize; language/theme switch without restart
+            - 修复：拓竹 POSIX 监视大包超限断连（上限 1MB）与 pushall 订阅顺序问题 / Fix Bambu monitor flapping (1MB packet cap, pushall after SUBACK)
           generate_release_notes: true
           # 标签含 wip（如 v0.2.0-wip.1）时标为预发布，不抢占 latest
           prerelease: ${{ contains(github.ref_name, 'wip') }}

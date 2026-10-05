@@ -74,3 +74,8 @@ android {
         abortOnError false
     }
 }
+
+dependencies {
+    // FileProvider（自更新装 APK 的 content:// 暴露）需要 androidx.core
+    implementation 'androidx.core:core:1.13.1'
+}

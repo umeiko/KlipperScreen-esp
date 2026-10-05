@@ -1,9 +1,9 @@
 /*
- * 检查更新（仅 Linux 上位机，BSP_HAS_LINUX_HOST）：状态卡 + 进度条 +
+ * 检查更新（Linux 上位机 BSP_HAS_LINUX_HOST + Android）：状态卡 + 进度条 +
  * 底部动作区。worker 在后台跑（supd_*），本面板只在节拍里读快照；
- * 离开面板不取消——下载落在 /tmp，回来可继续看进度。
- * 下载可暂停（SIGSTOP curl）/取消；校验通过后要用户点"安装"并经
- * 二次确认才替换二进制重启。
+ * 离开面板不取消——下载落在本地，回来可继续看进度。
+ * 下载可暂停/取消；校验通过后要用户点"安装"并经二次确认——
+ * Linux 原地替换二进制重启，Android 经 JNI 跳系统安装器。
  */
 #include "../theme.h"
 #include "../lang.h"
@@ -13,7 +13,7 @@
 #include "../widgets/confirm.h"
 #include "bsp_caps.h"
 
-#if BSP_HAS_LINUX_HOST
+#if BSP_HAS_LINUX_HOST || defined(__ANDROID__)
 
 #include "self_update.h"
 #include "version.h"
@@ -52,7 +52,11 @@ static void on_main(lv_event_t *e)
         break;
     case SUPD_READY: {
         char msg[96];
+#if defined(__ANDROID__)
+        snprintf(msg, sizeof(msg), "校验通过，安装 %s？", s.latest);
+#else
         snprintf(msg, sizeof(msg), "校验通过，安装 %s 并重启？", s.latest);
+#endif
         confirm_open(msg, TR("安装"), do_install, NULL);
         break;
     }
@@ -70,8 +74,13 @@ static void do_install(void *ud)
 {
     (void)ud;
     if (supd_apply()) {
+#if defined(__ANDROID__)
+        ui_toast("已调起系统安装器…", THEME_COL_ACCENT);
+        /* 不重启：Android 系统安装器接管，装完新版自动替换 */
+#else
         ui_toast("更新完成，正在重启", THEME_COL_ACCENT);
         bsp_restart();   /* exit → systemd Restart=always 拉起新版本 */
+#endif
     } else {
         ui_toast("更新失败", 0xC0392B);
     }
@@ -229,4 +238,4 @@ panel_def_t panel_update_def = {
     .hide_temps = 1,
 };
 
-#endif /* BSP_HAS_LINUX_HOST */
+#endif /* BSP_HAS_LINUX_HOST || __ANDROID__ */

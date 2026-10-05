@@ -107,6 +107,7 @@ static const dict_entry_t dict[] = {
                         "Abandonner la calibration ?\nLes ajustements ne seront pas enregistrés",
                         "Annullare la calibrazione?\nLe regolazioni non verranno salvate"},
     {"已接受校准值",    "Calibration accepted", "已接受校正值",       "Calibration acceptée",        "Calibrazione accettata"},
+    {"已调起系统安装器…", "Installer launched…", "已調起系統安裝器…",  "Installateur lancé…",         "Installer avviato…"},
     {"当前 Z：%.2f",    "Current Z: %.2f",     "目前 Z：%.2f",        "Z actuel : %.2f",             "Z attuale: %.2f"},
     /* 打印机状态 */
     {"空闲",            "Standby",             "待機",              "En veille",                 "In attesa"},

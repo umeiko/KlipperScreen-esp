@@ -41,7 +41,7 @@ static int row2(lv_obj_t *scr, const char *key, const char *val, int y)
     return ui_px(57);
 }
 
-#if BSP_HAS_LINUX_HOST
+#if BSP_HAS_LINUX_HOST || defined(__ANDROID__)
 static void open_update(lv_event_t *e)
 {
     (void)e;
@@ -73,7 +73,7 @@ static lv_obj_t *create(void)
     y += row2(scr, "框架", "SDL2 · LVGL 9.3", y);
 #endif
 
-#if BSP_HAS_LINUX_HOST
+#if BSP_HAS_LINUX_HOST || defined(__ANDROID__)
     y += ui_gap(4);
     theme_row_link(scr, "检查更新", "", y, open_update);
 #endif
