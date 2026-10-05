@@ -1,0 +1,52 @@
+diff --git a/moonraker/components/file_manager/file_manager.py b/moonraker/components/file_manager/file_manager.py
+index 6fe3ce3..d474d47 100644
+--- a/moonraker/components/file_manager/file_manager.py
++++ b/moonraker/components/file_manager/file_manager.py
+@@ -1310,14 +1317,45 @@ class BaseFileSystemObserver:
+         return False
+ 
+     def initialize(self) -> None:
+-        pass
++        # No real fs observer: scan existing gcode files for metadata once
++        # at startup (inotify does the equivalent in InotifyRootNode.scan_node)
++        gcodes_path = self.file_manager.file_paths.get("gcodes")
++        if gcodes_path:
++            scan = self._scan_directory_metadata(pathlib.Path(gcodes_path))
++            if scan is not None:
++                self.event_loop.register_callback(self._await_scan, scan)
++
++    async def _await_scan(self, scan: Awaitable) -> None:
++        try:
++            await scan
++        except Exception:
++            logging.exception(
++                "file_manager: error scanning gcode metadata at startup")
+ 
+     def add_root_watch(self, root: str, root_path: str) -> None:
+-        # Just emit the notification
++        # Without a real fs observer, still scan existing gcode files for
++        # metadata once (inotify does this in scan_node), then notify.
+         if self.server.is_running():
+             fm = self.file_manager
++            if root == "gcodes":
++                scan = self._scan_directory_metadata(pathlib.Path(root_path))
++                if scan is not None:
++                    self.event_loop.register_callback(
++                        self._finish_root_update, scan, root, root_path)
++                    return
+             fm._sched_changed_event("root_update", root, root_path, immediate=True)
+ 
++    async def _finish_root_update(
++        self, scan: Awaitable, root: str, root_path: str
++    ) -> None:
++        try:
++            await scan
++        except Exception:
++            logging.exception(
++                f"file_manager: error scanning metadata for root '{root}'")
++        self.file_manager._sched_changed_event(
++            "root_update", root, root_path, immediate=True)
++
+     def try_move_metadata(
+         self,
+         prev_root: str,

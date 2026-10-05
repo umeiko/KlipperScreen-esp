@@ -1,0 +1,28 @@
+diff --git a/moonraker/components/file_manager/metadata.py b/moonraker/components/file_manager/metadata.py
+index 3c9df42..9382da0 100644
+--- a/moonraker/components/file_manager/metadata.py
++++ b/moonraker/components/file_manager/metadata.py
+@@ -21,7 +21,13 @@ import uuid
+ import logging
+ import shlex
+ import subprocess
+-from PIL import Image
++try:
++    from PIL import Image
++except ImportError:
++    # virtual-printer: allow running without Pillow. Plain PNG thumbnail
++    # extraction still works; format conversion and miniature generation
++    # are disabled.
++    Image = None
+ 
+ # Annotation imports
+ from typing import (
+@@ -370,6 +376,8 @@ class BaseSlicer(metaclass=SlicerType):
+             thumb_path = os.path.join(thumb_dir, thumb_name)
+             rel_thumb_path = os.path.join(".thumbs", thumb_name)
+             if dest_ext != ext:
++                if Image is None:
++                    continue
+                 # Convert image.  Format is determined by destination file
+                 # extension.  Only formats supported by Pillow should be used.
+                 with Image.open(io.BytesIO(base64.b64decode(data.encode()))) as im:

@@ -37,6 +37,13 @@ Klipper 远程显示屏：ESP32 固件（ESP-IDF 5.5.5）+ 桌面端（Windows M
 - 固件 zip 内的 `flash.cfg` 第四行是 `TOUCH_CAL=0/1`（CI 按板型名单写入，电阻屏=1）。用户侧刷机脚本 `tools/release/flash.bat` / `flash.sh` 开头询问中文/English（非 tty 默认英文；bat 靠 `chcp 65001`+UTF-8 存盘显中文，goto 结构避开 cmd 括号块 `%VAR%` 解析期展开的坑）；`TOUCH_CAL=1` 时刷完询问是否进入触摸校准，答 y 经串口发 `caltouch`（bat 用 `mode`+`echo > \\.\COMx`，已实测可靠；sh 用 esptool 必带的 pyserial）。开发路径 `tools/build-esp32.sh ... flash` 刷完同样会问（用 IDF python_env 的 pyserial）。
 - `src/ui/CMakeLists.txt` 是 GLOB 收集源文件：新增面板/字体文件后若链接报 undefined，先 touch 它触发 CMake 重配（不能加 CONFIGURE_DEPENDS，IDF script 模式会报错）。
 
+## 虚拟打印机（无真机调试）
+
+- `scripts/virtual-printer/`：**假 klippy（`fake_klippy.py`，纯标准库，配置驱动）+ 真官方主线 Moonraker**（`repos/` 浅克隆 + `patches/` 自动应用），对局域网伪装成正常打印机。安装/启动：`install.sh`（幂等；`--update` 拉主线重放 patch；`--force-config` 重置配置）→ `run.sh` / `stop.sh` / `status.sh`；端到端冒烟 `python3 tests/smoke_test.py`（25 项，模拟 App 全流程）。细节见 `scripts/virtual-printer/README.md`。
+- Windows 运行时 = `tools/msys64` 的 MSYS2 python（Windows 原生无 `AF_UNIX`；MSYS2 的 asyncio 不支持 AF_UNIX **客户端**，故 klippy 传输走 `tcp://127.0.0.1:7126`——patch 0001；`file_system_observer: none` + patch 0004 保启动时 gcode 元数据/缩略图扫描；libnacl 需要 `usr/bin/libsodium.so` 由 install.sh 从 mingw64 DLL 拷贝）。Linux 主机零 patch 原生跑（unix socket）。GitHub 克隆走代理自动回退。
+- 示例 gcode 由 `tools/make_sample_gcode.py` 生成（纯标准库 PNG 编码器，带 32/64/300px 缩略图 + PrusaSlicer 尾注；**缩略图头部声明的长度是 base64 字符数不是 PNG 字节数**，Moonraker 按此校验）。调打印速度：`FAKE_KLIPPY_BPS=4096 bash run.sh`（默认 16384 B/s）。
+- 桌面 App 验证：`build/KlipperScreen-esp.exe` 连 `127.0.0.1:7125`（Windows 配置在 `%APPDATA%\KlipperRemote\moonraker.conf`，键 `host_0/port_0/name_0/active`；**文件已存在就不会播种默认值**）。截图模式 `<毫秒> <out.bmp> [面板名]` 在 t=0 直开面板——文件/详情等在 create() 拉数据的面板会因 WS 尚未连上显示"获取失败"，属截图模式时序问题非后端 bug；键盘验证注意列表面板确认键是**右方向键**不是 Enter。
+
 ## UI 约定
 
 - 小屏（160x128，`ui_scale() < 1.0f`）专属待遇：标题栏用 ≤2 字短标题——面板注册时在 `panel_def_t` 里填 `.title_s`（NULL 则用 `.title`），新增词条要同步补 `src/ui/lang.c` 五语言 dict；子面板标题栏不显示温度（panel_mgr.c show() 里按 ui_scale 判断）；SVG 图标统一用 0.45x 预生成变体（tools/icongen 生成 `_sm` 图标，`ui_layout.c` 的 `icon_sm()` 按映射表替换，新图标要同步进 `icon_sm_map`；`panel_printers.c` 槽位 logo 有自己的 scale 需单独乘 0.45）。

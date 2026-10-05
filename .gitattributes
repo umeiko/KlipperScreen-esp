@@ -2,3 +2,5 @@
 *.bat text eol=crlf
 # shell 脚本必须 LF（Windows 检出不转换）
 *.sh text eol=lf
+# 虚拟打印机：patch 会被 git apply 打到 LF 检出的 moonraker 克隆上，CRLF 会导致上下文不匹配
+scripts/virtual-printer/** text eol=lf

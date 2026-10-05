@@ -1,0 +1,45 @@
+diff --git a/moonraker/components/file_manager/file_manager.py b/moonraker/components/file_manager/file_manager.py
+index 6fe3ce3..82965e4 100644
+--- a/moonraker/components/file_manager/file_manager.py
++++ b/moonraker/components/file_manager/file_manager.py
+@@ -18,8 +18,14 @@ import math
+ import shlex
+ import contextlib
+ from copy import deepcopy
+-from inotify_simple import INotify
+-from inotify_simple import flags as iFlags
++try:
++    from inotify_simple import INotify
++    from inotify_simple import flags as iFlags
++except ImportError:
++    # virtual-printer: inotify unavailable (e.g. MSYS2/cygwin lacks
++    # termios.FIONREAD); use file_system_observer: none
++    INotify = None
++    iFlags = None
+ from ...utils import source_info
+ from ...utils import json_wrapper as jsonw
+ from ...common import RequestType, TransportType
+@@ -59,9 +65,9 @@ if TYPE_CHECKING:
+ VALID_GCODE_EXTS = ['.gcode', '.g', '.gco', '.ufp', '.nc']
+ METADATA_SCRIPT = os.path.abspath(os.path.join(
+     os.path.dirname(__file__), "metadata.py"))
+-WATCH_FLAGS = iFlags.CREATE | iFlags.DELETE | iFlags.MODIFY \
+-    | iFlags.MOVED_TO | iFlags.MOVED_FROM | iFlags.ONLYDIR \
+-    | iFlags.CLOSE_WRITE
++WATCH_FLAGS = (iFlags.CREATE | iFlags.DELETE | iFlags.MODIFY
++               | iFlags.MOVED_TO | iFlags.MOVED_FROM | iFlags.ONLYDIR
++               | iFlags.CLOSE_WRITE) if iFlags is not None else 0
+ 
+ class FileManager:
+     def __init__(self, config: ConfigHelper) -> None:
+@@ -84,8 +90,9 @@ class FileManager:
+         self.sync_lock = NotifySyncLock(config)
+         avail_observers: Dict[str, Type[BaseFileSystemObserver]] = {
+             "none": BaseFileSystemObserver,
+-            "inotify": InotifyObserver
+         }
++        if INotify is not None:
++            avail_observers["inotify"] = InotifyObserver
+         observer = config.get("file_system_observer", "inotify").lower()
+         obs_class = avail_observers.get(observer)
+         if obs_class is None:

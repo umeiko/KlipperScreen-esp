@@ -1,0 +1,66 @@
+diff --git a/moonraker/components/klippy_connection.py b/moonraker/components/klippy_connection.py
+index 9e625c2..057947b 100644
+--- a/moonraker/components/klippy_connection.py
++++ b/moonraker/components/klippy_connection.py
+@@ -66,9 +66,16 @@ PY_EXEC_KEY = "klippy_connection.executable"
+ class KlippyConnection:
+     def __init__(self, config: ConfigHelper) -> None:
+         self.server = config.get_server()
+-        self.uds_address = config.getpath(
+-            "klippy_uds_address", pathlib.Path("/tmp/klippy_uds")
+-        )
++        raw_uds = config.get("klippy_uds_address", "/tmp/klippy_uds")
++        self.uds_is_tcp = str(raw_uds).startswith("tcp://")
++        if self.uds_is_tcp:
++            # virtual-printer: tcp://host:port for platforms without usable
++            # unix domain sockets (Windows/MSYS2)
++            self.uds_address = str(raw_uds)
++        else:
++            self.uds_address = config.getpath(
++                "klippy_uds_address", pathlib.Path("/tmp/klippy_uds")
++            )
+         self.writer: Optional[asyncio.StreamWriter] = None
+         self.connection_mutex: asyncio.Lock = asyncio.Lock()
+         self.event_loop = self.server.get_event_loop()
+@@ -293,17 +300,18 @@ class KlippyConnection:
+                 await asyncio.sleep(INIT_TIME)
+                 if self.closing or not self.server.is_running():
+                     return False
+-                if not self.uds_address.exists():
+-                    continue
+-                if not os.access(str(self.uds_address), os.R_OK | os.W_OK):
+-                    if self.log_no_access:
+-                        user = getpass.getuser()
+-                        logging.info(
+-                            f"Cannot connect to Klippy, Linux user '{user}' "
+-                            "lacks permission to open Unix Domain Socket: "
+-                            f"{self.uds_address}")
+-                        self.log_no_access = False
+-                    continue
++                if not self.uds_is_tcp:
++                    if not self.uds_address.exists():
++                        continue
++                    if not os.access(str(self.uds_address), os.R_OK | os.W_OK):
++                        if self.log_no_access:
++                            user = getpass.getuser()
++                            logging.info(
++                                f"Cannot connect to Klippy, Linux user '{user}' "
++                                "lacks permission to open Unix Domain Socket: "
++                                f"{self.uds_address}")
++                            self.log_no_access = False
++                        continue
+                 self.log_no_access = True
+                 try:
+                     reader, writer = await self.open_klippy_connection(True)
+@@ -323,6 +331,11 @@ class KlippyConnection:
+     ) -> Tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+         if not primary and not self.is_connected():
+             raise ServerError("Klippy Unix Connection Not Available", 503)
++        if self.uds_is_tcp:
++            hp = str(self.uds_address)[6:]
++            host, _, port = hp.rpartition(":")
++            return await asyncio.open_connection(
++                host or "127.0.0.1", int(port), limit=UNIX_BUFFER_LIMIT)
+         return await asyncio.open_unix_connection(
+             str(self.uds_address), limit=UNIX_BUFFER_LIMIT)
+ 
