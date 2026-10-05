@@ -200,12 +200,12 @@ void printer_init(void)
 static void mock_con_add(const char *text, int kind);
 
 static struct { const char *name; const char *label; } mock_macros[] = {
-    {"PRINT_START",   "PRINT START"},
-    {"END_PRINT",     "END PRINT"},
-    {"CLEAN_NOZZLE",  "CLEAN NOZZLE"},
-    {"PARK_TOOLHEAD", "PARK TOOLHEAD"},
+    {"PRINT_START",   "PRINT_START"},
+    {"END_PRINT",     "END_PRINT"},
+    {"CLEAN_NOZZLE",  "CLEAN_NOZZLE"},
+    {"PARK_TOOLHEAD", "PARK_TOOLHEAD"},
     {"M900",          "M900"},
-    {"SET_PRESSURE_ADVANCE", "SET PRESSURE ADVANCE"},
+    {"SET_PRESSURE_ADVANCE", "SET_PRESSURE_ADVANCE"},
 };
 int  printer_macro_count(void) { return (int)(sizeof(mock_macros) / sizeof(mock_macros[0])); }
 const char *printer_macro_name(int i)  { return (i >= 0 && i < printer_macro_count()) ? mock_macros[i].name : ""; }

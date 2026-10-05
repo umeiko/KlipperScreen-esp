@@ -439,13 +439,6 @@ static void copy_text(char *dst, size_t cap, const char *src)
     dst[cap - 1] = 0;
 }
 
-static void labelize(char *dst, size_t cap, const char *src)
-{
-    size_t i = 0;
-    for (; src[i] && i < cap - 1; i++) dst[i] = src[i] == '_' ? ' ' : src[i];
-    dst[i] = 0;
-}
-
 /* objects.list 结果数组 → 宏/风扇/断料清单。LVGL 上下文。
  * 容错：拿到的是外层包裹 {"objects":[...]} 时先解包。 */
 void printer_model_set_object_names(char *json_heap)
@@ -477,7 +470,9 @@ void printer_model_set_object_names(char *json_heap)
             if (M_macro_cnt < MACRO_MAX) {
                 menu_obj_t *m = &M_macros[M_macro_cnt++];
                 copy_text(m->name, sizeof(m->name), name);
-                labelize(m->label, sizeof(m->label), name);
+                /* 宏名原样显示（下划线不替换——替换出的空格曾被误当 gcode
+                   参数名发出过：Klipper 约定宏名就是带下划线的样子） */
+                copy_text(m->label, sizeof(m->label), name);
                 m->writable = true;
             }
         } else if (strcmp(obj, "fan") == 0 ||
@@ -502,7 +497,7 @@ void printer_model_set_object_names(char *json_heap)
                 copy_text(s->name, sizeof(s->name), obj);
                 const char *short_name = strrchr(obj, ' ');
                 /* 名字同时是 gcode 参数（SET_FILAMENT_SENSOR SENSOR=<label>），
-                   不能用 labelize——那会把下划线换成空格，Klipper 直接查无此传感器 */
+                   原样保留下划线（曾把它空格化后发出去，Klipper 查无此传感器） */
                 copy_text(s->label, sizeof(s->label), short_name ? short_name + 1 : obj);
             }
         } else if (strcmp(obj, "probe") == 0 || strcmp(obj, "bltouch") == 0 ||
