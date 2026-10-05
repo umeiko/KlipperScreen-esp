@@ -21,12 +21,7 @@ versionHeader.eachLine('UTF-8') { line ->
         }
     }
 }
-println "KlipperScreen-esp version: ${verName} (${verCode}) <- ${versionHeader.absolutePath} [exists=${versionHeader.exists()}]"
-if (versionHeader.exists()) {
-    println "version.h head: ${versionHeader.text.take(200).replace('\n', ' | ')}"
-} else {
-    println "parent listing: ${versionHeader.parentFile.exists() ? versionHeader.parentFile.list()?.take(20) : 'NO PARENT DIR'}"
-}
+println "KlipperScreen-esp version: ${verName} (${verCode}) <- ${versionHeader.absolutePath}"
 if (verName == '0.0.0') {
     // 静默 0.0.0 包绝不能出厂（曾经因为路径少一级全部 APK 都是 0.0.0/1）
     throw new GradleException("version.h 未找到或未匹配: ${versionHeader.absolutePath} (rootDir=${rootDir})")
