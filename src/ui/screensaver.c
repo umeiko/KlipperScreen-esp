@@ -298,12 +298,12 @@ void screensaver_init(void)
     lv_label_set_text(lbl_city, "--");
     lv_obj_align(lbl_city, LV_ALIGN_TOP_LEFT, 18, 108);
 
-    /* 天气描述（实时，放图标下方） */
+    /* 天气描述（实时）：与图标同一行右侧、垂直中心对齐 */
     lbl_desc = lv_label_create(scr_layer);
     lv_obj_set_style_text_font(lbl_desc, &font_cjk_14, 0);
     lv_obj_set_style_text_color(lbl_desc, lv_color_hex(SAVER_TXT_DESC), 0);
     lv_label_set_text(lbl_desc, "");
-    lv_obj_align(lbl_desc, LV_ALIGN_TOP_LEFT, 14, 168);
+    lv_obj_align(lbl_desc, LV_ALIGN_TOP_LEFT, 120, 144);
 
     /* 天气图标 + 大温度（高低温见三天预报，不再单独显示） */
     img_wx = lv_img_create(scr_layer);
@@ -366,13 +366,13 @@ void screensaver_init(void)
         fx_img[i] = lv_img_create(scr_layer);
         lv_img_set_src(fx_img[i], &img_weather_overcast);
         lv_image_set_scale(fx_img[i], 256);   /* 与实时天气图标同尺寸（48px） */
-        lv_obj_align(fx_img[i], LV_ALIGN_TOP_LEFT, cx - 24, 176);
+        lv_obj_align(fx_img[i], LV_ALIGN_TOP_LEFT, cx - 24, 168);
 
         fx_text[i] = lv_label_create(scr_layer);
         lv_obj_set_style_text_font(fx_text[i], &font_cjk_14, 0);
         lv_obj_set_style_text_color(fx_text[i], lv_color_hex(SAVER_TXT_DATE), 0);
         lv_label_set_text(fx_text[i], "--");
-        lv_obj_align(fx_text[i], LV_ALIGN_TOP_LEFT, cx - 52, 226);
+        lv_obj_align(fx_text[i], LV_ALIGN_TOP_LEFT, cx - 52, 218);
     }
 
     clock_timer = lv_timer_create(on_clock, 1000, NULL);
