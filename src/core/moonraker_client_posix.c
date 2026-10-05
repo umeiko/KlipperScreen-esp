@@ -388,10 +388,11 @@ static void set_objects_in_lvgl(void *p)
 
 static void on_objects_list_result(cJSON *result)
 {
-    /* 对象清单：客户端留底（动态订阅）+ 转交数据层（宏/风扇/断料清单） */
+    /* result = {"objects": [...]}（外层有包裹！），留底 + 转交数据层都用内层数组 */
+    cJSON *objs = cJSON_GetObjectItem(result, "objects");
     cJSON_Delete(g_objects);
-    g_objects = cJSON_Duplicate(result, 1);
-    char *raw = result ? cJSON_PrintUnformatted(result) : NULL;
+    g_objects = cJSON_Duplicate(objs, 1);
+    char *raw = objs ? cJSON_PrintUnformatted(objs) : NULL;
     if (raw) post_to_lvgl(set_objects_in_lvgl, raw);
     handshake_step_subscribe();
 }

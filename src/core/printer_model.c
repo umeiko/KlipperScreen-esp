@@ -449,11 +449,20 @@ static void labelize(char *dst, size_t cap, const char *src)
     dst[i] = 0;
 }
 
-/* objects.list 结果数组 → 宏/风扇/断料清单。LVGL 上下文。 */
+/* objects.list 结果数组 → 宏/风扇/断料清单。LVGL 上下文。
+ * 容错：拿到的是外层包裹 {"objects":[...]} 时先解包。 */
 void printer_model_set_object_names(char *json_heap)
 {
     cJSON *arr = cJSON_Parse(json_heap);
     free(json_heap);
+    if (arr && !cJSON_IsArray(arr)) {
+        cJSON *inner = cJSON_GetObjectItem(arr, "objects");
+        if (cJSON_IsArray(inner)) {
+            cJSON *d = cJSON_Duplicate(inner, 1);
+            cJSON_Delete(arr);
+            arr = d;
+        }
+    }
     if (!cJSON_IsArray(arr)) { cJSON_Delete(arr); return; }
 
     M_macro_cnt = M_fan_cnt = M_fil_cnt = 0;
