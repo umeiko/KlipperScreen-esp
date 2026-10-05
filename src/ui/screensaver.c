@@ -62,8 +62,6 @@ static lv_obj_t *img_wx;
 static lv_obj_t *img_wifi;
 static lv_obj_t *fx_img[3];
 static lv_obj_t *fx_text[3];
-static lv_obj_t *fx_temp[3];
-static lv_obj_t *fx_tag[3];
 static lv_obj_t *line_hour;
 static lv_obj_t *line_min;
 static lv_obj_t *line_sec;
@@ -172,7 +170,6 @@ static void update_weather(void)
         for (int i = 0; i < 3; i++) {
             lv_obj_add_flag(fx_img[i], LV_OBJ_FLAG_HIDDEN);
             lv_label_set_text(fx_text[i], "--");
-            lv_label_set_text(fx_temp[i], "");
         }
         return;
     }
@@ -194,20 +191,19 @@ static void update_weather(void)
 
     lv_label_set_text_fmt(lbl_temp, "%d°", wd.temp_c);
 
-    /* 三天预报：今天/明天/后天，图标+文字+高低温 */
+    /* 三天预报：今天/明天/后天，大图标 + 底部一行"标签 高/低温" */
+    static const char *fx_tag_txt[3] = { "今天", "明天", "后天" };
     for (int i = 0; i < 3; i++) {
         if (i < wd.forecast_count && wd.forecast[i].text[0]) {
             lv_img_set_src(fx_img[i], wx_icons[wd.forecast[i].icon < WEATHER_UNKNOWN ? wd.forecast[i].icon : WEATHER_UNKNOWN]);
             lv_obj_remove_flag(fx_img[i], LV_OBJ_FLAG_HIDDEN);
-            lv_label_set_text(fx_text[i], wd.forecast[i].text);
             if (wd.forecast[i].tmax > -90 && wd.forecast[i].tmin > -90)
-                lv_label_set_text_fmt(fx_temp[i], "%d°/%d°", wd.forecast[i].tmax, wd.forecast[i].tmin);
+                lv_label_set_text_fmt(fx_text[i], "%s %d°/%d°", fx_tag_txt[i], wd.forecast[i].tmax, wd.forecast[i].tmin);
             else
-                lv_label_set_text(fx_temp[i], "");
+                lv_label_set_text(fx_text[i], fx_tag_txt[i]);
         } else {
             lv_obj_add_flag(fx_img[i], LV_OBJ_FLAG_HIDDEN);
             lv_label_set_text(fx_text[i], "--");
-            lv_label_set_text(fx_temp[i], "");
         }
     }
 }
@@ -363,33 +359,20 @@ void screensaver_init(void)
     lv_obj_set_style_radius(hub, LV_RADIUS_CIRCLE, 0);
     lv_obj_remove_flag(hub, LV_OBJ_FLAG_SCROLLABLE);
 
-    /* ---- 三天预报：底部三卡（今天/明天/后天，图标+文字+温度）---- */
-    static const char *fx_tag_txt[3] = { "今天", "明天", "后天" };
+    /* ---- 三天预报：底部三卡（大图标 + 标签/温度行）---- */
     for (int i = 0; i < 3; i++) {
         lv_coord_t cx = 53 + i * 107;
 
-        fx_tag[i] = lv_label_create(scr_layer);
-        lv_obj_set_style_text_font(fx_tag[i], &font_cjk_14, 0);
-        lv_obj_set_style_text_color(fx_tag[i], lv_color_hex(SAVER_TXT_DATE), 0);
-        lv_label_set_text(fx_tag[i], fx_tag_txt[i]);
-        lv_obj_align(fx_tag[i], LV_ALIGN_TOP_LEFT, cx - 24, 184);
-
         fx_img[i] = lv_img_create(scr_layer);
         lv_img_set_src(fx_img[i], &img_weather_overcast);
-        lv_image_set_scale(fx_img[i], 150);   /* 48px → ~28px */
-        lv_obj_align(fx_img[i], LV_ALIGN_TOP_LEFT, cx + 4, 184);
+        lv_image_set_scale(fx_img[i], 256);   /* 与实时天气图标同尺寸（48px） */
+        lv_obj_align(fx_img[i], LV_ALIGN_TOP_LEFT, cx - 24, 176);
 
         fx_text[i] = lv_label_create(scr_layer);
         lv_obj_set_style_text_font(fx_text[i], &font_cjk_14, 0);
-        lv_obj_set_style_text_color(fx_text[i], lv_color_hex(SAVER_TXT_DIM), 0);
+        lv_obj_set_style_text_color(fx_text[i], lv_color_hex(SAVER_TXT_DATE), 0);
         lv_label_set_text(fx_text[i], "--");
-        lv_obj_align(fx_text[i], LV_ALIGN_TOP_LEFT, cx - 14, 206);
-
-        fx_temp[i] = lv_label_create(scr_layer);
-        lv_obj_set_style_text_font(fx_temp[i], &font_cjk_14, 0);
-        lv_obj_set_style_text_color(fx_temp[i], lv_color_hex(SAVER_TXT_TEMP), 0);
-        lv_label_set_text(fx_temp[i], "");
-        lv_obj_align(fx_temp[i], LV_ALIGN_TOP_LEFT, cx - 28, 225);
+        lv_obj_align(fx_text[i], LV_ALIGN_TOP_LEFT, cx - 52, 226);
     }
 
     clock_timer = lv_timer_create(on_clock, 1000, NULL);
