@@ -18,7 +18,7 @@ void printer_model_set_online(int online);
 /* 上报一条 GCode 响应行（notify_gcode_response，如 "!! Endstop not triggered"）。
  * LVGL 上下文执行；msg_heap 由本函数释放。
  * "!!" 行记为待 UI 提示的错误；全部行追加进控制台环形缓冲；
- * "x:open"/"y:TRIGGERED" 等行解析为限位状态（QUERY_ENDSTOP 回流）。 */
+ * "x:open"/"y:TRIGGERED" 等行解析为限位状态（QUERY_ENDSTOPS 回流）。 */
 void printer_model_report_gcode_response(char *msg_heap);
 
 /* objects.list 的结果数组（["extruder","gcode_macro FOO",...]）JSON 文本，

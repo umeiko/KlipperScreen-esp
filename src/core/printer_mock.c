@@ -273,7 +273,7 @@ void printer_console_send(const char *cmd)
     char line[100];
     snprintf(line, sizeof(line), "> %s", cmd);
     mock_con_add(line, 1);
-    if (strcmp(cmd, "QUERY_ENDSTOP") == 0) {
+    if (strcmp(cmd, "QUERY_ENDSTOPS") == 0) {
         /* 与真实端一致：限位回流只进传感器页，不进控制台 */
         mock_endstop_ms = lv_tick_get();
     } else if (strncmp(cmd, "G28", 3) == 0) {

@@ -364,7 +364,7 @@ static void handle_notify(const char *method, cJSON *params)
     if (strcmp(method, "notify_status_update") == 0) {
         post_status(cJSON_GetArrayItem(params, 0));
     } else if (strcmp(method, "notify_gcode_response") == 0) {
-        /* 全量转发（控制台回显 + QUERY_ENDSTOP 回流解析在数据层）；
+        /* 全量转发（控制台回显 + QUERY_ENDSTOPS 回流解析在数据层）；
            "!!" 错误行提示逻辑不变（数据层内判断） */
         cJSON *s = cJSON_GetArrayItem(params, 0);
         if (cJSON_IsString(s) && s->valuestring) {

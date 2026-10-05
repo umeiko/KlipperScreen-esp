@@ -136,7 +136,7 @@ bool printer_filsensor_detected(int i);   /* 有料 */
 bool printer_filsensor_enabled(int i);
 void printer_filsensor_set_enabled(int i, bool en);
 
-/* XYZ 限位：QUERY_ENDSTOP 的结果经 gcode 响应文本（"x:open"）回流解析。
+/* XYZ 限位：QUERY_ENDSTOPS 的结果经 gcode 响应文本（"x:open"）回流解析。
  * refresh 发送查询；state：-1 未知 / 0 未触发 / 1 触发。 */
 void printer_endstop_refresh(void);
 int  printer_endstop_state(int axis);     /* 0=X 1=Y 2=Z */

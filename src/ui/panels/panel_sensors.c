@@ -1,5 +1,5 @@
 /*
- * 传感器状态：X/Y/Z 限位开关状态（QUERY_ENDSTOP 经 gcode 响应回流解析，
+ * 传感器状态：X/Y/Z 限位开关状态（QUERY_ENDSTOPS 经 gcode 响应回流解析，
  * 页面打开期间每 2s 自动刷新）+ 断料传感器（filament_switch/motion_sensor）
  * 的检出状态与启用开关。
  */

@@ -173,7 +173,7 @@ static float M_home_origin_z;               /* gcode_move.homing_origin[2] */
 static bool  M_home_origin_valid;
 static int  M_endstop[3];
 static uint32_t M_endstop_ms;
-static bool M_endstop_fresh;            /* 已收到过至少一次 QUERY_ENDSTOP 结果 */
+static bool M_endstop_fresh;            /* 已收到过至少一次 QUERY_ENDSTOPS 结果 */
 static bool M_manual_probe_active;
 
 static struct { char text[CONSOLE_LINE_MAX]; uint8_t kind; } M_con[CONSOLE_MAX_LINES];
@@ -187,7 +187,7 @@ static bool M_zcal_loading;   /* gcode.help 在途（失败下一拍重试，避
 
 void printer_model_report_gcode_response(char *msg_heap)
 {
-    /* 先按行解析限位回流（QUERY_ENDSTOP："x:open" / "z:TRIGGERED"，可单行可多行），
+    /* 先按行解析限位回流（QUERY_ENDSTOPS："x:open" / "z:TRIGGERED"，可单行可多行），
      * 且整段全是限位行时不进控制台——那是传感器页的自动刷新噪音，不是用户命令回显 */
     bool all_endstop = true;
     for (const char *p = msg_heap; *p; ) {
@@ -550,7 +550,7 @@ void printer_filsensor_set_enabled(int i, bool en)
 void printer_endstop_refresh(void)
 {
     if (!klipper_active()) return;
-    klipper_gcode_script("QUERY_ENDSTOP");
+    klipper_gcode_script("QUERY_ENDSTOPS");
 }
 
 int printer_endstop_state(int axis)
