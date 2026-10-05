@@ -17,7 +17,14 @@
 /* 充电触发 / 退出电压（与旧版一致） */
 #define SAVER_CHG_MV    4150
 #define SAVER_EXIT_MV   4100
-#define SAVER_BG_SOLID  0x0A2244   /* 纯色背景（深海军蓝，与表盘同色系，白字可读） */
+#define SAVER_BG_SOLID  0xC0E0F8   /* 纯色背景（淡蓝，深色文字可读） */
+#define SAVER_TXT_MAIN  0x14305C   /* 时间：深蓝黑（最重） */
+#define SAVER_TXT_DATE  0x1F6FB4   /* 日期/预报标签：亮蓝 */
+#define SAVER_TXT_LUNAR 0x9A6B2F   /* 农历：赭金 */
+#define SAVER_TXT_CITY  0x2F7D4F   /* 城市：墨绿 */
+#define SAVER_TXT_DESC  0x4A5A72   /* 天气描述：灰蓝 */
+#define SAVER_TXT_TEMP  0xE05A1F   /* 温度：橙红（醒目） */
+#define SAVER_TXT_DIM   0x44505C   /* 次要文字：深灰蓝 */
 #define SAVER_TIME_COL_2 0xFFC531  /* 分针金黄 */
 
 /* 模拟表盘参数（右侧，顶部与首排文字 y12 齐平） */
@@ -255,35 +262,35 @@ void screensaver_init(void)
     /* ---- 左侧：大号时间（24h）---- */
     lbl_time = lv_label_create(scr_layer);
     lv_obj_set_style_text_font(lbl_time, &lv_font_montserrat_48, 0);
-    lv_obj_set_style_text_color(lbl_time, lv_color_white(), 0);
+    lv_obj_set_style_text_color(lbl_time, lv_color_hex(SAVER_TXT_MAIN), 0);
     lv_label_set_text(lbl_time, "--:--");
     lv_obj_align(lbl_time, LV_ALIGN_TOP_LEFT, 16, 12);
 
     /* 日期（中文样式）：周六 10月3日 */
     lbl_date = lv_label_create(scr_layer);
     lv_obj_set_style_text_font(lbl_date, &font_cjk_16, 0);
-    lv_obj_set_style_text_color(lbl_date, lv_color_white(), 0);
+    lv_obj_set_style_text_color(lbl_date, lv_color_hex(SAVER_TXT_DATE), 0);
     lv_label_set_text(lbl_date, "--.--.--");
     lv_obj_align(lbl_date, LV_ALIGN_TOP_LEFT, 18, 66);
 
     /* 农历行 */
     lbl_lunar = lv_label_create(scr_layer);
     lv_obj_set_style_text_font(lbl_lunar, &font_cjk_14, 0);
-    lv_obj_set_style_text_color(lbl_lunar, lv_color_white(), 0);
+    lv_obj_set_style_text_color(lbl_lunar, lv_color_hex(SAVER_TXT_LUNAR), 0);
     lv_label_set_text(lbl_lunar, "--");
     lv_obj_align(lbl_lunar, LV_ALIGN_TOP_LEFT, 18, 88);
 
     /* 城市 */
     lbl_city = lv_label_create(scr_layer);
     lv_obj_set_style_text_font(lbl_city, &font_cjk_16, 0);
-    lv_obj_set_style_text_color(lbl_city, lv_color_white(), 0);
+    lv_obj_set_style_text_color(lbl_city, lv_color_hex(SAVER_TXT_CITY), 0);
     lv_label_set_text(lbl_city, "--");
     lv_obj_align(lbl_city, LV_ALIGN_TOP_LEFT, 18, 108);
 
     /* 天气描述（实时，放图标下方） */
     lbl_desc = lv_label_create(scr_layer);
     lv_obj_set_style_text_font(lbl_desc, &font_cjk_14, 0);
-    lv_obj_set_style_text_color(lbl_desc, lv_color_white(), 0);
+    lv_obj_set_style_text_color(lbl_desc, lv_color_hex(SAVER_TXT_DESC), 0);
     lv_label_set_text(lbl_desc, "");
     lv_obj_align(lbl_desc, LV_ALIGN_TOP_LEFT, 14, 168);
 
@@ -294,14 +301,14 @@ void screensaver_init(void)
 
     lbl_temp = lv_label_create(scr_layer);
     lv_obj_set_style_text_font(lbl_temp, &font_cjk_32, 0);
-    lv_obj_set_style_text_color(lbl_temp, lv_color_white(), 0);
+    lv_obj_set_style_text_color(lbl_temp, lv_color_hex(SAVER_TXT_TEMP), 0);
     lv_label_set_text(lbl_temp, "--°");
     lv_obj_align(lbl_temp, LV_ALIGN_TOP_LEFT, 68, 130);
 
     /* ---- 右上 WiFi 图标 ---- */
     img_wifi = lv_img_create(scr_layer);
     lv_img_set_src(img_wifi, &img_wifi_4);
-    lv_obj_set_style_image_recolor(img_wifi, theme_col(THEME_COL_TEXT_DIM), 0);
+    lv_obj_set_style_image_recolor(img_wifi, lv_color_hex(SAVER_TXT_DIM), 0);
     lv_obj_set_style_image_recolor_opa(img_wifi, LV_OPA_COVER, 0);
     lv_obj_align(img_wifi, LV_ALIGN_TOP_RIGHT, -14, 8);
 
@@ -348,7 +355,7 @@ void screensaver_init(void)
 
         fx_tag[i] = lv_label_create(scr_layer);
         lv_obj_set_style_text_font(fx_tag[i], &font_cjk_14, 0);
-        lv_obj_set_style_text_color(fx_tag[i], lv_color_white(), 0);
+        lv_obj_set_style_text_color(fx_tag[i], lv_color_hex(SAVER_TXT_DATE), 0);
         lv_label_set_text(fx_tag[i], fx_tag_txt[i]);
         lv_obj_align(fx_tag[i], LV_ALIGN_TOP_LEFT, cx - 24, 184);
 
@@ -359,13 +366,13 @@ void screensaver_init(void)
 
         fx_text[i] = lv_label_create(scr_layer);
         lv_obj_set_style_text_font(fx_text[i], &font_cjk_14, 0);
-        lv_obj_set_style_text_color(fx_text[i], lv_color_white(), 0);
+        lv_obj_set_style_text_color(fx_text[i], lv_color_hex(SAVER_TXT_DIM), 0);
         lv_label_set_text(fx_text[i], "--");
         lv_obj_align(fx_text[i], LV_ALIGN_TOP_LEFT, cx - 14, 206);
 
         fx_temp[i] = lv_label_create(scr_layer);
         lv_obj_set_style_text_font(fx_temp[i], &font_cjk_14, 0);
-        lv_obj_set_style_text_color(fx_temp[i], lv_color_hex(0xEAF6FF), 0);
+        lv_obj_set_style_text_color(fx_temp[i], lv_color_hex(SAVER_TXT_TEMP), 0);
         lv_label_set_text(fx_temp[i], "");
         lv_obj_align(fx_temp[i], LV_ALIGN_TOP_LEFT, cx - 28, 225);
     }
