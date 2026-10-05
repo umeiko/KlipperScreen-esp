@@ -78,10 +78,20 @@ start_klippy
 wait_klippy || true
 start_moonraker
 wait_moonraker && {
+    # 探测局域网 IP（连一个外部地址取本地出口 IP，不真的发流量）
+    LAN_IP="$("$PY" -c 'import socket
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+try:
+    s.connect(("192.168.1.1", 80)); print(s.getsockname()[0])
+except OSError:
+    print("<本机IP>")
+finally:
+    s.close()' 2>/dev/null || echo "<本机IP>")"
     echo ""
     echo "虚拟打印机就绪:"
-    echo "  Moonraker API:  http://<本机IP>:7125   (本机: http://127.0.0.1:7125)"
-    echo "  klippy 传输:    $KLIPPY_ADDRESS"
+    echo "  Moonraker API:  http://$LAN_IP:7125   (本机: http://127.0.0.1:7125)"
+    echo "  ESP32/局域网设备填上面第一个地址；Windows 首次可能弹防火墙，放行 python 即可"
+    echo "  klippy 传输:    $KLIPPY_ADDRESS  (仅本机 Moonraker 用，无需对局域网开放)"
     echo "  日志:           $DATA/logs/"
     echo "  gcode 目录:     $DATA/gcodes/"
 }
