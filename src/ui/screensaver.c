@@ -25,10 +25,10 @@
 #define SAVER_TXT_MAIN  0x14305C   /* 深蓝黑（备用） */
 #define SAVER_TXT_DATE  0x1F6FB4   /* 日期/预报标签：亮蓝 */
 #define SAVER_TXT_LUNAR 0x9A6B2F   /* 农历：赭金 */
-#define SAVER_TXT_CITY  0x2F7D4F   /* 城市：墨绿 */
-#define SAVER_TXT_DESC  0x4A5A72   /* 天气描述：灰蓝 */
+#define SAVER_TXT_CITY  0xBFE8D0   /* 城市：浅绿白（实景背景下提亮） */
+#define SAVER_TXT_DESC  0xD8E4F8   /* 天气描述：浅蓝白（实景背景下提亮） */
 #define SAVER_TXT_TEMP  0xE05A1F   /* 温度：橙红（醒目） */
-#define SAVER_TXT_DIM   0x44505C   /* 次要文字：深灰蓝 */
+#define SAVER_TXT_DIM   0xB8C8E0   /* 次要文字/图标：浅灰蓝（实景背景下提亮） */
 
 /* 实景天空背景（AI 摄影风格，320x240 RGB565），索引见 weather_icon_t */
 static const lv_image_dsc_t *s_sky_by_wx[7] = {
@@ -369,6 +369,20 @@ static void hide(void)
 /* 注意：lv_line_set_points 只存指针不拷贝，点数据必须静态存储 */
 static lv_point_precise_t s_tick_pts[60][2];
 
+/* 文字块加半透明深色圆角底板（玻璃卡片），提升实景背景上的可读性。
+   注意：lv_obj_align 定位的是内容区，加 pad 后文字渲染位置不变，底板向外扩展 */
+static void set_text_panel(lv_obj_t *lb)
+{
+    lv_obj_set_style_bg_color(lb, lv_color_hex(0x0A1F33), 0);
+    lv_obj_set_style_bg_opa(lb, LV_OPA_40, 0);
+    lv_obj_set_style_radius(lb, 6, 0);
+    lv_obj_set_style_border_width(lb, 1, 0);
+    lv_obj_set_style_border_color(lb, lv_color_white(), 0);
+    lv_obj_set_style_border_opa(lb, LV_OPA_20, 0);
+    lv_obj_set_style_pad_hor(lb, 6, 0);
+    lv_obj_set_style_pad_ver(lb, 2, 0);
+}
+
 static void create_dial_ticks(lv_obj_t *parent)
 {
     for (int k = 0; k < 60; k++) {
@@ -405,10 +419,20 @@ void screensaver_init(void)
     lv_img_set_src(s_sky, &img_sky_unknown);
     lv_obj_align(s_sky, LV_ALIGN_TOP_LEFT, 0, 0);
 
+    /* 玻璃暗化层：压暗实景照片，提升所有文字对比度 */
+    lv_obj_t *dimmer = lv_obj_create(scr_layer);
+    lv_obj_set_size(dimmer, 320, 240);
+    lv_obj_align(dimmer, LV_ALIGN_TOP_LEFT, 0, 0);
+    lv_obj_set_style_bg_color(dimmer, lv_color_hex(0x0A1F33), 0);
+    lv_obj_set_style_bg_opa(dimmer, LV_OPA_30, 0);
+    lv_obj_set_style_border_width(dimmer, 0, 0);
+    lv_obj_remove_flag(dimmer, LV_OBJ_FLAG_SCROLLABLE);
+
     /* ---- 左侧：大号时间（24h）---- */
     lbl_time = lv_label_create(scr_layer);
     lv_obj_set_style_text_font(lbl_time, &lv_font_montserrat_48, 0);
     lv_obj_set_style_text_color(lbl_time, lv_color_hex(SAVER_TXT_TIME), 0);
+    set_text_panel(lbl_time);
     lv_label_set_text(lbl_time, "--:--");
     lv_obj_align(lbl_time, LV_ALIGN_TOP_LEFT, 16, 12);
 
@@ -416,6 +440,7 @@ void screensaver_init(void)
     lbl_date = lv_label_create(scr_layer);
     lv_obj_set_style_text_font(lbl_date, &font_cjk_16, 0);
     lv_obj_set_style_text_color(lbl_date, lv_color_hex(SAVER_TXT_DATE), 0);
+    set_text_panel(lbl_date);
     lv_label_set_text(lbl_date, "--.--.--");
     lv_obj_align(lbl_date, LV_ALIGN_TOP_LEFT, 18, 66);
 
@@ -423,6 +448,7 @@ void screensaver_init(void)
     lbl_lunar = lv_label_create(scr_layer);
     lv_obj_set_style_text_font(lbl_lunar, &font_cjk_14, 0);
     lv_obj_set_style_text_color(lbl_lunar, lv_color_hex(SAVER_TXT_LUNAR), 0);
+    set_text_panel(lbl_lunar);
     lv_label_set_text(lbl_lunar, "--");
     lv_obj_align(lbl_lunar, LV_ALIGN_TOP_LEFT, 18, 88);
 
@@ -430,6 +456,7 @@ void screensaver_init(void)
     lbl_city = lv_label_create(scr_layer);
     lv_obj_set_style_text_font(lbl_city, &font_cjk_16, 0);
     lv_obj_set_style_text_color(lbl_city, lv_color_hex(SAVER_TXT_CITY), 0);
+    set_text_panel(lbl_city);
     lv_label_set_text(lbl_city, "--");
     lv_obj_align(lbl_city, LV_ALIGN_TOP_LEFT, 18, 108);
 
@@ -437,6 +464,7 @@ void screensaver_init(void)
     lbl_desc = lv_label_create(scr_layer);
     lv_obj_set_style_text_font(lbl_desc, &font_cjk_14, 0);
     lv_obj_set_style_text_color(lbl_desc, lv_color_hex(SAVER_TXT_DESC), 0);
+    set_text_panel(lbl_desc);
     lv_label_set_text(lbl_desc, "");
     lv_obj_align(lbl_desc, LV_ALIGN_TOP_LEFT, 120, 144);
 
@@ -448,6 +476,7 @@ void screensaver_init(void)
     lbl_temp = lv_label_create(scr_layer);
     lv_obj_set_style_text_font(lbl_temp, &font_cjk_32, 0);
     lv_obj_set_style_text_color(lbl_temp, lv_color_hex(SAVER_TXT_TEMP), 0);
+    set_text_panel(lbl_temp);
     lv_label_set_text(lbl_temp, "--°");
     lv_obj_align(lbl_temp, LV_ALIGN_TOP_LEFT, 68, 130);
 
@@ -506,6 +535,7 @@ void screensaver_init(void)
         fx_text[i] = lv_label_create(scr_layer);
         lv_obj_set_style_text_font(fx_text[i], &font_cjk_14, 0);
         lv_obj_set_style_text_color(fx_text[i], lv_color_hex(SAVER_TXT_DATE), 0);
+        set_text_panel(fx_text[i]);
         lv_label_set_text(fx_text[i], "--");
         lv_obj_align(fx_text[i], LV_ALIGN_TOP_LEFT, cx - 52, 218);
     }
