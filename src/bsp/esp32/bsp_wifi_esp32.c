@@ -14,6 +14,8 @@
 #include "esp_wifi.h"
 #include "esp_event.h"
 #include "esp_netif.h"
+#include "esp_netif_sntp.h"
+#include "esp_sntp.h"
 #include "esp_http_client.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -95,6 +97,19 @@ static struct {
 
 static void on_wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data);
 
+static bool s_sntp_started;
+
+/* 联网即对时（SNTP，国内服务器；间隔由 CONFIG_LWIP_SNTP_UPDATE_DELAY 控制）。
+   屏保时间不再依赖打印机（Moonraker HTTP Date）对时。 */
+static void sntp_start_once(void)
+{
+    if (s_sntp_started) return;
+    s_sntp_started = true;
+    esp_sntp_config_t cfg = ESP_NETIF_SNTP_DEFAULT_CONFIG("ntp.aliyun.com");
+    esp_netif_sntp_init(&cfg);   /* start=true，立即同步 */
+    ESP_LOGI(TAG, "SNTP started (ntp.aliyun.com)");
+}
+
 static void reconnect_cb(void *arg)
 {
     (void)arg;
@@ -164,6 +179,7 @@ static void on_wifi_event(void *arg, esp_event_base_t base, int32_t id, void *da
     } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
         W.state = BSP_WIFI_CONNECTED;
         W.connected = true;
+        sntp_start_once();   /* 联网后立即 SNTP 对时 */
         ESP_LOGI(TAG, "connected, got ip");
     }
 }

@@ -79,6 +79,13 @@ bool settings_save_brightness(int pct);
 int  settings_load_screen_off(void);      /* 自动息屏秒数，0=永不 */
 int  settings_load_saver_delay(void);     /* 供奉屏保延时秒数，1..60，缺省5 */
 bool settings_save_saver_delay(int sec);
+/* 天气时钟：city=经纬度（如"34.50,109.50"），city_name=屏保显示的城市名 */
+bool settings_load_weather_key(char *out, size_t len);
+bool settings_save_weather_key(const char *key);
+bool settings_load_weather_city(char *out, size_t len);
+bool settings_save_weather_city(const char *city);
+bool settings_load_weather_city_name(char *out, size_t len);
+bool settings_save_weather_city_name(const char *name);
 bool settings_save_screen_off(int sec);
 machine_mode_t settings_load_machine_mode(void);             /* 当前槽，缺省 Klipper */
 bool settings_save_machine_mode(machine_mode_t mode);         /* 当前槽 */

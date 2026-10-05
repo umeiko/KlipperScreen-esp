@@ -5,6 +5,7 @@ extern "C" {
 #endif
 
 void web_config_start(void);
+void web_config_server_start(void);   /* 仅启动 :80 Web 服务（开热点后调用） */
 
 #ifdef __cplusplus
 }

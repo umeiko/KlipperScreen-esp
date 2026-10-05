@@ -262,6 +262,8 @@ static void sleep_key_long_poll(void)
             sleep_key_long_fired = true;
             ESP_LOGI(TAG, "Sleep key long-press 5s: enable SoftAP KlipperScreen-AP");
             bsp_wifi_start_ap("KlipperScreen-AP", "12345678");
+            extern void web_config_server_start(void);
+            web_config_server_start();   /* 热点开启后仅此时提供后台配置页 */
             bsp_screen_activity();   /* 唤醒屏幕给反馈 */
             ui_toast("热点已开启 KlipperScreen-AP", 0x00A651);
         }

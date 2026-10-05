@@ -421,6 +421,52 @@ bool settings_save_display_rotate(int en)    { return ksc_save_int("display_rota
 int  settings_load_saver_delay(void)         { int s = ksc_load_int("saver_delay", 5); if (s < 1) s = 1; if (s > 60) s = 60; return s; }
 bool settings_save_saver_delay(int sec)      { if (sec < 1) sec = 1; if (sec > 60) sec = 60; return ksc_save_int("saver_delay", sec); }
 
+/* 天气时钟配置：和风 API Key + 城市名 */
+bool settings_load_weather_key(char *out, size_t len)
+{
+    if (len) out[0] = 0;
+    char *buf = conf_load("klipperscreen.conf");
+    if (!buf) return false;
+    bool ok = kv_get(buf, "weather_key", out, len);
+    free(buf);
+    return ok;
+}
+
+bool settings_save_weather_key(const char *key)
+{
+    return conf_update_key("klipperscreen.conf", "weather_key", key);
+}
+
+bool settings_load_weather_city(char *out, size_t len)
+{
+    if (len) out[0] = 0;
+    char *buf = conf_load("klipperscreen.conf");
+    if (!buf) return false;
+    bool ok = kv_get(buf, "weather_city", out, len);
+    free(buf);
+    return ok;
+}
+
+bool settings_save_weather_city(const char *city)
+{
+    return conf_update_key("klipperscreen.conf", "weather_city", city);
+}
+
+bool settings_load_weather_city_name(char *out, size_t len)
+{
+    if (len) out[0] = 0;
+    char *buf = conf_load("klipperscreen.conf");
+    if (!buf) return false;
+    bool ok = kv_get(buf, "weather_city_name", out, len);
+    free(buf);
+    return ok;
+}
+
+bool settings_save_weather_city_name(const char *name)
+{
+    return conf_update_key("klipperscreen.conf", "weather_city_name", name);
+}
+
 int settings_load_display_color_order(void)
 {
     char val[16];

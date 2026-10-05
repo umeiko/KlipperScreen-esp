@@ -71,6 +71,11 @@ static const char PAGE_FORM[] =
     "<label>API Key（可留空）</label><input id='api_key' maxlength='63'>"
     "<h2>显示</h2>"
     "<label>屏保延时（秒，1~60）</label><input id='delay' type='number' min='1' max='60'>"
+    "<h2>天气时钟（高德天气）</h2>"
+    "<div class='tip'>需高德开放平台免费 Key（lbs.amap.com 注册→控制台→创建应用→添加 Key，选 Web服务）。城市代码填 adcode（渭南=610500）。</div>"
+    "<label>高德天气 Key</label><input id='wkey' maxlength='63' placeholder='Web服务 Key'>"
+    "<label>城市代码 adcode</label><input id='wcity' maxlength='15' placeholder='610500'>"
+    "<label>城市显示名</label><input id='wcityname' maxlength='15' placeholder='渭南'>"
     "<button onclick='saveCfg()'>保存并重启</button>"
     "<h2>屏保壁纸</h2>"
     "<div class='tip'>上传 1~3 张图（JPG），屏保按帧循环播放；不够 3 张时用内置动图补足；恢复默认动图请点下方按钮。</div>"
@@ -109,6 +114,9 @@ static const char PAGE_JS[] =
     "b.set('port',document.getElementById('port').value);"
     "b.set('api_key',document.getElementById('api_key').value);"
     "b.set('delay',document.getElementById('delay').value);"
+    "b.set('wkey',document.getElementById('wkey').value);"
+    "b.set('wcity',document.getElementById('wcity').value);"
+    "b.set('wcityname',document.getElementById('wcityname').value);"
     "try{var r=await fetch('/api/config',{method:'POST',body:b});"
     "show(await r.text(),r.ok);if(r.ok)show('保存成功，3 秒后自动重启…',true)}"
     "catch(e){show('网络错误: '+e,false)}}"
@@ -123,6 +131,9 @@ static const char PAGE_JS[] =
     "document.getElementById('ssid').value=J.ssid||'';"
     "document.getElementById('pass').value=J.pass||'';"
     "document.getElementById('delay').value=J.delay||5;"
+    "document.getElementById('wkey').value=J.wkey||'';"
+    "document.getElementById('wcity').value=J.wcity||'';"
+    "document.getElementById('wcityname').value=J.wcityname||'';"
     "SLOT=(J.active||0);fill();"
     "document.getElementById('slotrow').children[SLOT].style.background='#2d9cdb'}catch(e){}}"
     "load();</script></body></html>";
@@ -207,7 +218,7 @@ static esp_err_t handle_root(httpd_req_t *req)
 {
     log_req(req);
     /* 三段合成一段发送，交由 httpd 自动处理长度 */
-    static char s_page[8192];
+    static char s_page[10240];
     static bool s_built = false;
     if (!s_built) {
         snprintf(s_page, sizeof(s_page), "%s%s%s", PAGE_HEAD, PAGE_FORM, PAGE_JS);
@@ -225,17 +236,24 @@ static esp_err_t handle_status(httpd_req_t *req)
 {
     log_req(req);
     wifi_conf_t w;
-    char buf[2048];
+    char buf[3072];
     settings_load_wifi(&w);
     int delay = settings_load_saver_delay();
     int active = settings_load_active_printer();
+    char wk[64], wc[32], wn[16], esc_wk[128], esc_wc[64], esc_wn[32];
+    settings_load_weather_key(wk, sizeof(wk));
+    settings_load_weather_city(wc, sizeof(wc));
+    settings_load_weather_city_name(wn, sizeof(wn));
+    json_escape(esc_wk, sizeof(esc_wk), wk);
+    json_escape(esc_wc, sizeof(esc_wc), wc);
+    json_escape(esc_wn, sizeof(esc_wn), wn);
     char esc_ssid[64], esc_pass[128];
     json_escape(esc_ssid, sizeof(esc_ssid), w.ssid);
     json_escape(esc_pass, sizeof(esc_pass), w.pass);
     char *p = buf;
     int n = snprintf(p, sizeof(buf) - (size_t)(p - buf),
-                     "{\"ssid\":\"%s\",\"pass\":\"%s\",\"delay\":%d,\"active\":%d,\"slots\":[",
-                     esc_ssid, esc_pass, delay, active);
+                     "{\"ssid\":\"%s\",\"pass\":\"%s\",\"delay\":%d,\"active\":%d,\"wkey\":\"%s\",\"wcity\":\"%s\",\"wcityname\":\"%s\",\"slots\":[",
+                     esc_ssid, esc_pass, delay, active, esc_wk, esc_wc, esc_wn);
     p += n;
     for (int i = 0; i < PRINTER_SLOTS; i++) {
         moonraker_conf_t m;
@@ -309,6 +327,11 @@ static esp_err_t handle_config(httpd_req_t *req)
         int d = atoi(v);
         if (d >= 1 && d <= 60) settings_save_saver_delay(d);
     }
+
+    /* 天气时钟配置（经纬度 + 城市显示名） */
+    if (form_get(body, "wkey", v, sizeof(v))) settings_save_weather_key(v);
+    if (form_get(body, "wcity", v, sizeof(v))) settings_save_weather_city(v);
+    if (form_get(body, "wcityname", v, sizeof(v))) settings_save_weather_city_name(v);
 
     /* 3 秒后重启生效（WiFi/打印机配置变更需要重连） */
     esp_timer_handle_t t;
@@ -420,20 +443,10 @@ static esp_err_t handle_wallpaper(httpd_req_t *req)
 
 /* ---------------- 启动 ---------------- */
 
-void web_config_start(void)
+/* 仅开启 Web 服务（不碰热点）。长按息屏键 5s 开热点后由 bsp 调用 */
+void web_config_server_start(void)
 {
     if (s_server) return;
-
-    /* 有 WiFi 配置则不开热点（保存重启后热点关闭）；仅首次无配置时开热点引导配置。
-       运行中长按息屏键 5 秒可手动开启热点进后台。 */
-    wifi_conf_t wc;
-    bool have_wifi = settings_load_wifi(&wc) && wc.valid && wc.ssid[0];
-    if (!have_wifi) {
-        bsp_wifi_start_ap(AP_SSID, AP_PASS);
-        ESP_LOGW(TAG, "no wifi config -> SoftAP '%s' up, config page at http://192.168.4.1", AP_SSID);
-    } else {
-        ESP_LOGI(TAG, "wifi configured -> SoftAP off (long-press sleep key 5s to reopen)");
-    }
 
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.server_port = 80;
@@ -461,5 +474,23 @@ void web_config_start(void)
         ESP_LOGI(TAG, "web config server on :80");
     } else {
         ESP_LOGE(TAG, "httpd start failed");
+    }
+}
+
+void web_config_start(void)
+{
+    if (s_server) return;
+
+    /* 仅在无 WiFi 配置的首次开机自动开热点引导配置；
+       已配置 WiFi 时不开热点、不启 Web 服务——后台只由
+       长按息屏键 5 秒手动开启热点后访问 192.168.4.1。 */
+    wifi_conf_t wc;
+    bool have_wifi = settings_load_wifi(&wc) && wc.valid && wc.ssid[0];
+    if (!have_wifi) {
+        bsp_wifi_start_ap(AP_SSID, AP_PASS);
+        ESP_LOGW(TAG, "no wifi config -> SoftAP '%s' up, config page at http://192.168.4.1", AP_SSID);
+        web_config_server_start();
+    } else {
+        ESP_LOGI(TAG, "wifi configured -> no web server (long-press sleep key 5s to open AP+config)");
     }
 }
