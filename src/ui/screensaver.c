@@ -17,8 +17,9 @@
 /* 充电触发 / 退出电压（与旧版一致） */
 #define SAVER_CHG_MV    4150
 #define SAVER_EXIT_MV   4100
-#define SAVER_BG_SOLID  0xC0E0F8   /* 纯色背景（淡蓝，深色文字可读） */
-#define SAVER_TXT_MAIN  0x14305C   /* 时间：深蓝黑（最重） */
+#define SAVER_BG_SOLID  0x5BA9E6   /* 纯色背景（天蓝） */
+#define SAVER_TXT_TIME  0xFFD500   /* 时间：明黄 */
+#define SAVER_TXT_MAIN  0x14305C   /* 深蓝黑（备用） */
 #define SAVER_TXT_DATE  0x1F6FB4   /* 日期/预报标签：亮蓝 */
 #define SAVER_TXT_LUNAR 0x9A6B2F   /* 农历：赭金 */
 #define SAVER_TXT_CITY  0x2F7D4F   /* 城市：墨绿 */
@@ -262,7 +263,7 @@ void screensaver_init(void)
     /* ---- 左侧：大号时间（24h）---- */
     lbl_time = lv_label_create(scr_layer);
     lv_obj_set_style_text_font(lbl_time, &lv_font_montserrat_48, 0);
-    lv_obj_set_style_text_color(lbl_time, lv_color_hex(SAVER_TXT_MAIN), 0);
+    lv_obj_set_style_text_color(lbl_time, lv_color_hex(SAVER_TXT_TIME), 0);
     lv_label_set_text(lbl_time, "--:--");
     lv_obj_align(lbl_time, LV_ALIGN_TOP_LEFT, 16, 12);
 
@@ -361,7 +362,7 @@ void screensaver_init(void)
 
         fx_img[i] = lv_img_create(scr_layer);
         lv_img_set_src(fx_img[i], &img_weather_overcast);
-        lv_image_set_scale(fx_img[i], 85);   /* 48px → ~16px */
+        lv_image_set_scale(fx_img[i], 120);   /* 48px → ~22px（手机天气图标样式） */
         lv_obj_align(fx_img[i], LV_ALIGN_TOP_LEFT, cx + 4, 184);
 
         fx_text[i] = lv_label_create(scr_layer);
