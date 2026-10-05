@@ -366,6 +366,9 @@ static void hide(void)
 }
 
 /* 表盘 60 格分钟刻度（无数字）：整点刻度加粗加长，其余细刻度 */
+/* 注意：lv_line_set_points 只存指针不拷贝，点数据必须静态存储 */
+static lv_point_precise_t s_tick_pts[60][2];
+
 static void create_dial_ticks(lv_obj_t *parent)
 {
     for (int k = 0; k < 60; k++) {
@@ -373,16 +376,15 @@ static void create_dial_ticks(lv_obj_t *parent)
         int major = (k % 5 == 0);
         lv_coord_t r0 = CLK_R - (major ? 13 : 8);
         lv_coord_t r1 = CLK_R - 2;
-        lv_point_precise_t pts[2];
-        pts[0].x = CLK_CX + (lv_coord_t)(r0 * sin(a));
-        pts[0].y = CLK_CY - (lv_coord_t)(r0 * cos(a));
-        pts[1].x = CLK_CX + (lv_coord_t)(r1 * sin(a));
-        pts[1].y = CLK_CY - (lv_coord_t)(r1 * cos(a));
+        s_tick_pts[k][0].x = CLK_CX + (lv_coord_t)(r0 * sin(a));
+        s_tick_pts[k][0].y = CLK_CY - (lv_coord_t)(r0 * cos(a));
+        s_tick_pts[k][1].x = CLK_CX + (lv_coord_t)(r1 * sin(a));
+        s_tick_pts[k][1].y = CLK_CY - (lv_coord_t)(r1 * cos(a));
         lv_obj_t *tk = lv_line_create(parent);
         lv_obj_set_style_line_width(tk, major ? 2 : 1, 0);
         lv_obj_set_style_line_color(tk, lv_color_white(), 0);
         lv_obj_set_style_line_opa(tk, major ? LV_OPA_COVER : LV_OPA_50, 0);
-        lv_line_set_points(tk, pts, 2);
+        lv_line_set_points(tk, s_tick_pts[k], 2);
     }
 }
 
