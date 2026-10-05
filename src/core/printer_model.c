@@ -504,7 +504,9 @@ void printer_model_set_object_names(char *json_heap)
                 memset(s, 0, sizeof(*s));
                 copy_text(s->name, sizeof(s->name), obj);
                 const char *short_name = strrchr(obj, ' ');
-                labelize(s->label, sizeof(s->label), short_name ? short_name + 1 : obj);
+                /* 名字同时是 gcode 参数（SET_FILAMENT_SENSOR SENSOR=<label>），
+                   不能用 labelize——那会把下划线换成空格，Klipper 直接查无此传感器 */
+                copy_text(s->label, sizeof(s->label), short_name ? short_name + 1 : obj);
             }
         } else if (strcmp(obj, "probe") == 0 || strcmp(obj, "bltouch") == 0 ||
                    strcmp(obj, "smart_effector") == 0 ||
@@ -662,6 +664,8 @@ static void on_gcode_store(char *result_json, void *ud)
     free(result_json);
     cJSON *store = root ? cJSON_GetObjectItem(root, "gcode_store") : NULL;
     if (cJSON_IsArray(store)) {
+        /* 服务端历史是"权威快照"：整环替换，否则每次进页面都叠加一份（重复 5+5） */
+        M_con_head = M_con_cnt = 0;
         cJSON *it;
         cJSON_ArrayForEach(it, store) {
             cJSON *type = cJSON_GetObjectItem(it, "type");
