@@ -376,7 +376,7 @@ void screensaver_init(void)
 
         fx_img[i] = lv_img_create(scr_layer);
         lv_img_set_src(fx_img[i], &img_weather_overcast);
-        lv_image_set_scale(fx_img[i], 120);   /* 48px → ~22px（手机天气图标样式） */
+        lv_image_set_scale(fx_img[i], 150);   /* 48px → ~28px */
         lv_obj_align(fx_img[i], LV_ALIGN_TOP_LEFT, cx + 4, 184);
 
         fx_text[i] = lv_label_create(scr_layer);
