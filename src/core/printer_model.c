@@ -556,10 +556,31 @@ void printer_filsensor_set_enabled(int i, bool en)
     klipper_gcode_script(g);
 }
 
+/* 限位查询用文档化的结构化 RPC（fluidd 同款端点），不走 gcode 文本回流：
+ * 无控制台噪音、无解析歧义。M119/QUERY_ENDSTOPS 的文本行仍解析兜底。 */
+static void on_endstops_result(char *result_json, void *ud)
+{
+    LV_UNUSED(ud);
+    cJSON *root = cJSON_Parse(result_json ? result_json : "");
+    free(result_json);
+    if (root) {
+        static const char *axes[] = { "x", "y", "z" };
+        for (int i = 0; i < 3; i++) {
+            cJSON *v = cJSON_GetObjectItem(root, axes[i]);
+            if (cJSON_IsString(v) && v->valuestring)
+                M_endstop[i] = strcmp(v->valuestring, "TRIGGERED") == 0 ? 1 : 0;
+        }
+        M_endstop_ms = lv_tick_get();
+        M_endstop_fresh = true;
+    }
+    cJSON_Delete(root);
+    refresh();
+}
+
 void printer_endstop_refresh(void)
 {
     if (!klipper_active()) return;
-    klipper_gcode_script("QUERY_ENDSTOPS");
+    moonraker_rpc("printer.query_endstops.status", NULL, on_endstops_result, NULL);
 }
 
 int printer_endstop_state(int axis)
