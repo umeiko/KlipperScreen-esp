@@ -8,9 +8,10 @@
  *   Wayland(weston kiosk) 下合成器空闲熄灭已由 --idle-time=0 禁用，屏幕
  *   常亮、靠背光断电达到息屏效果，触摸输入保持活动所以点按即可唤醒。
  * - 电源键：枚举 /dev/input/event*，找 KEY_POWER 能力的设备（红米2/4 是
- *   pm8941_pwrkey），非阻塞读，按下即 bsp_screen_toggle()。安装为服务时
- *   install.sh 会写 logind drop-in（HandlePowerKey=ignore），否则 logind
- *   会先关机。
+ *   pm8941_pwrkey），非阻塞读，按下即 bsp_screen_toggle()。**EVIOCGRAB 独占
+ *   抓取**——否则 logind/acpid 也会收到同一次按下，劝退规则没生效时绕过
+ *   应用直接关机（用户实测"点一下有时候直接关机"）；抓取失败才退回
+ *   install.sh 的 logind drop-in（HandlePowerKey=ignore）兜底。
  */
 #include "bsp_caps.h"
 
@@ -144,7 +145,14 @@ static void powerkey_discover(void)
             test_bit(keybits, KEY_POWER)) {
             char name[128] = {0};
             ioctl(fd, EVIOCGNAME(sizeof(name)), name);
-            printf("power key: %s (%s)\n", path, name);
+            /* 独占抓取：否则 logind/acpid 也收到同一次按下，劝退规则没生效时
+               绕过应用直接关机（用户实测"点一下有时候直接关机"）。抓取失败
+               才退回 install.sh 的 logind drop-in（HandlePowerKey=ignore）。 */
+            if (ioctl(fd, EVIOCGRAB, 1) == 0)
+                printf("power key: %s (%s) grabbed exclusively\n", path, name);
+            else
+                printf("power key: %s (%s) grab failed (%m); logind drop-in is the fallback\n",
+                       path, name);
             pwr_fd = fd;
             return;
         }
