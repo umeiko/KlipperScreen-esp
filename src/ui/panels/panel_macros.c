@@ -1,15 +1,17 @@
 /*
  * 宏（KlipperScreen gcode_macros 对应）：
  * - ESP32：纯列表，点选哪个执行哪个（无图标、无参数输入，存储所限）。
- * - 桌面端（Win/Linux/Android）：行尾 ▶ 直接执行；✏️ 打开参数表单——
- *   每个 {params.X|default()|type_hint} 一行，数值型参数弹浮点数字键盘
- *  （widgets/keypad），其余弹文本键盘（参数来自 configfile 解析，见
- *   printer_model 的 M_mparams；表单语义与 KlipperScreen 对齐：
- *   默认值预填可改、空值省略、M/G 编号宏空格风格其余等号风格）。
+ * - 桌面端（Win/Linux/Android）：行尾 ▶ 直接执行；✏️ 进入参数编辑页
+ *  （panel "macro_params"）——每个 {params.X|default()|type_hint} 一行，
+ *   点行编辑：数值型弹浮点数字键盘（widgets/keypad），其余弹文本键盘
+ *  （参数来自 configfile 解析，见 printer_model 的 M_mparams；语义与
+ *   KlipperScreen 对齐：默认值预填可改、空值省略、M/G 编号宏空格风格
+ *   其余等号风格）。无参数宏不显示 ✏️。
  */
 #include "../theme.h"
 #include "../lang.h"
 #include "../panel_mgr.h"
+#include "../titlebar.h"
 #include "../ui_nav.h"
 #include "../ui_anim.h"
 #include "printer.h"
@@ -42,9 +44,6 @@ static char form_default[FORM_PARAM_MAX][24];
 static bool form_numeric[FORM_PARAM_MAX];
 static char form_pname[FORM_PARAM_MAX][32];
 static int form_macro_idx = -1, form_cnt;
-static lv_obj_t *form_overlay;
-static lv_obj_t *form_value_lbl[FORM_PARAM_MAX];
-static lv_group_t *form_nav_group;
 
 /* ---- 通用文本输入弹层（文本型参数用；写回 target 缓冲） ---- */
 static lv_obj_t *input_overlay;
@@ -124,24 +123,16 @@ static void input_open(const char *title, const char *initial,
     ui_desktop_textarea_begin(ta_input);
 }
 
-/* ---- 参数表单 ---- */
-static void form_close(void)
-{
-    if (!form_overlay) return;
-    ui_nav_detach_scope(form_overlay);
-    lv_obj_delete(form_overlay);
-    form_overlay = NULL;
-    ui_nav_modal_end(form_nav_group);
-    form_nav_group = NULL;
-    form_macro_idx = -1;
-}
+/* ---- 参数编辑页（panel "macro_params"）：宏列表点 ✏️ 进入，
+   每个参数一行，点行编辑（数值型弹浮点键盘，其余弹文本键盘） ---- */
+static lv_obj_t *pp_value_lbl[FORM_PARAM_MAX];
 
-static void form_refresh_value(int p)
+static void pp_refresh_value(int p)
 {
-    if (!form_overlay || !form_value_lbl[p]) return;
+    if (!pp_value_lbl[p]) return;
     const char *v = form_values[p][0] ? form_values[p] : form_default[p];
-    lv_label_set_text(form_value_lbl[p], v[0] ? v : TR("（空）"));
-    lv_obj_set_style_text_color(form_value_lbl[p],
+    lv_label_set_text(pp_value_lbl[p], v[0] ? v : TR("（空）"));
+    lv_obj_set_style_text_color(pp_value_lbl[p],
         theme_col(form_values[p][0] ? THEME_COL_TEXT : THEME_COL_TEXT_DIM), 0);
 }
 
@@ -155,12 +146,12 @@ static void on_keypad_done(float value, int ok, void *ud)
         snprintf(form_values[p], sizeof(form_values[p]), "%d", (int)value);
     else
         snprintf(form_values[p], sizeof(form_values[p]), "%.3f", (double)value);
-    form_refresh_value(p);
+    pp_refresh_value(p);
 }
 
 static void on_text_done(void)
 {
-    form_refresh_value(input_target_ud);
+    pp_refresh_value(input_target_ud);
 }
 
 static void on_value_click(lv_event_t *e)
@@ -177,109 +168,111 @@ static void on_value_click(lv_event_t *e)
     }
 }
 
-static void form_send(void)
+/* 填充参数缓冲（进入参数页前调用）；返回 false = 不可编辑（加载中/无参数） */
+static bool pp_fill(int idx)
 {
-    int idx = form_macro_idx;
-    if (idx < 0) { form_close(); return; }
-    /* 空值参数 KlipperScreen 语义：整参省略（宏体 default 兜底）；
-       表单预填了默认值，这里只在"用户清空过"时省略 */
-    const char *vals[FORM_PARAM_MAX];
-    for (int p = 0; p < FORM_PARAM_MAX; p++) vals[p] = form_values[p];
-    form_close();
-    printer_macro_run_with(idx, vals);
-    char buf[96];
-    snprintf(buf, sizeof(buf), TR("已发送 %s"), printer_macro_name(idx));
-    ui_toast(buf, THEME_COL_ACCENT);
-}
-
-static void on_form_ok(lv_event_t *e) { LV_UNUSED(e); form_send(); }
-static void on_form_cancel(lv_event_t *e) { LV_UNUSED(e); form_close(); }
-
-static void form_open(int idx)
-{
-    if (form_overlay || idx < 0) return;
     if (printer_macro_params_loading()) {
         ui_toast(TR("正在读取参数…"), THEME_COL_TEXT_DIM);
-        return;
+        return false;
     }
     int cnt = printer_macro_param_count(idx);
     if (cnt == 0) {
         ui_toast(TR("该宏没有参数"), THEME_COL_TEXT_DIM);
-        return;
+        return false;
     }
     if (cnt > FORM_PARAM_MAX) cnt = FORM_PARAM_MAX;
     form_macro_idx = idx;
     form_cnt = cnt;
-
-    form_nav_group = ui_nav_modal_begin();
-    ui_nav_modal_set_cancel(form_nav_group, form_close);
-
-    form_overlay = lv_obj_create(lv_layer_top());
-    ui_nav_attach_scope(form_overlay, form_nav_group);
-    lv_obj_remove_style_all(form_overlay);
-    lv_obj_set_size(form_overlay, ui_scr_w(), ui_scr_h());
-    lv_obj_set_style_bg_color(form_overlay, theme_col(THEME_COL_BG), 0);
-    lv_obj_set_style_bg_opa(form_overlay, LV_OPA_COVER, 0);
-
-    int ow = LV_MIN(ui_px(280), ui_content_w());
-    int oh = ui_px(44) + cnt * ui_px(34) + ui_px(48);
-    lv_obj_t *card = theme_card(form_overlay);
-    lv_obj_set_size(card, ow, oh);
-    lv_obj_center(card);
-    lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
-
-    lv_obj_t *title = theme_label(card, printer_macro_label(idx), THEME_FONT_M, THEME_COL_TEXT);
-    lv_obj_set_width(title, ow - 2 * THEME_PAD - ui_px(8));
-    lv_label_set_long_mode(title, LV_LABEL_LONG_SCROLL_CIRCULAR);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, ui_px(6));
-
     for (int p = 0; p < cnt; p++) {
         printer_macro_param_info(idx, p, form_pname[p], sizeof(form_pname[p]),
                                  form_default[p], sizeof(form_default[p]), &form_numeric[p]);
         snprintf(form_values[p], sizeof(form_values[p]), "%s", form_default[p]);
+    }
+    return true;
+}
 
-        int ry = ui_px(44) + p * ui_px(34);
-        lv_obj_t *row = theme_card(card);
-        lv_obj_set_size(row, ow - ui_px(16), ui_px(30));
-        lv_obj_align(row, LV_ALIGN_TOP_MID, 0, ry - ui_px(6));
+static void on_pp_run(lv_event_t *e)
+{
+    LV_UNUSED(e);
+    int idx = form_macro_idx;
+    if (idx >= 0) {
+        /* 空值参数 KlipperScreen 语义：整参省略（宏体 default 兜底）；
+           预填了默认值，这里只在"用户清空过"时省略 */
+        const char *vals[FORM_PARAM_MAX];
+        for (int p = 0; p < FORM_PARAM_MAX; p++) vals[p] = form_values[p];
+        printer_macro_run_with(idx, vals);
+        char buf[96];
+        snprintf(buf, sizeof(buf), TR("已发送 %s"), printer_macro_name(idx));
+        ui_toast(buf, THEME_COL_ACCENT);
+    }
+    panel_mgr_back();
+}
+
+static void pp_on_show(void)
+{
+    if (form_macro_idx >= 0)
+        titlebar_set(printer_macro_label(form_macro_idx), 1);
+}
+
+static lv_obj_t *pp_create(void)
+{
+    lv_obj_t *scr = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(scr, theme_col(THEME_COL_BG), 0);
+
+    /* 参数行滚动列表（底部执行按钮固定，行多时可滚） */
+    lv_obj_t *list = lv_obj_create(scr);
+    lv_obj_remove_style_all(list);
+    lv_obj_set_style_bg_color(list, theme_col(THEME_COL_SURFACE), 0);
+    lv_obj_set_style_bg_opa(list, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(list, THEME_RADIUS_CARD, 0);
+    lv_obj_set_style_pad_hor(list, ui_px(6), 0);
+    lv_obj_set_style_pad_ver(list, ui_px(4), 0);
+    lv_obj_set_flex_flow(list, LV_FLEX_FLOW_COLUMN);
+    int list_h = ui_scr_h() - (THEME_TITLEBAR_H + ui_px(4)) - ui_px(42);
+    lv_obj_set_size(list, ui_content_w(), list_h);
+    lv_obj_align(list, LV_ALIGN_TOP_MID, 0, THEME_TITLEBAR_H + ui_px(4));
+
+    for (int p = 0; p < form_cnt; p++) {
+        lv_obj_t *row = theme_action_card(list);
+        lv_obj_set_size(row, lv_pct(100), ui_px(34));
         lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_event_cb(row, on_value_click, LV_EVENT_CLICKED, (void *)(intptr_t)p);
 
         lv_obj_t *name = theme_label(row, form_pname[p], THEME_FONT_S, THEME_COL_TEXT);
-        lv_obj_set_width(name, (ow - ui_px(16)) / 2 - ui_px(4));
+        lv_obj_set_width(name, ui_content_w() / 2 - ui_px(12));
         lv_label_set_long_mode(name, LV_LABEL_LONG_SCROLL_CIRCULAR);
         lv_obj_align(name, LV_ALIGN_LEFT_MID, ui_px(4), 0);
 
         lv_obj_t *val = theme_label(row, "", THEME_FONT_S, THEME_COL_ACCENT);
-        form_value_lbl[p] = val;
-        lv_obj_set_width(val, (ow - ui_px(16)) / 2 - ui_px(8));
+        pp_value_lbl[p] = val;
+        lv_obj_set_width(val, ui_content_w() / 2 - ui_px(12));
         lv_obj_set_style_text_align(val, LV_TEXT_ALIGN_RIGHT, 0);
         lv_obj_align(val, LV_ALIGN_RIGHT_MID, -ui_px(4), 0);
-        lv_obj_add_flag(val, LV_OBJ_FLAG_CLICKABLE);
-        lv_obj_add_event_cb(val, on_value_click, LV_EVENT_CLICKED, (void *)(intptr_t)p);
-        theme_focusable(val);
-        form_refresh_value(p);
+        pp_refresh_value(p);
     }
 
-    int bw = (ow - ui_px(24)) / 2;
-    int by = oh - ui_px(40);
-    lv_obj_t *ok = theme_button(card, LV_SYMBOL_OK, "确定", 1);
-    lv_obj_set_size(ok, bw, ui_px(32));
-    lv_obj_align(ok, LV_ALIGN_TOP_LEFT, ui_px(8), by);
-    lv_obj_add_event_cb(ok, on_form_ok, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *run = theme_button(scr, LV_SYMBOL_PLAY, "执行", 1);
+    lv_obj_set_size(run, ui_content_w(), ui_px(32));
+    lv_obj_align(run, LV_ALIGN_BOTTOM_MID, 0, -ui_px(4));
+    lv_obj_add_event_cb(run, on_pp_run, LV_EVENT_CLICKED, NULL);
 
-    lv_obj_t *cancel = theme_button(card, LV_SYMBOL_CLOSE, "取消", 0);
-    lv_obj_set_size(cancel, bw, ui_px(32));
-    lv_obj_align(cancel, LV_ALIGN_TOP_RIGHT, -ui_px(8), by);
-    lv_obj_add_event_cb(cancel, on_form_cancel, LV_EVENT_CLICKED, NULL);
-
-    ui_nav_group_set_spatial(form_nav_group, true);
-    lv_group_set_editing(form_nav_group, false);
+    ui_nav_group_set_list(lv_group_get_default(), true);
+    return scr;
 }
+
+panel_def_t panel_macro_params_def = {
+    .name = "macro_params", .title = "宏参数", .title_s = NULL,
+    .create = pp_create,
+    .on_show = pp_on_show,
+    .on_tick = NULL,
+    .hide_temps = 1,
+};
 
 static void on_edit(lv_event_t *e)
 {
     lv_event_stop_bubbling(e);
-    form_open((int)(intptr_t)lv_event_get_user_data(e));
+    int idx = (int)(intptr_t)lv_event_get_user_data(e);
+    if (pp_fill(idx)) panel_mgr_open("macro_params");
 }
 
 static void on_run_icon(lv_event_t *e)
@@ -315,10 +308,10 @@ static void on_tick(void)
 #endif /* !ESP_PLATFORM */
 
 #if !defined(ESP_PLATFORM) && defined(KLIPPER_DESKTOP_SIMULATOR)
-/* 模拟器截图用：直接打开第 idx 个宏的参数表单（main.c 的 macro-form 演示参数） */
+/* 模拟器截图用：直接进入第 idx 个宏的参数编辑页（main.c 的 macro-form 演示参数） */
 void panel_macros_demo_open_form(void *idx)
 {
-    form_open((int)(intptr_t)idx);
+    if (pp_fill((int)(intptr_t)idx)) panel_mgr_open("macro_params");
 }
 #endif
 

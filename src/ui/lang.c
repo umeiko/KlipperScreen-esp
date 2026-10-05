@@ -92,6 +92,8 @@ static const dict_entry_t dict[] = {
     {"校准已开始",      "Calibration started", "校正已開始",          "Calibration démarrée",        "Calibrazione avviata"},
     {"该宏没有参数",    "No parameters",       "該巨集沒有參數",      "Pas de paramètres",           "Nessun parametro"},
     {"正在读取参数…",   "Reading parameters…", "正在讀取參數…",       "Lecture des paramètres…",     "Lettura parametri…"},
+    {"宏参数",          "Macro Params",        "巨集參數",            "Paramètres macro",            "Parametri macro"},
+    {"执行",            "Run",                 "執行",                "Exécuter",                    "Esegui"},
     {"（空）",          "(empty)",             "（空）",              "(vide)",                      "(vuoto)"},
     {"确定",            "OK",                  "確定",                "OK",                          "OK"},
     {"抬升",            "Raise",               "抬升",                "Monter",                      "Alza"},
