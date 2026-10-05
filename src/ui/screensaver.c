@@ -10,6 +10,7 @@
 #include "assets/icons.h"
 #include "assets/weather_icons.h"
 #include "assets/saver_anim.h"
+#include "assets/saver_sky.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -29,15 +30,10 @@
 #define SAVER_TXT_TEMP  0xE05A1F   /* 温度：橙红（醒目） */
 #define SAVER_TXT_DIM   0x44505C   /* 次要文字：深灰蓝 */
 
-/* 整屏背景随当前天气变化（手机天气 App 风格），索引见 weather_icon_t */
-static const uint32_t s_bg_by_wx[7] = {
-    0x66B5F0,  /* 0 晴  晴空蓝 */
-    0x8EC8F2,  /* 1 多云 浅蓝 */
-    0xA2B4C8,  /* 2 阴  灰蓝 */
-    0x7E93AC,  /* 3 雨  深灰蓝 */
-    0xC9DAEA,  /* 4 雪  青灰白 */
-    0xB9C5D2,  /* 5 雾  浅灰 */
-    0x5BA9E6,  /* 6 未知 默认天蓝 */
+/* 实景天空背景（AI 摄影风格，320x240 RGB565），索引见 weather_icon_t */
+static const lv_image_dsc_t *s_sky_by_wx[7] = {
+    &img_sky_sun, &img_sky_partly, &img_sky_overcast,
+    &img_sky_rain, &img_sky_snow, &img_sky_fog, &img_sky_unknown,
 };
 #define SAVER_TIME_COL_2 0xFFC531  /* 分针金黄 */
 
@@ -188,8 +184,7 @@ static void update_weather(void)
     weather_icon_t ic = weather_icon_from_code(wd.icon);
     lv_img_set_src(img_wx, wx_icons[ic]);
     lv_obj_remove_flag(img_wx, LV_OBJ_FLAG_HIDDEN);
-    /* 整屏背景随当前天气变化 + 动态背景动画 */
-    lv_obj_set_style_bg_color(scr_layer, lv_color_hex(s_bg_by_wx[ic]), 0);
+    /* 实景天空背景 + 动态背景动画 */
     rebuild_anim(ic);
     /* 天气描述用高德原文（更精确），否则用归并名 */
     lv_label_set_text(lbl_desc, wd.category[0] ? wd.category : wx_desc[ic]);
@@ -241,6 +236,7 @@ static anim_item_t s_anim[ANIM_MAX];
 static int s_anim_n = 0;
 static lv_timer_t *s_anim_timer = NULL;
 static int s_anim_ic = -1;
+static lv_obj_t *s_sky = NULL;   /* 实景天空背景图（沉底） */
 
 static void anim_add(lv_obj_t *obj, float x, float y, float vx, float vy, uint8_t type, uint8_t w, uint8_t h)
 {
@@ -259,45 +255,40 @@ static void rebuild_anim(int ic)
     for (int i = 0; i < s_anim_n; i++)
         if (s_anim[i].obj) lv_obj_del(s_anim[i].obj);
     s_anim_n = 0;
+
+    /* 实景天空背景（AI 摄影图），索引见 weather_icon_t */
+    if (s_sky) {
+        lv_img_set_src(s_sky, s_sky_by_wx[ic < 7 ? ic : 6]);
+        lv_obj_move_to_index(s_sky, 0);   /* 背景永远在最底 */
+    }
     if (!active) return;
 
     switch (ic) {
     case WEATHER_SUN:
-    case WEATHER_PARTLY: {
-        lv_obj_t *c1 = lv_img_create(scr_layer);
-        lv_img_set_src(c1, &img_anim_cloud);
-        anim_add(c1, 210, 34, -1.2f, 0, 0, 64, 32);
-        lv_obj_t *c2 = lv_img_create(scr_layer);
-        lv_img_set_src(c2, &img_anim_cloud);
-        anim_add(c2, 90, 72, -0.8f, 0, 0, 64, 32);
-        break;
-    }
-    case WEATHER_OVERCAST: {
-        lv_obj_t *c = lv_img_create(scr_layer);
-        lv_img_set_src(c, &img_anim_cloudbig);
-        anim_add(c, 270, 26, -1.5f, 0, 0, 128, 48);
-        break;
-    }
+    case WEATHER_PARTLY:
+    case WEATHER_OVERCAST:
+    case WEATHER_UNKNOWN:
+        break;   /* 实景图本身有云层，不再叠加云对象 */
     case WEATHER_RAIN: {
-        for (int i = 0; i < 3; i++) {
+        for (int i = 0; i < 4; i++) {
             lv_obj_t *ln = lv_line_create(scr_layer);
             lv_obj_set_style_line_width(ln, 2, 0);
-            lv_obj_set_style_line_color(ln, lv_color_hex(0x9FD8FF), 0);
+            lv_obj_set_style_line_color(ln, lv_color_hex(0xCFE8FF), 0);
             lv_line_set_points(ln, NULL, 0);
-            anim_add(ln, 60 + i * 90, -30 - i * 60, -1.5f, 5.0f, 1, 14, 14);
+            anim_add(ln, 40 + i * 72, -30 - i * 50, -2.0f, 6.0f, 1, 14, 14);
         }
         break;
     }
     case WEATHER_SNOW: {
-        for (int i = 0; i < 8; i++) {
+        for (int i = 0; i < 10; i++) {
             lv_obj_t *dt = lv_obj_create(scr_layer);
-            lv_obj_set_size(dt, 4, 4);
+            lv_obj_set_size(dt, 5, 5);
             lv_obj_set_style_bg_color(dt, lv_color_white(), 0);
-            lv_obj_set_style_bg_opa(dt, LV_OPA_70, 0);
+            lv_obj_set_style_bg_opa(dt, LV_OPA_80, 0);
             lv_obj_set_style_radius(dt, LV_RADIUS_CIRCLE, 0);
             lv_obj_set_style_border_width(dt, 0, 0);
             lv_obj_remove_flag(dt, LV_OBJ_FLAG_SCROLLABLE);
-            anim_add(dt, (float)(rand() % 310), (float)(rand() % 240), (rand() % 2 ? 0.5f : -0.5f), 2.5f, 2, 4, 4);
+            anim_add(dt, (float)(rand() % 310), (float)(rand() % 240), (rand() % 2 ? 0.5f : -0.5f), 2.5f, 2, 5, 5);
         }
         break;
     }
@@ -314,7 +305,7 @@ static void rebuild_anim(int ic)
         }
         break;
     }
-    default: break;   /* unknown：静态背景 */
+    default: break;   /* 兜底 */
     }
 }
 
@@ -402,7 +393,10 @@ void screensaver_init(void)
     lv_obj_set_style_pad_all(scr_layer, 0, 0);
     lv_obj_remove_flag(scr_layer, LV_OBJ_FLAG_SCROLLABLE);
 
-    /* 背景：纯色（SAVER_BG_SOLID，见上方 scr_layer 底色） */
+    /* 背景：实景天空图（随天气切换，先创建保证在最底层） */
+    s_sky = lv_img_create(scr_layer);
+    lv_img_set_src(s_sky, &img_sky_unknown);
+    lv_obj_align(s_sky, LV_ALIGN_TOP_LEFT, 0, 0);
 
     /* ---- 左侧：大号时间（24h）---- */
     lbl_time = lv_label_create(scr_layer);
