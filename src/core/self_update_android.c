@@ -393,18 +393,27 @@ static bool jni_install_apk(const char *path)
 {
     JNIEnv *env = (JNIEnv *)SDL_AndroidGetJNIEnv();
     jobject activity = (jobject)SDL_AndroidGetActivity();
-    if (!env || !activity) return false;
+    if (!env || !activity) {
+        SDL_Log("supd: jni env/activity null (env=%p act=%p)", (void *)env, (void *)activity);
+        return false;
+    }
     jclass cls = (*env)->GetObjectClass(env, activity);
     jmethodID mid = (*env)->GetMethodID(env, cls, "installApk", "(Ljava/lang/String;)V");
     if (!mid) {
+        SDL_Log("supd: installApk method NOT FOUND on activity class");
         (*env)->DeleteLocalRef(env, cls);
         (*env)->DeleteLocalRef(env, activity);
         return false;
     }
+    SDL_Log("supd: invoking installApk(%s)", path);
     jstring jpath = (*env)->NewStringUTF(env, path);
     (*env)->CallVoidMethod(env, activity, mid, jpath);
     bool ok = !(*env)->ExceptionCheck(env);
-    if (!ok) (*env)->ExceptionClear(env);
+    if (!ok) {
+        SDL_Log("supd: installApk threw a Java exception:");
+        (*env)->ExceptionDescribe(env);   /* 把堆栈打到 logcat */
+        (*env)->ExceptionClear(env);
+    }
     (*env)->DeleteLocalRef(env, jpath);
     (*env)->DeleteLocalRef(env, cls);
     (*env)->DeleteLocalRef(env, activity);

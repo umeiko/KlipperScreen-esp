@@ -22,13 +22,19 @@ public class MainActivity extends SDLActivity {
 
     /** 自更新：用系统安装器打开已下载的 APK（self_update_android.c 经 JNI 调用） */
     public void installApk(String path) {
-        File file = new File(path);
-        Uri uri = FileProvider.getUriForFile(this,
-                "com.umeiko.klipperscreenesp.fileprovider", file);
-        Intent intent = new Intent(Intent.ACTION_VIEW);
-        intent.setDataAndType(uri, "application/vnd.android.package-archive");
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
-                | Intent.FLAG_GRANT_READ_URI_PERMISSION);
-        startActivity(intent);
+        try {
+            File file = new File(path);
+            Uri uri = FileProvider.getUriForFile(this,
+                    "com.umeiko.klipperscreenesp.fileprovider", file);
+            Intent intent = new Intent(Intent.ACTION_VIEW);
+            intent.setDataAndType(uri, "application/vnd.android.package-archive");
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                    | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            startActivity(intent);
+        } catch (Exception e) {
+            /* 打到 logcat（tag KlipperScreen），再抛回去让 JNI 侧报"更新失败" */
+            android.util.Log.e("KlipperScreen", "installApk failed: " + path, e);
+            throw e;
+        }
     }
 }
