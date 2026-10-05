@@ -16,6 +16,7 @@
 #include "cJSON.h"
 
 #include <mbedtls/md5.h>
+#include <jni.h>    /* JNIEnv/jobject：SDL.h 的 SDL_main.h 在本 TU 不保证引入 */
 #include <SDL.h>   /* SDL_AndroidGetJNIEnv / SDL_AndroidGetActivity */
 
 #include <pthread.h>
