@@ -1,8 +1,9 @@
-# CYD 4MB Flash 分区表：GB2312 全表字库（RLE 压缩后 14+16 两档 ~1.2MB）让固件到 ~2.9MB，
-# factory 给到 3.125MB（留 ~9% 余量），littlefs 压到 832KB（只存几个小 conf，足够）。
-# 注意：storage 偏移较旧版前移，升级后原设置丢失，需重配 WiFi/Moonraker。
+# CYD 4MB Flash 分区表：GB2312 全表字库（RLE 压缩后 14+16 两档 ~1.2MB）。
+# 菜单页特性+宏参数输入把固件顶过 3.125MB（溢出 384B！），factory 提到 3.25MB，
+# littlefs 压到 704KB（只存几个小 conf，足够）。
+# 注意：storage 偏移较旧版后移，升级后原设置丢失，需重配 WiFi/Moonraker。
 # Name,    Type, SubType, Offset,   Size,      Flags
 nvs,       data, nvs,     0x9000,   0x6000,
 phy_init,  data, phy,     0xf000,   0x1000,
-factory,   app,  factory, 0x10000,  0x320000,
-storage,   data, littlefs,,         0xD0000,
+factory,   app,  factory, 0x10000,  0x340000,
+storage,   data, littlefs,,         0xB0000,
