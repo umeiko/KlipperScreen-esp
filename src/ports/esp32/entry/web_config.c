@@ -3,11 +3,9 @@
  *  - GET  /                 配置页面（HTML）
  *  - GET  /api/status       当前配置 JSON（WiFi + 全 6 槽位打印机 + 屏保延时）
  *  - POST /api/config       保存 WiFi/打印机（slot 参数）/屏保延时，3 秒后自动重启生效
- *  - POST /api/wallpaper    上传屏保壁纸（?idx=0..2 原始 JPEG body，解码缩放到 320x240 RGB565 存 flash）
- *  - POST /api/wallpaper?clear=1   删除全部壁纸，恢复内置供奉动图
  * 启动时若无 WiFi 配置，自动开启 SoftAP 热点（KlipperScreen-AP / 12345678），
  * 手机连接热点后访问 http://192.168.4.1 完成首次配置。
- * 所有耗时操作（解码/写 flash）都在 httpd 任务内执行，不影响 LVGL UI 任务。
+ * 所有耗时操作都在 httpd 任务内执行，不影响 LVGL UI 任务。
  */
 #include <stdio.h>
 #include <string.h>
@@ -18,18 +16,11 @@
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_timer.h"
-#include "esp_heap_caps.h"
-#include "jpeg_decoder.h"
 #include "app_settings.h"
 #include "bsp_wifi.h"
 
 #define TAG "webcfg"
 
-#define WALL_DIR   "/littlefs/wallpaper"
-#define WALL_W     320
-#define WALL_H     240
-#define WALL_MAX   3
-#define IMG_MAX_BYTES (4 * 1024 * 1024)  /* 上传图片最大 4MB */
 #define AP_SSID    "KlipperScreen-AP"
 #define AP_PASS    "12345678"
 
@@ -77,15 +68,6 @@ static const char PAGE_FORM[] =
     "<label>城市代码 adcode</label><input id='wcity' maxlength='15' placeholder='610500'>"
     "<label>城市显示名</label><input id='wcityname' maxlength='15' placeholder='渭南'>"
     "<button onclick='saveCfg()'>保存并重启</button>"
-    "<h2>屏保壁纸</h2>"
-    "<div class='tip'>上传 1~3 张图（JPG），屏保按帧循环播放；不够 3 张时用内置动图补足；恢复默认动图请点下方按钮。</div>"
-    "<label class='upbtn' for='f0'>点击选择第 1 帧图片</label><input id='f0' type='file' accept='image/jpeg,.jpg,.jpeg' onchange='up(0)'>"
-    "<label class='upbtn' for='f1'>点击选择第 2 帧图片（可选）</label><input id='f1' type='file' accept='image/jpeg,.jpg,.jpeg' onchange='up(1)'>"
-    "<label class='upbtn' for='f2'>点击选择第 3 帧图片（可选）</label><input id='f2' type='file' accept='image/jpeg,.jpg,.jpeg' onchange='up(2)'>"
-    "<button onclick='pickFile(0)'>上传第 1 帧</button>"
-    "<button class='sec' onclick='pickFile(1)'>上传第 2 帧</button>"
-    "<button class='sec' onclick='pickFile(2)'>上传第 3 帧</button>"
-    "<button class='danger' onclick='clearWall()'>恢复默认动图（删除壁纸）</button>"
     "<div id='status'></div>";
 
 static const char PAGE_JS[] =
@@ -120,13 +102,6 @@ static const char PAGE_JS[] =
     "try{var r=await fetch('/api/config',{method:'POST',body:b});"
     "show(await r.text(),r.ok);if(r.ok)show('保存成功，3 秒后自动重启…',true)}"
     "catch(e){show('网络错误: '+e,false)}}"
-    "function pickFile(i){var f=document.getElementById('f'+i);if(!f.files[0]){f.click();return}up(i)}"
-    "async function up(i){var f=document.getElementById('f'+i);if(!f.files[0]){alert('请先选择第 '+(i+1)+' 张图片');return}"
-    "show('第 '+(i+1)+' 帧上传中…',true);"
-    "try{var r=await fetch('/api/wallpaper?idx='+i,{method:'POST',body:f.files[0]});"
-    "show(await r.text(),r.ok)}catch(e){show('上传失败: '+e,false)}}"
-    "async function clearWall(){if(!confirm('删除全部壁纸并恢复默认供奉动图？'))return;"
-    "try{var r=await fetch('/api/wallpaper?clear=1',{method:'POST'});show(await r.text(),r.ok)}catch(e){show('网络错误: '+e,false)}}"
     "async function load(){try{var r=await fetch('/api/status');J=await r.json();"
     "document.getElementById('ssid').value=J.ssid||'';"
     "document.getElementById('pass').value=J.pass||'';"
@@ -194,18 +169,6 @@ static bool form_get(const char *body, const char *key, char *out, size_t outsz)
         p = amp + 1;
     }
     return false;
-}
-
-/* 最近邻缩放 RGB565 到 320x240 */
-static void scale_nearest(const uint16_t *src, int sw, int sh, uint16_t *dst)
-{
-    for (int y = 0; y < WALL_H; y++) {
-        int sy = (y * sh) / WALL_H;
-        const uint16_t *row = src + (size_t)sy * sw;
-        for (int x = 0; x < WALL_W; x++) {
-            dst[y * WALL_W + x] = row[(x * sw) / WALL_W];
-        }
-    }
 }
 
 /* ---------------- HTTP 处理 ---------------- */
@@ -343,104 +306,6 @@ static esp_err_t handle_config(httpd_req_t *req)
     return ESP_OK;
 }
 
-static esp_err_t handle_wallpaper(httpd_req_t *req)
-{
-    log_req(req);
-    char query[64];
-    if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK) {
-        char val[16];
-        if (httpd_query_key_value(query, "clear", val, sizeof(val)) == ESP_OK && strcmp(val, "1") == 0) {
-            for (int i = 0; i < WALL_MAX; i++) {
-                char path[64];
-                snprintf(path, sizeof(path), WALL_DIR "/wall_%d.raw", i);
-                remove(path);
-            }
-            httpd_resp_sendstr(req, "壁纸已清除，恢复内置动图");
-            return ESP_OK;
-        }
-    }
-
-    int idx = 0;
-    char idxs[8];
-    if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK &&
-        httpd_query_key_value(query, "idx", idxs, sizeof(idxs)) == ESP_OK) {
-        idx = atoi(idxs);
-    }
-    if (idx < 0 || idx >= WALL_MAX) {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "bad idx");
-        return ESP_OK;
-    }
-
-    /* 读 body 到 PSRAM */
-    size_t cap = IMG_MAX_BYTES;
-    char *body = heap_caps_malloc(cap, MALLOC_CAP_SPIRAM);
-    if (!body) { httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "oom"); return ESP_OK; }
-    size_t got = 0;
-    int r;
-    while ((r = httpd_req_recv(req, body + got, (int)(cap - got))) > 0) {
-        got += (size_t)r;
-        if (got >= cap) break;
-    }
-    if (got < 4) { heap_caps_free(body); httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "empty"); return ESP_OK; }
-
-    int sw, sh;
-    esp_jpeg_image_cfg_t icfg = { 0 };
-    icfg.indata = (uint8_t *)body;
-    icfg.indata_size = (uint32_t)got;
-    icfg.out_format = JPEG_IMAGE_FORMAT_RGB565;
-    esp_jpeg_image_output_t info;
-    if (esp_jpeg_get_image_info(&icfg, &info) != ESP_OK || info.width == 0 || info.height == 0 ||
-        info.width > 1024 || info.height > 1024) {
-        heap_caps_free(body);
-        httpd_resp_send_err(req, HTTPD_413_CONTENT_TOO_LARGE, "图片过大或不是 JPG（限制 ≤1024px）");
-        return ESP_OK;
-    }
-    sw = info.width;
-    sh = info.height;
-
-    /* 解码 RGB565（整图到 PSRAM） */
-    size_t outcap = (size_t)sw * sh * 2;
-    uint8_t *out = heap_caps_malloc(outcap, MALLOC_CAP_SPIRAM);
-    if (!out) { heap_caps_free(body); httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "oom"); return ESP_OK; }
-
-    icfg.outbuf = out;
-    icfg.outbuf_size = (uint32_t)outcap;
-    esp_jpeg_image_output_t res;
-    esp_err_t err = esp_jpeg_decode(&icfg, &res);
-    if (err != ESP_OK || res.output_len == 0) {
-        heap_caps_free(body);
-        heap_caps_free(out);
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "JPEG 解码失败");
-        return ESP_OK;
-    }
-    sw = res.width;
-    sh = res.height;
-
-    /* 缩放 320x240 并写文件 */
-    uint16_t *scaled = heap_caps_malloc(WALL_W * WALL_H * 2, MALLOC_CAP_SPIRAM);
-    if (!scaled) { heap_caps_free(body); heap_caps_free(out); httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "oom"); return ESP_OK; }
-    scale_nearest((const uint16_t *)out, sw, sh, scaled);
-
-    mkdir(WALL_DIR, 0777);
-    char path[64];
-    snprintf(path, sizeof(path), WALL_DIR "/wall_%d.raw", idx);
-    FILE *f = fopen(path, "wb");
-    if (!f) {
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "write fail");
-    } else {
-        size_t n = fwrite(scaled, 2, WALL_W * WALL_H, f);
-        fclose(f);
-        char msg[96];
-        snprintf(msg, sizeof(msg), "第 %d 帧已保存（%u 字节），下次屏保生效", idx + 1, (unsigned)(n * 2));
-        httpd_resp_sendstr(req, msg);
-        ESP_LOGI(TAG, "wallpaper %d saved (%dx%d -> 320x240)", idx, sw, sh);
-    }
-    heap_caps_free(body);
-    heap_caps_free(out);
-    heap_caps_free(scaled);
-    return ESP_OK;
-}
-
 /* ---------------- 启动 ---------------- */
 
 /* 仅开启 Web 服务（不碰热点）。长按息屏键 5s 开热点后由 bsp 调用 */
@@ -452,7 +317,6 @@ void web_config_server_start(void)
     cfg.server_port = 80;
     cfg.stack_size = 8192;
     cfg.max_uri_handlers = 8;
-    cfg.recv_wait_timeout = 30;   /* 壁纸上传大图：默认 5s 收不完会中断解码 */
     cfg.send_wait_timeout = 30;
     if (httpd_start(&s_server, &cfg) == ESP_OK) {
         httpd_uri_t u;
@@ -467,9 +331,6 @@ void web_config_server_start(void)
         u.method = HTTP_POST;
         u.handler = handle_config;
         u.uri = "/api/config";
-        httpd_register_uri_handler(s_server, &u);
-        u.handler = handle_wallpaper;
-        u.uri = "/api/wallpaper";
         httpd_register_uri_handler(s_server, &u);
         ESP_LOGI(TAG, "web config server on :80");
     } else {
