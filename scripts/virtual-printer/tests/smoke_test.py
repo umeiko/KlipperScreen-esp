@@ -206,7 +206,7 @@ def main():
     ok("G1 位置更新", abs(pos[0] - 50) < 0.01 and abs(pos[2] - 10) < 0.01, pos)
     ws.rpc("printer.gcode.script", {"script": "QUERY_ENDSTOPS"})
     r = ws.rpc("printer.query_endstops.status").get("result", {})
-    ok("query_endstops", "x" in r.get("last_query", {}), r)
+    ok("query_endstops", "stepper_x" in r and "stepper_z" in r, r)
 
     # 6) 订阅推送（4Hz 差速推送应在工作）
     msg = ws.read_msg(timeout=5)

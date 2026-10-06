@@ -1126,7 +1126,8 @@ class Printer:
     def gc_QUERY_ENDSTOPS(self, params, rest, from_sd):
         with self.lock:
             out = []
-            for i, a in enumerate(("x", "y", "z")):
+            # 主线行为：键名 = 配置段名（stepper_x/y/z），文本单行空格分隔
+            for i, a in enumerate(("stepper_x", "stepper_y", "stepper_z")):
                 triggered = 1 if abs(self.pos[i] - self.axis_min[i]) < 0.01 else 0
                 self.endstop_last[a] = triggered
                 out.append("%s:%s" % (a, "TRIGGERED" if triggered else "open"))
@@ -1632,7 +1633,14 @@ class Client:
             p.gc_CANCEL_PRINT({}, "", False)
             return "ok"
         if method == "query_endstops/status":
-            return {"last_query": dict(p.endstop_last)}
+            # 对齐主线 webhook：扁平 {段名: "open"/"TRIGGERED"}，每次调用实时读
+            with p.lock:
+                st = {}
+                for i, a in enumerate(("stepper_x", "stepper_y", "stepper_z")):
+                    trig = 1 if abs(p.pos[i] - p.axis_min[i]) < 0.01 else 0
+                    p.endstop_last[a] = trig
+                    st[a] = "TRIGGERED" if trig else "open"
+                return st
         raise PrinterError("webhooks: No registered callback for path '%s'"
                            % method)
 

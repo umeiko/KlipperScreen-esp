@@ -176,6 +176,17 @@ static uint32_t M_endstop_ms;
 static bool M_endstop_fresh;            /* 已收到过至少一次 QUERY_ENDSTOPS 结果 */
 static bool M_manual_probe_active;
 
+/* 限位名 → 轴号。键名 = printer.cfg 段名：主线是 stepper_x/y/z（剥 stepper_
+   前缀取轴字母，stepper_z1 等多 Z 段归 z）；厂商分叉固件可能是短名 x/y/z；
+   delta 的 stepper_a/b/c 等不归 xyz，返回 -1。 */
+static int endstop_axis_from_name(const char *name, size_t len)
+{
+    if (len > 8 && strncmp(name, "stepper_", 8) == 0) { name += 8; len -= 8; }
+    if (len < 1 || name[0] < 'x' || name[0] > 'z') return -1;
+    if (len > 1 && (name[1] < '1' || name[1] > '9')) return -1;  /* z1 可，zx 不可 */
+    return name[0] - 'x';
+}
+
 static struct { char text[CONSOLE_LINE_MAX]; uint8_t kind; } M_con[CONSOLE_MAX_LINES];
 static int M_con_head, M_con_cnt;       /* head=最旧 */
 
@@ -193,18 +204,26 @@ static int M_mparam_cnt[MACRO_MAX];
 
 void printer_model_report_gcode_response(char *msg_heap)
 {
-    /* 先按行解析限位回流（QUERY_ENDSTOPS："x:open" / "z:TRIGGERED"，可单行可多行），
-     * 喂给传感器页；行本身照常进控制台——刷新已改为手动触发，用户
-     * 自己发的 M119/QUERY_ENDSTOPS 理应看到回显（自动轮询时代才需要过滤） */
+    /* 先按行内空格分词解析限位回流（主线 QUERY_ENDSTOPS/M119 输出
+       "stepper_x:open stepper_y:TRIGGERED …" 单行长格式；分叉固件可能短名
+       "x:open"），喂给传感器页；行本身照常进控制台——刷新已改为手动触发，
+       用户自己发的 M119/QUERY_ENDSTOPS 理应看到回显（自动轮询时代才需要过滤） */
     for (const char *p = msg_heap; *p; ) {
         const char *eol = strchr(p, '\n');
         size_t ln = eol ? (size_t)(eol - p) : strlen(p);
-        if (ln >= 3 && ln < 40 && p[1] == ':' &&
-            (p[0] == 'x' || p[0] == 'y' || p[0] == 'z')) {
-            int axis = p[0] - 'x';
-            M_endstop[axis] = strncmp(p + 2, "TRIGGERED", 9) == 0 ? 1 : 0;
-            M_endstop_ms = lv_tick_get();
-            M_endstop_fresh = true;
+        for (size_t off = 0; off < ln; ) {
+            size_t tl = 0;
+            while (off + tl < ln && p[off + tl] != ' ') tl++;
+            const char *colon = tl ? memchr(p + off, ':', tl) : NULL;
+            if (colon && colon > p + off) {
+                int ax = endstop_axis_from_name(p + off, (size_t)(colon - (p + off)));
+                if (ax >= 0) {
+                    M_endstop[ax] = strncmp(colon + 1, "TRIGGERED", 9) == 0 ? 1 : 0;
+                    M_endstop_ms = lv_tick_get();
+                    M_endstop_fresh = true;
+                }
+            }
+            off += tl + 1;
         }
         if (!eol) break;
         p = eol + 1;
@@ -753,14 +772,22 @@ static void on_endstops_result(char *result_json, void *ud)
     cJSON *root = cJSON_Parse(result_json ? result_json : "");
     free(result_json);
     if (root) {
-        static const char *axes[] = { "x", "y", "z" };
-        for (int i = 0; i < 3; i++) {
-            cJSON *v = cJSON_GetObjectItem(root, axes[i]);
-            if (cJSON_IsString(v) && v->valuestring)
-                M_endstop[i] = strcmp(v->valuestring, "TRIGGERED") == 0 ? 1 : 0;
+        /* 键名 = printer.cfg 段名（主线 stepper_x/y/z，分叉固件可能短名）：
+           统一经 endstop_axis_from_name 映射；多段同轴（z1/z2）任一触发即触发 */
+        int st[3] = { 0, 0, 0 };
+        bool seen = false;
+        for (cJSON *it = root->child; it; it = it->next) {
+            if (!it->string || !cJSON_IsString(it) || !it->valuestring) continue;
+            int ax = endstop_axis_from_name(it->string, strlen(it->string));
+            if (ax < 0) continue;
+            seen = true;
+            if (strcmp(it->valuestring, "TRIGGERED") == 0) st[ax] = 1;
         }
-        M_endstop_ms = lv_tick_get();
-        M_endstop_fresh = true;
+        if (seen) {
+            for (int i = 0; i < 3; i++) M_endstop[i] = st[i];
+            M_endstop_ms = lv_tick_get();
+            M_endstop_fresh = true;
+        }
     }
     cJSON_Delete(root);
     refresh();
