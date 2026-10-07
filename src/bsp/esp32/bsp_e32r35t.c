@@ -59,7 +59,8 @@
 #define LCD_H_RES      480   /* 横屏逻辑分辨率 */
 #define LCD_V_RES      320
 #define LCD_SPI_HZ     (40 * 1000 * 1000)
-#define DRAW_BUF_LINES 40
+#define DRAW_BUF_LINES 20   /* 无 PSRAM：2×480×20×2=38.4KB；40 行会吃掉 76.8KB，
+                             * 连上 WiFi+WS 后仅剩 ~19KB，连文件列表任务(24KB 水位线)都起不来 */
 
 /* 触摸校准十字在屏幕上的位置与间距（与参考实现一致） */
 #define CAL_P1_X  10
