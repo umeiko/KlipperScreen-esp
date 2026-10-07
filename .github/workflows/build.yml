@@ -619,10 +619,15 @@ jobs:
 
             每个 `ESP-IDFv5.5-<board>.zip` 是一种板型的固件刷机包（ESP-IDF v5.5.5 构建，资产名不带版本号）；`desktop-win-x86_64.zip` 与 `desktop-macos-arm64.zip` 是 Windows / macOS 桌面端；`desktop-linux-x86_64.tar.gz` / `desktop-linux-arm64.tar.gz` / `desktop-linux-armhf.tar.gz` 是 Linux 上位机预编译包（静态链接 SDL2，解压后运行 `install.sh`，可选 systemd 独占显示服务或桌面 App，支持 Wayland-weston / X11）；`KlipperScreen-esp-android.apk` 是 Android 手机/平板端（方向跟随系统旋转，侧载安装，与桌面端同一套 UI）。刷机前请先在上方页面确认你板子的产物名称、接线与刷机说明。
 
-            **本版更新 / What's new**
-            - 修复：传感器页限位查询命令拼写——`QUERY_ENDSTOP` → `QUERY_ENDSTOPS`（对齐 Klipper 文档/fluidd；此前上位机反复报 Unknown command，限位状态页拿不到数据）/ Fix endstop query command spelling (QUERY_ENDSTOPS); hosts no longer report Unknown command
-            - 修复：Linux 上位机电源键独占抓取（EVIOCGRAB），修"按一下偶尔直接关机"；logind drop-in 降级为兜底 / Power key grabbed exclusively on Linux hosts (no more accidental poweroff)
-            - 修复：安装脚本为 kiosk 服务模式补 NetworkManager 授权（netdev 组 + polkit 规则），WiFi 页在服务模式下可用 / Installer grants NetworkManager access for service-mode installs
+            **本版更新 / What's new**（汇总 0.7.0 以来的主要变化 / cumulative since 0.7.0）
+            - 新增：Android 手机/平板端（APK 资产，方向跟随系统旋转，与桌面端同一套 UI，应用内自更新）/ Android port with APK asset, system-rotation-following UI and in-app self-update
+            - 新增：拓竹云登录 + MQTT 云监视扩展到 Linux 桌面与 Android（密码/验证码/TFA 登录、设备列表、打印状态监视）/ Bambu cloud login + MQTT monitor on Linux desktop and Android
+            - 新增：主界面新增「菜单」入口——传感器（限位状态）、宏（带参数编辑）、控制台、风扇、Z 偏移校准五个子页 / New Menu entry with sensors, macros (param editing), console, fans and Z-calibrate pages
+            - 新增：虚拟打印机开发环境（假 klippy + 官方主线 Moonraker），无真机即可全链路调试 / Virtual printer dev setup (fake klippy + vanilla Moonraker)
+            - 修复：限位查询改用结构化 `printer.query_endstops` RPC（此前 QUERY_ENDSTOP 拼写错误导致上位机 Unknown command）/ Endstop status via structured RPC; fix QUERY_ENDSTOP typo
+            - 修复：Linux 自更新在 GitHub 直连不通时自动走镜像（ghproxy.net / gh-proxy.com）；Android 自更新 URL 缓冲与安装跳转 / Linux self-update falls back to mirrors; Android self-update URL/install fixes
+            - 修复：Linux 电源键独占抓取（EVIOCGRAB）防误关机；kiosk 服务补 NetworkManager 授权 / Linux power-key grab and NetworkManager polkit fixes
+            - 修复：ESP32 串口 CLI `mr` 命令栈溢出；e32r35t 显存过大导致堆不足、文件列表无法获取 / Fix cli stack overflow and e32r35t heap exhaustion breaking the file list
           generate_release_notes: true
           # 标签含 wip（如 v0.2.0-wip.1）时标为预发布，不抢占 latest
           prerelease: ${{ contains(github.ref_name, 'wip') }}
