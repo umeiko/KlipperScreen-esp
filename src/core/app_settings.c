@@ -339,10 +339,12 @@ bool settings_save_bambu_device(const bambu_device_conf_t *in)
 bool settings_save_moonraker_slot(int slot, const moonraker_conf_t *in)
 {
     if (slot < 0 || slot >= PRINTER_SLOTS) return false;
-    moonraker_conf_t all[PRINTER_SLOTS];
+    /* all+bambu_devices 合计约 2KB，走堆：CLI 任务栈只有 4KB，栈上放不下 */
+    moonraker_conf_t *all = malloc(sizeof(*all) * PRINTER_SLOTS);
+    bambu_device_conf_t *bambu_devices = malloc(sizeof(*bambu_devices) * PRINTER_SLOTS);
+    if (!all || !bambu_devices) { free(all); free(bambu_devices); return false; }
     machine_mode_t modes[PRINTER_SLOTS];
     bambu_link_t links[PRINTER_SLOTS];
-    bambu_device_conf_t bambu_devices[PRINTER_SLOTS];
     for (int i = 0; i < PRINTER_SLOTS; i++) {
         settings_load_moonraker_slot(i, &all[i]);
         modes[i] = settings_load_machine_mode_slot(i);
@@ -352,7 +354,7 @@ bool settings_save_moonraker_slot(int slot, const moonraker_conf_t *in)
     all[slot] = *in;
 
     char *buf = malloc(CONF_BUF_SIZE);
-    if (!buf) return false;
+    if (!buf) { free(all); free(bambu_devices); return false; }
     size_t n = snprintf(buf, CONF_BUF_SIZE, "# Printer connection slots\nactive=%d\n",
                         settings_load_active_printer());
     for (int i = 0; i < PRINTER_SLOTS; i++) {
@@ -379,6 +381,8 @@ bool settings_save_moonraker_slot(int slot, const moonraker_conf_t *in)
     }
     bool ok = bsp_conf_write("moonraker.conf", buf) == 0;
     free(buf);
+    free(all);
+    free(bambu_devices);
     mr_cache_invalidate();
     return ok;
 }
