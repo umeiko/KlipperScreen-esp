@@ -42,6 +42,13 @@ plugins:
             Home: 首页
             Screenshots: 界面展示
             Supported boards: 支持的板子
+            Overview: 总览
+            ESP32 boards: ESP32 板型
+            ESP32-S3 boards: ESP32-S3 板型
+            ESP32-C3 boards: ESP32-C3 板型
+            Linux client: Linux 客户端
+            Windows / macOS client: Windows / macOS 客户端
+            Android client: Android 客户端
             Display and encoder settings: 显示与编码器设置
             Porting to your own board: 移植到自己的开发板
             Developer notes: 开发笔记
@@ -55,7 +62,14 @@ plugins:
 nav:
   - Home: index.md
   - Screenshots: screenshots.md
-  - Supported boards: boards.md
+  - Supported boards:
+      - Overview: boards.md
+      - ESP32 boards: boards/esp32.md
+      - ESP32-S3 boards: boards/esp32s3.md
+      - ESP32-C3 boards: boards/esp32c3.md
+      - Linux client: boards/linux.md
+      - Windows / macOS client: boards/desktop.md
+      - Android client: boards/android.md
   - Porting to your own board: porting.md
   - Developer notes:
       - Architecture: architecture.md

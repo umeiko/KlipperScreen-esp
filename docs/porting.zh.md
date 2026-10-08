@@ -693,7 +693,7 @@ bash tools/build-esp32.sh myboard flash COM6
 | 7 | `.github/workflows/build.yml` | `firmware` 矩阵加一项（board/target/bdir/sdkcfg/defs/chip/flash_size/bl_offset）；`package` 矩阵加一项 | ✅ |
 | 8 | `src/ui/ui_layout.c` | 字号档加 `#elif defined(CONFIG_BOARD_<BOARD>)` | ✅ |
 | 9 | `README.md` / `README_zh.md` | 支持板型列表加一行（含状态标注） | ✅ |
-| 10 | `docs/boards.md` / `docs/boards.zh.md` | 硬件信息与引脚表（即本站“支持的板子”页） | ✅ |
+| 10 | `docs/boards/<芯片族>.md` 及对应 `.zh.md` | 硬件信息与引脚表（“支持的板子”对应芯片族子页） | ✅ |
 | 11 | `src/ports/esp32/partitions_<board>.csv` | 仅当 flash 布局与默认 `partitions.csv` 不同时 | 视情况 |
 | 12 | `src/ports/esp32/sdkconfig.<board>` | 首次构建生成的完整 sdkconfig，建议提交（与 jc8048w550 先例一致），避免 CI 重新生成时漂移 | 建议 |
 

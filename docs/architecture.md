@@ -135,7 +135,7 @@ BSP 还有两个配套抽象：
 三块特殊板型：
 
 - **JC8048W550**：不用 IDF 5.5 的 `esp_lcd_rgb_panel`，用自研驱动 `src/bsp/esp32/rgb44.c`（IDF 4.4 传输模型：每帧扫完自停 + vsync 全量重启，欠载帧下一拍自愈）+ LVGL DIRECT 双缓冲（PSRAM 双 fb，vsync 换页，flush 前整帧 `esp_cache_msync` 回写）。完整机制链与测量过程见 [jc8048w550-rgb-display-guide.md](jc8048w550-rgb-display-guide.md)，这里不展开。
-- **SenseCAP Indicator**：与 JC8048 共用同一套 rgb44 + LVGL DIRECT 双缓冲渲染路径（PCLK 12MHz，480×480 方形屏），差异在面板初始化（ST7701S 位 bang 3 线 9-bit SPI，CS/RST 挂 TCA9535 I²C 扩展器）和触摸（FT5x06，GX 批次地址 0x48）。详见 [boards.md](boards.md#sensecap-indicator)。
+- **SenseCAP Indicator**：与 JC8048 共用同一套 rgb44 + LVGL DIRECT 双缓冲渲染路径（PCLK 12MHz，480×480 方形屏），差异在面板初始化（ST7701S 位 bang 3 线 9-bit SPI，CS/RST 挂 TCA9535 I²C 扩展器）和触摸（FT5x06，GX 批次地址 0x48）。详见[支持的板子 · ESP32-S3](boards/esp32s3.md#sensecap-indicator)。
 - **esp32s3-JLC-SZP（立创实战派）**：不用 esp_lcd 面板驱动——CS 在 PCA9557 I²C 扩展器上，面板要求每笔交易都有 CS 下降沿，BSP 直接 SPI master + 手动控 CS/DC，初始化序列照抄 TFT_eSPI。
 
 新增板型的完整流程与登记清单见 [porting.md](porting.md)。
