@@ -34,7 +34,6 @@ static bsp_wifi_ap_t aps[16];       /* 静态：行点击事件要引用，不�
    只在文本变化时写 label，避免无效重绘 */
 static void refresh_status(void)
 {
-    static char prev[160] = "\x01";
     char ssid[BSP_WIFI_SSID_MAX + 1], ip[40], state[160];
 
     bool conn = bsp_wifi_current(ssid, sizeof(ssid), ip, sizeof(ip));
@@ -51,8 +50,11 @@ static void refresh_status(void)
         snprintf(state, sizeof(state), "%s", TR("未连接"));
     }
 
-    if (strcmp(state, prev) != 0) {
-        strcpy(prev, state);
+    /* The panel tree is destroyed when leaving the page.  Do not cache the
+       previous text in static storage: on the next visit lbl_state is a new,
+       empty label even when the network state itself has not changed. */
+    const char *shown = lv_label_get_text(lbl_state);
+    if (!shown || strcmp(state, shown) != 0) {
         lv_label_set_text(lbl_state, state);
         lv_obj_set_style_text_color(lbl_state,
             theme_col(conn ? THEME_COL_OK : THEME_COL_TEXT_DIM), 0);

@@ -9,6 +9,14 @@
 /* 桌面端直接用系统 malloc（内置池默认仅 64KB，放不下 320x240 快照缓冲） */
 #define LV_USE_STDLIB_MALLOC LV_STDLIB_CLIB
 
+/* Android and 64-bit ARM Linux have enough headroom for 60 FPS UI/input
+   polling.  Keep 32-bit ARM Linux at LVGL's 33 ms default: older ARMHF
+   display stacks (for example the Xiaomi Mi 4) are bandwidth-bound and can
+   become less stable when presentation pressure is increased. */
+#if defined(__ANDROID__) || (defined(__linux__) && defined(__aarch64__))
+#define LV_DEF_REFR_PERIOD 16
+#endif
+
 /* SDL2 后端 */
 #define LV_USE_SDL 1
 #define LV_SDL_MOUSEWHEEL_MODE 0   /* encoder: wheel turns, middle button presses */
