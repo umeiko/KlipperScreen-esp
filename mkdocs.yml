@@ -84,6 +84,8 @@ nav:
 
 markdown_extensions:
   - admonition
+  - pymdownx.superfences
+  - sane_lists
   - tables
   - toc:
       permalink: true
