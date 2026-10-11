@@ -36,7 +36,7 @@
 
 /* BSP_HAS_BUTTONS：板型注册了 GPIO 实体按钮导航后端（bsp_gpio_buttons，
    上/下/左/右/确定/返回喂 ui_buttons 语义层）；其余板型为 0，输入行为不变 */
-#if defined(CONFIG_BOARD_ESP32S3_RETRO_GO)
+#if defined(CONFIG_BOARD_ESP32S3_RETRO_GO) || defined(KR_WIO_TERMINAL)
 #define BSP_HAS_BUTTONS 1
 #else
 #define BSP_HAS_BUTTONS 0
@@ -48,7 +48,7 @@
  * Android=0：方向完全跟随系统（系统旋转 → 窗口 resize → 分辨率变化 →
  * UI 重建），不提供应用内旋转，避免与系统旋转双重叠加；
  * ESP32 各板走硬件 rotate180（bsp_disp_set_rotate180），不提供本能力。 */
-#if !defined(ESP_PLATFORM) && !defined(__ANDROID__)
+#if !defined(ESP_PLATFORM) && !defined(KR_WIO_TERMINAL) && !defined(__ANDROID__)
 #define BSP_HAS_DISPLAY_ROTATION 1
 #else
 #define BSP_HAS_DISPLAY_ROTATION 0
@@ -66,7 +66,7 @@
 /* BSP_HAS_BACKLIGHT：背光亮度/自动息屏控制。ESP32 各板=1（GPIO/PWM 背光）、
  * Linux 上位机=1（sysfs backlight）；Windows/macOS/Android 无可控背光=0，
  * 显示设置据此隐藏「背光」「自动息屏」行。 */
-#if defined(ESP_PLATFORM) || BSP_HAS_LINUX_HOST
+#if defined(ESP_PLATFORM) || defined(KR_WIO_TERMINAL) || BSP_HAS_LINUX_HOST
 #define BSP_HAS_BACKLIGHT 1
 #else
 #define BSP_HAS_BACKLIGHT 0
@@ -75,7 +75,7 @@
 /* BSP_HAS_WIFI：应用内 WiFi 配置能力。ESP32 真网卡=1；Windows=netsh、
  * Linux=nmcli；macOS 与 Android 的 WiFi 由系统管理=0，
  * 设置页据此隐藏「无线网络」入口。 */
-#if defined(ESP_PLATFORM) || defined(_WIN32) || \
+#if defined(ESP_PLATFORM) || defined(KR_WIO_TERMINAL) || defined(_WIN32) || \
     (defined(__linux__) && !defined(__ANDROID__))
 #define BSP_HAS_WIFI 1
 #else

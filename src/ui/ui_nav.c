@@ -1,7 +1,7 @@
 #include "ui_nav.h"
 #include "theme.h"
 
-#ifndef ESP_PLATFORM
+#if !defined(ESP_PLATFORM) && !defined(KR_WIO_TERMINAL)
 #include <SDL.h>
 #endif
 
@@ -26,7 +26,7 @@ static unsigned modal_depth;
 static lv_obj_t *global_obj;
 static bool global_enabled;
 
-#ifndef ESP_PLATFORM
+#if !defined(ESP_PLATFORM) && !defined(KR_WIO_TERMINAL)
 static lv_obj_t *desktop_textarea;
 static ui_desktop_input_cb_t desktop_input_cb;
 static void *desktop_input_ud;
@@ -468,7 +468,7 @@ lv_group_t *ui_nav_active_group(void)
 
 bool ui_desktop_input_active(void)
 {
-#ifndef ESP_PLATFORM
+#if !defined(ESP_PLATFORM) && !defined(KR_WIO_TERMINAL)
     return desktop_textarea != NULL || desktop_input_cb != NULL;
 #else
     return false;
@@ -477,7 +477,7 @@ bool ui_desktop_input_active(void)
 
 void ui_desktop_textarea_begin(lv_obj_t *textarea)
 {
-#ifndef ESP_PLATFORM
+#if !defined(ESP_PLATFORM) && !defined(KR_WIO_TERMINAL)
     desktop_textarea = textarea;
     desktop_input_cb = NULL;
     desktop_input_ud = NULL;
@@ -489,7 +489,7 @@ void ui_desktop_textarea_begin(lv_obj_t *textarea)
 
 void ui_desktop_input_begin(ui_desktop_input_cb_t callback, void *user_data)
 {
-#ifndef ESP_PLATFORM
+#if !defined(ESP_PLATFORM) && !defined(KR_WIO_TERMINAL)
     desktop_textarea = NULL;
     desktop_input_cb = callback;
     desktop_input_ud = user_data;
@@ -502,7 +502,7 @@ void ui_desktop_input_begin(ui_desktop_input_cb_t callback, void *user_data)
 
 void ui_desktop_input_end(void)
 {
-#ifndef ESP_PLATFORM
+#if !defined(ESP_PLATFORM) && !defined(KR_WIO_TERMINAL)
     desktop_textarea = NULL;
     desktop_input_cb = NULL;
     desktop_input_ud = NULL;

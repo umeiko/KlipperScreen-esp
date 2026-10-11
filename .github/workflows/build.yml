@@ -231,6 +231,46 @@ jobs:
           name: packages-${{ github.ref_name }}
           path: pkg/
 
+  wio-terminal:
+    # ATSAMD51 is a separate architecture from the ESP-IDF firmware matrix.
+    # Build it with the pinned PlatformIO environment and publish a drag-and-drop
+    # UF2 image for the Wio Terminal bootloader.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Cache PlatformIO packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: platformio-wio-terminal-${{ hashFiles('src/ports/wio_terminal/platformio.ini') }}
+          restore-keys: |
+            platformio-wio-terminal-
+
+      - name: Install PlatformIO
+        run: python -m pip install --disable-pip-version-check platformio==6.2.0
+
+      - name: Build Wio Terminal firmware
+        run: platformio run -d src/ports/wio_terminal -e wio-terminal
+
+      - name: Package Wio Terminal UF2
+        run: |
+          mkdir -p dist-wio
+          python tools/make_uf2.py \
+            src/ports/wio_terminal/.pio/build/wio-terminal/firmware.bin \
+            dist-wio/KlipperScreen-esp-Wio-Terminal.uf2
+          test -s dist-wio/KlipperScreen-esp-Wio-Terminal.uf2
+          sha256sum dist-wio/KlipperScreen-esp-Wio-Terminal.uf2
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wio-terminal-${{ github.ref_name }}
+          path: dist-wio/KlipperScreen-esp-Wio-Terminal.uf2
+
   desktop-win:
     runs-on: windows-latest
     steps:
@@ -533,7 +573,7 @@ jobs:
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [package, desktop-win, desktop-mac, desktop-linux, android]
+    needs: [package, wio-terminal, desktop-win, desktop-mac, desktop-linux, android]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -544,6 +584,11 @@ jobs:
         with:
           name: packages-${{ github.ref_name }}
           path: dl/pkg
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: wio-terminal-${{ github.ref_name }}
+          path: dl/wio
 
       - uses: actions/download-artifact@v4
         with:
@@ -590,6 +635,8 @@ jobs:
           (cd dl/desktop-mac && chmod +x KlipperScreen-esp klipper_remote_simulator && zip -r "$GITHUB_WORKSPACE/desktop-macos-arm64.zip" .)
           # Android APK 已是成品（CI 已按固定测试密钥签名），直接搬上来
           cp dl/android/KlipperScreen-esp-android.apk "$GITHUB_WORKSPACE/"
+          # Wio Terminal 使用 UF2 Bootloader，发布可直接拖入 Arduino 磁盘的成品。
+          cp dl/wio/KlipperScreen-esp-Wio-Terminal.uf2 "$GITHUB_WORKSPACE/"
           # Linux 产物在构建 job 里已打成 tar.gz（保留执行位），直接搬上来
           cp dl/linux-x64/desktop-linux-x86_64.tar.gz dl/linux-arm64/desktop-linux-arm64.tar.gz \
              dl/linux-armhf/desktop-linux-armhf.tar.gz "$GITHUB_WORKSPACE/"
@@ -597,12 +644,14 @@ jobs:
           for f in desktop-linux-x86_64.tar.gz desktop-linux-arm64.tar.gz desktop-linux-armhf.tar.gz KlipperScreen-esp-android.apk; do
             (cd "$GITHUB_WORKSPACE" && md5sum "$f" > "$f.md5")
           done
-          ls -la "$GITHUB_WORKSPACE"/*.zip "$GITHUB_WORKSPACE"/*.tar.gz "$GITHUB_WORKSPACE"/*.md5
+          ls -la "$GITHUB_WORKSPACE"/*.zip "$GITHUB_WORKSPACE"/*.tar.gz \
+                 "$GITHUB_WORKSPACE"/*.uf2 "$GITHUB_WORKSPACE"/*.md5
 
       - uses: softprops/action-gh-release@v2
         with:
           files: |
             ESP-IDFv5.5-*.zip
+            KlipperScreen-esp-Wio-Terminal.uf2
             desktop-win-x86_64.zip
             desktop-macos-arm64.zip
             desktop-linux-x86_64.tar.gz
@@ -617,10 +666,11 @@ jobs:
           body: |
             **Supported boards / 支持的板型**: https://umeiko.github.io/KlipperScreen-esp/boards/
 
-            每个 `ESP-IDFv5.5-<board>.zip` 是一种板型的固件刷机包（ESP-IDF v5.5.5 构建，资产名不带版本号）；`desktop-win-x86_64.zip` 与 `desktop-macos-arm64.zip` 是 Windows / macOS 桌面端；`desktop-linux-x86_64.tar.gz` / `desktop-linux-arm64.tar.gz` / `desktop-linux-armhf.tar.gz` 是 Linux 上位机预编译包（静态链接 SDL2，解压后运行 `install.sh`，可选 systemd 独占显示服务或桌面 App，支持 Wayland-weston / X11）；`KlipperScreen-esp-android.apk` 是 Android 手机/平板端（方向跟随系统旋转，侧载安装，与桌面端同一套 UI）。刷机前请先在上方页面确认你板子的产物名称、接线与刷机说明。
+            每个 `ESP-IDFv5.5-<board>.zip` 是一种 ESP32 板型的固件刷机包（ESP-IDF v5.5.5 构建，资产名不带版本号）；`KlipperScreen-esp-Wio-Terminal.uf2` 是 Seeed Wio Terminal（SAMD51）可直接拖入 UF2 磁盘的固件；`desktop-win-x86_64.zip` 与 `desktop-macos-arm64.zip` 是 Windows / macOS 桌面端；`desktop-linux-x86_64.tar.gz` / `desktop-linux-arm64.tar.gz` / `desktop-linux-armhf.tar.gz` 是 Linux 上位机预编译包（静态链接 SDL2，解压后运行 `install.sh`，可选 systemd 独占显示服务或桌面 App，支持 Wayland-weston / X11）；`KlipperScreen-esp-android.apk` 是 Android 手机/平板端（方向跟随系统旋转，侧载安装，与桌面端同一套 UI）。刷机前请先在上方页面确认你板子的产物名称、接线与刷机说明。
 
             **本版更新 / What's new**（汇总 0.7.0 以来的主要变化 / cumulative since 0.7.0）
             - 新增：Android 手机/平板端（APK 资产，方向跟随系统旋转，与桌面端同一套 UI，应用内自更新）/ Android port with APK asset, system-rotation-following UI and in-app self-update
+            - 新增：Seeed Wio Terminal（ATSAMD51 + RTL8720DN）端口，五向开关操作，提供拖拽刷写的 UF2 资产 / Seeed Wio Terminal port with five-way navigation and a drag-and-drop UF2 asset
             - 新增：拓竹云登录 + MQTT 云监视扩展到 Linux 桌面与 Android（密码/验证码/TFA 登录、设备列表、打印状态监视）/ Bambu cloud login + MQTT monitor on Linux desktop and Android
             - 新增：主界面新增「菜单」入口——传感器（限位状态）、宏（带参数编辑）、控制台、风扇、Z 偏移校准五个子页 / New Menu entry with sensors, macros (param editing), console, fans and Z-calibrate pages
             - 新增：虚拟打印机开发环境（假 klippy + 官方主线 Moonraker），无真机即可全链路调试 / Virtual printer dev setup (fake klippy + vanilla Moonraker)

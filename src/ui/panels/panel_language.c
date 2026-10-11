@@ -33,7 +33,7 @@ static void refresh(void)
     }
 }
 
-#ifndef ESP_PLATFORM
+#if !defined(ESP_PLATFORM) && !defined(KR_WIO_TERMINAL)
 /* 桌面端免重启：重建面板后回到本页（此时界面已是新语言） */
 static void reload_panels(void *unused)
 {
@@ -54,7 +54,7 @@ static void on_language_click(lv_event_t *e)
     }
 
     ui_lang_set(selected);
-#ifdef ESP_PLATFORM
+#if defined(ESP_PLATFORM) || defined(KR_WIO_TERMINAL)
     refresh();
     lv_refr_now(NULL);
     bsp_fade_out(1000);

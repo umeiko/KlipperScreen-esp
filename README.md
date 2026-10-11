@@ -11,7 +11,7 @@
   <img src="docs/screenshots/main_photo.jpg" alt="KlipperScreen-esp running on multiple devices" width="720">
 </p>
 
-**KlipperScreen-esp** is a compact, cross-platform display and controller for 3D printers. It runs on inexpensive ESP32 dev boards as well as Windows/macOS desktops, fully controls **Klipper** printers through **Moonraker**, and provides **Bambu cloud status monitoring**.
+**KlipperScreen-esp** is a compact, cross-platform display and controller for 3D printers. It runs on inexpensive ESP32 boards, Seeed Wio Terminal, and desktop/mobile systems, fully controls **Klipper** printers through **Moonraker**, and provides **Bambu cloud status monitoring**.
 
 ## Screenshots
 
@@ -27,7 +27,7 @@ Full interface gallery on the docs site: **[Screenshots](https://umeiko.github.i
 
 ## Tech stack
 
-ESP-IDF v5.5.5 · LVGL v9.3 · Multi-backend (ESP32, Windows, Linux, macOS)
+ESP-IDF v5.5.5 · PlatformIO/ATSAMD51 · LVGL v9.3 · Multi-backend (ESP32, Wio Terminal, Windows, Linux, macOS, Android)
 
 ## Flash 
 
@@ -36,7 +36,9 @@ Download the flash package `*.zip` for your board from [Releases](../../releases
 - **Windows**: double-click the `*.bat` script and follow the prompts.
 - **macOS / Linux**: `pip install esptool`, then `./flash.sh /dev/ttyUSB0`
 
-Supported boards: the common yellow CYD ESP32 dev boards and ESP32-S3 boards. Prebuilt firmware per board: **[Supported boards](https://umeiko.github.io/KlipperScreen-esp/boards/)**
+For **Seeed Wio Terminal**, download `KlipperScreen-esp-Wio-Terminal.uf2`, enter the UF2 bootloader by sliding the power/reset switch twice quickly, then copy the file to the `Arduino` drive.
+
+Supported boards include the common yellow CYD ESP32 boards, ESP32-S3/C3 boards, and Seeed Wio Terminal. Prebuilt firmware per board: **[Supported boards](https://umeiko.github.io/KlipperScreen-esp/boards/)**
 
 ## Deploying to a Linux host
 
@@ -74,6 +76,7 @@ Toolchain: **ESP-IDF v5.5.5** · **LVGL v9.3** · SDL2 (desktop).
 bash tools/build-desktop.sh                       # desktop (KlipperScreen-esp controller + simulator)
 bash tools/build-esp32.sh <board> build           # ESP32 firmware (16 boards)
 bash tools/build-esp32.sh <board> flash COMx      # build and flash
+platformio run -d src/ports/wio_terminal -e wio-terminal  # Wio Terminal
 ```
 
 Linux hosts can also build from source: `sudo apt install cmake libsdl2-dev libcjson-dev`, then in `src/ports/desktop` run `cmake -S . -B build && cmake --build build`.

@@ -5,7 +5,8 @@
 ## 编译依赖
 
 1. 安装 **ESP-IDF** v5.5.5（ESP32 固件）。
-2. 安装 **便携 MSYS2**（desktop 后端的 MinGW 编译环境）：
+2. 安装 **PlatformIO Core**（Seeed Wio Terminal 固件）。
+3. 安装 **便携 MSYS2**（desktop 后端的 MinGW 编译环境）：
    ```bash
    curl -L -o tools/dl/msys2-base.tar.xz https://mirrors.tuna.tsinghua.edu.cn/msys2/distrib/x86_64/msys2-base-x86_64-20260611.tar.xz
    mkdir -p tools/msys64 && tar -xf tools/dl/msys2-base.tar.xz -C tools/msys64 --strip-components=1
@@ -14,8 +15,8 @@
    echo 'Server = https://mirrors.tuna.tsinghua.edu.cn/msys2/mingw/$repo' > tools/msys64/etc/pacman.d/mirrorlist.mingw
    tools/msys64/usr/bin/bash.exe -lc "pacman -Sy --noconfirm mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-SDL2 mingw-w64-ucrt-x86_64-cjson"
    ```
-3. 克隆 **LVGL** 源码：`git clone --depth 1 -b release/v9.3 https://gitee.com/mirrors/lvgl.git third_party/lvgl`
-4. **拓竹 POSIX 后端依赖**（仅 Linux 桌面端与 Android 需要；Windows 桌面端用 winhttp/openssl、ESP32 用 IDF mbedTLS，均不涉及）：
+4. 克隆 **LVGL** 源码：`git clone --depth 1 -b release/v9.3 https://gitee.com/mirrors/lvgl.git third_party/lvgl`
+5. **拓竹 POSIX 后端依赖**（仅 Linux 桌面端与 Android 需要；Windows 桌面端用 winhttp/openssl、ESP32 用 IDF mbedTLS，均不涉及）：
    ```bash
    git clone --depth 1 --recurse-submodules --shallow-submodules -b v3.6.5 \
      https://github.com/Mbed-TLS/mbedtls.git third_party/mbedtls
@@ -36,6 +37,16 @@ bash tools/build-desktop.sh
 bash tools/build-esp32.sh <board> build          # 只构建
 bash tools/build-esp32.sh <board> flash COMx     # 构建并烧录
 bash tools/build-esp32.sh all build              # 全部板型
+```
+
+Wio Terminal 使用独立的 PlatformIO 端口；网卡固件、下载模式和 USB 恢复细节见 [Wio Terminal](boards/wio-terminal.md)：
+
+```powershell
+platformio run -d src/ports/wio_terminal -e wio-terminal
+platformio run -d src/ports/wio_terminal -e wio-terminal -t upload --upload-port COM3
+python tools/make_uf2.py `
+  src/ports/wio_terminal/.pio/build/wio-terminal/firmware.bin `
+  src/ports/wio_terminal/.pio/build/wio-terminal/firmware.uf2
 ```
 
 board 取值：`cyd_2432s028r` / `cyd_2432s028r_plus` / `e32r35t` / `esp32s3-st7789-320_240-ec11` / `esp32-st7735s-128_160-ec11` / `esp32-st7789-320_240-ec11` / `esp32-ILI9341-320_240-ec11` / `esp32-ST7796-320_240-ec11` / `esp32s3-st7796-480_320-xpt2046-ec11` / `esp32s3-ILI9488-480_320-xpt2046-ec11` / `esp32s3-ILI9341-320_240-xpt2046-ec11` / `jc8048w550` / `esp32s3-JLC-SZP` / `esp32s3-retro-go` / `esp32c3-st7789-320_240-ec11`。每板型有独立的构建目录与 sdkconfig（芯片目标不同，不能混用）。

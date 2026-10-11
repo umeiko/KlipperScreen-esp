@@ -34,7 +34,7 @@ static void on_macro(lv_event_t *e)
     do_run((int)(intptr_t)lv_event_get_user_data(e));
 }
 
-#if !defined(ESP_PLATFORM)
+#if !defined(ESP_PLATFORM) && !defined(KR_WIO_TERMINAL)
 
 #include "../widgets/keypad.h"
 
@@ -307,7 +307,7 @@ static void on_tick(void)
 }
 #endif /* !ESP_PLATFORM */
 
-#if !defined(ESP_PLATFORM) && defined(KLIPPER_DESKTOP_SIMULATOR)
+#if !defined(ESP_PLATFORM) && !defined(KR_WIO_TERMINAL) && defined(KLIPPER_DESKTOP_SIMULATOR)
 /* 模拟器截图用：直接进入第 idx 个宏的参数编辑页（main.c 的 macro-form 演示参数） */
 void panel_macros_demo_open_form(void *idx)
 {
@@ -320,7 +320,7 @@ static lv_obj_t *create(void)
     lv_obj_t *scr = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(scr, theme_col(THEME_COL_BG), 0);
     lv_obj_set_scroll_dir(scr, LV_DIR_VER);
-#if !defined(ESP_PLATFORM)
+#if !defined(ESP_PLATFORM) && !defined(KR_WIO_TERMINAL)
     memset(row_edit_icons, 0, sizeof(row_edit_icons));
     row_icons_dirty = true;
 #endif
@@ -341,7 +341,7 @@ static lv_obj_t *create(void)
         lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_add_event_cb(row, on_macro, LV_EVENT_CLICKED, (void *)(intptr_t)i);
 
-#if defined(ESP_PLATFORM)
+#if defined(ESP_PLATFORM) || defined(KR_WIO_TERMINAL)
         /* ESP32：纯列表点选执行，无图标无输入 */
         lv_obj_t *lbl = theme_label(row, printer_macro_label(i),
                                     THEME_FONT_M, THEME_COL_TEXT);
@@ -372,7 +372,7 @@ static lv_obj_t *create(void)
     }
 
     ui_nav_group_set_list(lv_group_get_default(), true);
-#if !defined(ESP_PLATFORM)
+#if !defined(ESP_PLATFORM) && !defined(KR_WIO_TERMINAL)
     sync_row_edit_icons();   /* 参数已就绪则立即隐藏无参数行的图标；加载中留给 on_tick */
 #endif
     return scr;
@@ -382,7 +382,7 @@ panel_def_t panel_macros_def = {
     .name = "macros", .title = "宏", .title_s = "宏",
     .create = create,
     .on_show = NULL,
-#if defined(ESP_PLATFORM)
+#if defined(ESP_PLATFORM) || defined(KR_WIO_TERMINAL)
     .on_tick = NULL,
 #else
     .on_tick = on_tick,

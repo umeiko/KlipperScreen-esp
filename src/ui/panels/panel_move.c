@@ -3,6 +3,7 @@
  */
 #include "../theme.h"
 #include "../ui_anim.h"
+#include "../ui_nav.h"
 #include "../panel_mgr.h"
 #include "printer.h"
 #include "../widgets/toggle_group.h"
@@ -101,6 +102,8 @@ static lv_obj_t *create(void)
         lv_obj_add_event_cb(b, on_home, LV_EVENT_CLICKED, (void *)(intptr_t)homes[i].axis);
     }
 
+    /* 距离档、三轴点动与归位按钮组成二维网格，五向键按几何位置走焦点。 */
+    ui_nav_group_set_spatial(lv_group_get_default(), true);
     return scr;
 }
 

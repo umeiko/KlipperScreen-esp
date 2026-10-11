@@ -46,6 +46,7 @@ plugins:
             ESP32 boards: ESP32 板型
             ESP32-S3 boards: ESP32-S3 板型
             ESP32-C3 boards: ESP32-C3 板型
+            Seeed Wio Terminal: Seeed Wio Terminal
             Linux client: Linux 客户端
             Windows / macOS client: Windows / macOS 客户端
             Android client: Android 客户端
@@ -67,6 +68,7 @@ nav:
       - ESP32 boards: boards/esp32.md
       - ESP32-S3 boards: boards/esp32s3.md
       - ESP32-C3 boards: boards/esp32c3.md
+      - Seeed Wio Terminal: boards/wio-terminal.md
       - Linux client: boards/linux.md
       - Windows / macOS client: boards/desktop.md
       - Android client: boards/android.md

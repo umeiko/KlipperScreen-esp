@@ -9,7 +9,7 @@
   <img src="docs/screenshots/main_photo.jpg" alt="多设备实机运行效果" width="720">
 </p>
 
-**KlipperScreen-esp** 是一款紧凑的跨平台 3D 打印机显示与控制软件，可运行在低成本 ESP32 开发板以及 Windows/macOS 桌面端。它通过 **Moonraker** 完整控制 **Klipper** 打印机，并提供 **拓竹云端状态监视** 
+**KlipperScreen-esp** 是一款紧凑的跨平台 3D 打印机显示与控制软件，可运行在低成本 ESP32 开发板、Seeed Wio Terminal 以及桌面/移动设备上。它通过 **Moonraker** 完整控制 **Klipper** 打印机，并提供 **拓竹云端状态监视**。
 
 
 ## 界面实拍
@@ -29,7 +29,7 @@
 
 ## 技术栈
 
-ESP-IDF v5.5.5 · LVGL v9.3 · 多后端（ESP32, Windows, Linux, MacOS）
+ESP-IDF v5.5.5 · PlatformIO/ATSAMD51 · LVGL v9.3 · 多后端（ESP32、Wio Terminal、Windows、Linux、macOS、Android）
 
 ## 刷机（免编译）
 
@@ -38,7 +38,9 @@ ESP-IDF v5.5.5 · LVGL v9.3 · 多后端（ESP32, Windows, Linux, MacOS）
 - **Windows**：双击 `*.bat`脚本，根据提示刷机即可。
 - **macOS / Linux**：在终端内`pip install esptool`后， `./flash.sh /dev/ttyUSB0`
 
-支持板型：最常见的各种CYD黄色esp32开发板，以及esp32s3开发板。预编译固件详见 **[支持的板子](https://umeiko.github.io/KlipperScreen-esp/zh/boards/)**
+**Seeed Wio Terminal** 请下载 `KlipperScreen-esp-Wio-Terminal.uf2`，快速拨动电源/复位开关两次进入 UF2 Bootloader，再把文件复制到 `Arduino` 磁盘。
+
+支持板型包括常见 CYD 黄色 ESP32、ESP32-S3/C3 与 Seeed Wio Terminal。预编译固件详见 **[支持的板子](https://umeiko.github.io/KlipperScreen-esp/zh/boards/)**
 
 ## 部署到 Linux 上位机
 
@@ -77,6 +79,7 @@ curl -fsSL https://raw.githubusercontent.com/umeiko/KlipperScreen-esp/main/scrip
 bash tools/build-desktop.sh                       # 桌面端（控制端 KlipperScreen-esp + 模拟器）
 bash tools/build-esp32.sh <board> build           # ESP32 固件（16 种板型）
 bash tools/build-esp32.sh <board> flash COMx      # 构建并烧录
+platformio run -d src/ports/wio_terminal -e wio-terminal  # Wio Terminal
 ```
 
 Linux 上位机也可从源码构建：`sudo apt install cmake libsdl2-dev libcjson-dev` 后进 `src/ports/desktop` 执行 `cmake -S . -B build && cmake --build build`。

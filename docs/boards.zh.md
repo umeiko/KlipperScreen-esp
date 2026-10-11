@@ -5,6 +5,7 @@
 - **[ESP32 板型](boards/esp32.md)** —— CYD 2432S028R / 2432S028R-PLUS、E32R35T，以及 ST7735S / ST7789 / ILI9341 / ST7796 纯旋钮机型
 - **[ESP32-S3 板型](boards/esp32s3.md)** —— EC11 参考机型、MKS TS35 / PI-TS35 孪生机型、JC8048W550、SenseCAP Indicator、立创实战派、retro-go
 - **[ESP32-C3 板型](boards/esp32c3.md)** —— 合宙 CORE / Super Mini 纯旋钮机型
+- **[Seeed Wio Terminal](boards/wio-terminal.md)** —— SAMD51 + ILI9341 + 五向开关，含 RTL8720DN 固件及 USB 排障
 - **[Linux 客户端](boards/linux.md)** —— 直接在打印机的 Linux 上位机上跑同一套 UI
 - **[Windows / macOS 客户端](boards/desktop.md)** —— PC / Mac 桌面应用
 - **[Android 客户端](boards/android.md)** —— 手机 / 平板应用
@@ -29,10 +30,11 @@
 | [立创实战派（JLC SZP）ESP32-S3](boards/esp32s3.md#jlc-szp-esp32-s3) | `esp32s3-JLC-SZP` | 2.0" 240×320 ST7789 SPI | FT6336 电容 | ESP32-S3 N16R8 / 16MB | ✅ 已实机验证 |
 | [esp32s3-retro-go](boards/esp32s3.md#esp32s3-retro-go) | `esp32s3-retro-go` | 3.2" 240×320 ST7789 SPI | 无，GPIO 按键 | ESP32-S3 / 16MB | 🆕 新机型 |
 | [esp32c3-st7789-320_240-ec11](boards/esp32c3.md#esp32c3-st7789-320_240-ec11) | `esp32c3-st7789-320_240-ec11` | 240×320 ST7789 SPI | 无，纯旋钮 | ESP32-C3 / 4MB | 🆕 新机型，合宙 CORE/Super Mini 通用 |
+| [Seeed Wio Terminal](boards/wio-terminal.md) | `wio-terminal` | 2.4" 320×240 ILI9341 SPI | 无，五向开关 | SAMD51 / 512KB + 4MiB QSPI | ✅ 已实机验证 |
 
 ## 下载（最新正式版）
 
-刷机包命名：`ESP-IDFv5.5-<board>.zip`（资产名不带版本号，下面的直链永远指向最新正式版）。遇到问题请到 [Issues](https://github.com/umeiko/KlipperScreen-esp/issues) 反馈。
+ESP32 刷机包命名为 `ESP-IDFv5.5-<board>.zip`，Wio Terminal 则直接使用可拖入下载盘的 `.uf2`。资产名都不带版本号，下面的直链永远指向最新正式版。遇到问题请到 [Issues](https://github.com/umeiko/KlipperScreen-esp/issues) 反馈。
 
 | 板型 | 刷机包直链（最新正式版） |
 |---|---|
@@ -52,6 +54,7 @@
 | 立创实战派 ESP32-S3 | [ESP-IDFv5.5-esp32s3-JLC-SZP.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/ESP-IDFv5.5-esp32s3-JLC-SZP.zip) |
 | esp32s3-retro-go | [ESP-IDFv5.5-esp32s3-retro-go.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/ESP-IDFv5.5-esp32s3-retro-go.zip) |
 | esp32c3-st7789-320_240-ec11 | [ESP-IDFv5.5-esp32c3-st7789-320_240-ec11.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/ESP-IDFv5.5-esp32c3-st7789-320_240-ec11.zip) |
+| Seeed Wio Terminal | [KlipperScreen-esp-Wio-Terminal.uf2](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/KlipperScreen-esp-Wio-Terminal.uf2) |
 | Windows 桌面模拟器 | [desktop-win-x86_64.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/desktop-win-x86_64.zip) |
 | macOS 桌面端 | [desktop-macos-arm64.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/desktop-macos-arm64.zip) |
 | Linux 上位机（x86_64） | [desktop-linux-x86_64.tar.gz](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/desktop-linux-x86_64.tar.gz) |

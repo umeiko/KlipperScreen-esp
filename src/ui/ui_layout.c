@@ -24,7 +24,17 @@ LV_FONT_DECLARE(font_cjk_32);
 LV_FONT_DECLARE(font_cjk_28_min);
 LV_FONT_DECLARE(font_cjk_32_min);
 LV_FONT_DECLARE(font_latin_24);   /* 纯西文 Lato 24（ui_font_latin24，2x 屏拉丁语缩档用） */
-#ifndef ESP_PLATFORM
+#if defined(KR_WIO_TERMINAL)
+/* Wio 内部 flash 很紧：仅补 Montserrat 缺失的 Latin-1 / UI 标点，ASCII
+   与 LV_SYMBOL 通过各字体的 fallback 继续复用 LVGL 内置字形。 */
+LV_FONT_DECLARE(font_wio_12);
+LV_FONT_DECLARE(font_wio_14);
+LV_FONT_DECLARE(font_wio_16);
+LV_FONT_DECLARE(font_wio_cjk_12);
+LV_FONT_DECLARE(font_wio_cjk_14);
+LV_FONT_DECLARE(font_wio_cjk_16);
+#endif
+#if !defined(ESP_PLATFORM) && !defined(KR_WIO_TERMINAL)
 /* 桌面端 720p+（scale>=3）大字档（gen_fonts.py DESKTOP_ONLY_SIZES，文件体带平台守卫） */
 LV_FONT_DECLARE(font_cjk_40);
 LV_FONT_DECLARE(font_cjk_48);
@@ -67,9 +77,11 @@ int ui_content_w(void)
     return scr_w - 2 * ui_px(8);
 }
 
+#if !defined(KR_WIO_TERMINAL)
 static int big(void)   { return scale_f >= 2.0f; }
 static int small(void) { return scale_f < 1.0f; }
-#ifndef ESP_PLATFORM
+#endif
+#if !defined(ESP_PLATFORM) && !defined(KR_WIO_TERMINAL)
 /* 桌面端 720p+（红米4 等 5 寸 720p 面板 DPI 高，28/32 档物理尺寸仅 ~3mm） */
 static int huge(void)  { return scale_f >= 3.0f; }
 #endif
@@ -112,6 +124,10 @@ static int huge(void)  { return scale_f >= 3.0f; }
 #elif defined(CONFIG_BOARD_SENSECAP_INDICATOR)
 #define UI_FONT_BIG 1   /* 480x480，scale 2.0 → 28/32 档 */
 #define UI_FONT_MIN 0   /* 全表 GB2312：PCLK 12MHz 带宽余量比 JC8048 大，实测无抽动 */
+#elif defined(KR_WIO_TERMINAL)
+/* SAMD51 只有约 496KB 可执行 flash：使用 Wio 专属的紧凑拉丁扩展与
+   三级中文子集，避免把 1.2MB 的完整 GB2312 字形表链入。 */
+#define UI_FONT_WIO 1
 #endif
 
 /* JC8048：最小子集优先，未定义 UI_FONT_MIN 时默认全表 */
@@ -125,7 +141,9 @@ static int huge(void)  { return scale_f >= 3.0f; }
 
 const lv_font_t *ui_font_s(void)
 {
-#if defined(UI_FONT_SMALL)
+#if defined(UI_FONT_WIO)
+    return &font_wio_cjk_14;
+#elif defined(UI_FONT_SMALL)
     return &font_cjk_10_cmp;
 #elif defined(UI_FONT_BIG)
     return UI_FONT_BIG ? &UI_FONT_28 : &font_cjk_14_cmp;
@@ -139,7 +157,9 @@ const lv_font_t *ui_font_s(void)
 
 const lv_font_t *ui_font_m(void)
 {
-#if defined(UI_FONT_SMALL)
+#if defined(UI_FONT_WIO)
+    return &font_wio_cjk_16;
+#elif defined(UI_FONT_SMALL)
     return &font_cjk_12_cmp;
 #elif defined(UI_FONT_BIG)
     return UI_FONT_BIG ? &UI_FONT_32 : &font_cjk_16_cmp;
@@ -153,7 +173,9 @@ const lv_font_t *ui_font_m(void)
 
 const lv_font_t *ui_font_l(void)
 {
-#if defined(UI_FONT_SMALL)
+#if defined(UI_FONT_WIO)
+    return &lv_font_montserrat_20;
+#elif defined(UI_FONT_SMALL)
     return &lv_font_montserrat_12;
 #elif defined(UI_FONT_BIG)
     return UI_FONT_BIG ? &lv_font_montserrat_48 : &lv_font_montserrat_24;
@@ -165,7 +187,11 @@ const lv_font_t *ui_font_l(void)
 
 const lv_font_t *ui_font_xl(void)
 {
-#if defined(UI_FONT_SMALL)
+#if defined(UI_FONT_WIO)
+    /* Share the 20px face with the large-value role. A separate 24px bitmap
+       costs about 24 KiB on a part with only 496 KiB program flash. */
+    return &lv_font_montserrat_20;
+#elif defined(UI_FONT_SMALL)
     return &lv_font_montserrat_16;
 #elif defined(UI_FONT_BIG)
     return UI_FONT_BIG ? &lv_font_montserrat_48 : &lv_font_montserrat_28;
@@ -177,7 +203,9 @@ const lv_font_t *ui_font_xl(void)
 
 const lv_font_t *ui_font_icon(void)
 {
-#if defined(UI_FONT_SMALL)
+#if defined(UI_FONT_WIO)
+    return &lv_font_montserrat_16;
+#elif defined(UI_FONT_SMALL)
     return &lv_font_montserrat_12;
 #elif defined(UI_FONT_BIG)
     return UI_FONT_BIG ? &lv_font_montserrat_32 : &lv_font_montserrat_16;
@@ -195,7 +223,9 @@ const lv_font_t *ui_font_icon(void)
    非 2x 档/非大屏板型回退正文小字档，且不引用 font_latin_24（链接器裁掉，省 flash） */
 const lv_font_t *ui_font_latin24(void)
 {
-#if defined(UI_FONT_SMALL)
+#if defined(UI_FONT_WIO)
+    return &font_wio_cjk_14;
+#elif defined(UI_FONT_SMALL)
     return &font_cjk_12_cmp;
 #elif defined(UI_FONT_BIG)
     return UI_FONT_BIG ? &font_latin_24 : &font_cjk_14_cmp;
@@ -210,7 +240,9 @@ const lv_font_t *ui_font_latin24(void)
 
 const lv_font_t *ui_font_value_compact(void)
 {
-#if defined(UI_FONT_SMALL)
+#if defined(UI_FONT_WIO)
+    return &font_wio_cjk_12;
+#elif defined(UI_FONT_SMALL)
     return &font_cjk_10_cmp;   /* 160x128 已经是最小可读档 */
 #elif defined(UI_FONT_BIG)
     return UI_FONT_BIG ? &font_latin_24 : &lv_font_montserrat_12;
@@ -224,7 +256,10 @@ const lv_font_t *ui_font_value_compact(void)
 #endif
 }
 
-/* 小屏(160x128) 0.45x 图标映射：base → _sm 变体（tools/icongen 生成） */
+#if !defined(UI_FONT_WIO)
+/* 小屏(160x128) 0.45x 图标映射：base → _sm 变体（tools/icongen 生成）。
+   Wio Terminal 内部 flash 只有 496KB，它固定用基准图标，不编译这张
+   映射表，让链接器能够完整裁掉所有 _sm 资源。 */
 static const struct { const lv_image_dsc_t *base, *sm; } icon_sm_map[] = {
     { &img_heater,          &img_heater_sm },
     { &img_nozzle_16,       &img_nozzle_16_sm },
@@ -263,8 +298,9 @@ static const lv_image_dsc_t *icon_sm(const lv_image_dsc_t *base)
         if (icon_sm_map[i].base == base) return icon_sm_map[i].sm;
     return base;
 }
+#endif
 
-#ifndef ESP_PLATFORM
+#if !defined(ESP_PLATFORM) && !defined(KR_WIO_TERMINAL)
 /* 桌面端 720p+（huge 档）图标映射：big 档返回值 → 2x 变体（tools/icongen 生成）。
    ESP32 不编译此表，_lg/_36/_64/_112 图标全部不进固件。 */
 static const struct { const lv_image_dsc_t *big, *lg; } icon_lg_map[] = {
@@ -307,7 +343,10 @@ static const lv_image_dsc_t *icon_lg(const lv_image_dsc_t *big_icon)
 
 const lv_image_dsc_t *ui_icon(const lv_image_dsc_t *i16, const lv_image_dsc_t *i32)
 {
-#if defined(UI_FONT_SMALL)
+#if defined(UI_FONT_WIO)
+    (void)i32;
+    return i16;
+#elif defined(UI_FONT_SMALL)
     (void)i32;
     return icon_sm(i16);   /* 小屏恒用 0.45x 变体（无映射则用原图） */
 #elif defined(UI_FONT_BIG)

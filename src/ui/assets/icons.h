@@ -118,6 +118,27 @@ LV_IMAGE_DECLARE(img_zcal);         /* 24px 垂直双箭头：Z 校准 */
 LV_IMAGE_DECLARE(img_zcal_sm);
 LV_IMAGE_DECLARE(img_zcal_48);
 
+/* Wio Terminal has only 496KB of executable flash. Its fixed 320x240 layout
+   always selects the normal-size asset, so alias big arguments at preprocess
+   time instead of creating otherwise-dead symbol references at call sites. */
+#ifdef KR_WIO_TERMINAL
+#define img_heater_56          img_heater
+#define img_move_56            img_move
+#define img_extrude_56         img_extrude
+#define img_files_56           img_files
+#define img_printer_56         img_printer
+#define img_settings_56        img_settings
+#define img_menu_56            img_menu
+#define img_klipper_logo_112 img_klipper_logo_56
+#define img_bambu_logo_112   img_bambu_logo_56
+#define img_extrude_24_48    img_extrude_24
+#define img_sensors_48       img_sensors
+#define img_macro_48         img_macro
+#define img_console_48       img_console
+#define img_fan_48           img_fan
+#define img_zcal_48          img_zcal
+#endif
+
 #ifdef __cplusplus
 }
 #endif

@@ -69,6 +69,8 @@ static lv_obj_t *create(void)
         snprintf(fw, sizeof(fw), "ESP-IDF %s · LVGL 9.3", esp_get_idf_version());
         y += row2(scr, "框架", fw, y);
     }
+#elif defined(KR_WIO_TERMINAL)
+    y += row2(scr, "框架", "Arduino SAMD · LVGL 9.3", y);
 #else
     y += row2(scr, "框架", "SDL2 · LVGL 9.3", y);
 #endif

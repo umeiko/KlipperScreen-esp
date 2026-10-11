@@ -26,7 +26,7 @@ static char      cur_ssid[BSP_WIFI_SSID_MAX + 1];   /* 当前连接的 AP（状�
 static char      pwd_buf[BSP_WIFI_PASS_MAX + 1];   /* windows 实现要求密码在连接期间保持有效 */
 static int       scanning;          /* 等待扫描结果中 */
 static int       connecting;        /* 处于连接流程，tick 里轮询状态 */
-static int       connect_ticks;     /* 连接超时兜底：30s 无结果视为失败 */
+static int       connect_ticks;     /* 连接超时兜底：90s 无结果视为失败 */
 
 static bsp_wifi_ap_t aps[16];       /* 静态：行点击事件要引用，不能放栈上 */
 
@@ -272,7 +272,7 @@ static void tick(void)
 {
     if (connecting) {
         /* 超时兜底：正常失败会有 DISCONNECTED→FAILED，防御状态机卡死 */
-        if (++connect_ticks > 30) {
+        if (++connect_ticks > 90) {
             ui_toast("连接超时", THEME_COL_ERROR);
             conn_overlay_close();
             return;

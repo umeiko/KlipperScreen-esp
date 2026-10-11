@@ -5,6 +5,7 @@ Firmware boards are grouped by chip family, desktop/mobile clients by platform. 
 - **[ESP32 boards](boards/esp32.md)** — CYD 2432S028R / 2432S028R-PLUS, E32R35T, and the rotary-only ST7735S / ST7789 / ILI9341 / ST7796 builds
 - **[ESP32-S3 boards](boards/esp32s3.md)** — the EC11 reference build, MKS TS35 / PI-TS35 twins, JC8048W550, SenseCAP Indicator, JLC SZP, retro-go
 - **[ESP32-C3 boards](boards/esp32c3.md)** — LuatOS CORE / Super Mini rotary build
+- **[Seeed Wio Terminal](boards/wio-terminal.md)** — ATSAMD51 + ILI9341 + five-way switch, with RTL8720DN Wi-Fi firmware instructions
 - **[Linux client](boards/linux.md)** — run the same UI directly on the printer's Linux host
 - **[Windows / macOS client](boards/desktop.md)** — desktop app
 - **[Android client](boards/android.md)** — phone / tablet app
@@ -29,10 +30,11 @@ Firmware boards are grouped by chip family, desktop/mobile clients by platform. 
 | [JLC SZP ESP32-S3](boards/esp32s3.md#jlc-szp-esp32-s3) | `esp32s3-JLC-SZP` | 2.0" 240×320 ST7789 SPI | FT6336 capacitive | ESP32-S3 N16R8 / 16MB | ✅ Verified |
 | [esp32s3-retro-go](boards/esp32s3.md#esp32s3-retro-go) | `esp32s3-retro-go` | 3.2" 240×320 ST7789 SPI | None, GPIO buttons | ESP32-S3 / 16MB | 🆕 New |
 | [esp32c3-st7789-320_240-ec11](boards/esp32c3.md#esp32c3-st7789-320_240-ec11) | `esp32c3-st7789-320_240-ec11` | 240×320 ST7789 SPI | None, rotary only | ESP32-C3 / 4MB | 🆕 New, LuatOS CORE & Super Mini |
+| [Seeed Wio Terminal](boards/wio-terminal.md) | `wio-terminal` | 2.4" 320×240 ILI9341 SPI | None, five-way switch | ATSAMD51 / 512KB + 4MiB QSPI | ✅ Hardware verified |
 
 ## Download (latest stable)
 
-Flash packages are named `ESP-IDFv5.5-<board>.zip` (asset names carry no version, so the links below always point to the latest stable release). Please report problems in [Issues](https://github.com/umeiko/KlipperScreen-esp/issues).
+ESP32 flash packages are named `ESP-IDFv5.5-<board>.zip`; the Wio Terminal uses a drag-and-drop `.uf2`. Asset names carry no version, so the links below always point to the latest stable release. Please report problems in [Issues](https://github.com/umeiko/KlipperScreen-esp/issues).
 
 | Board | Flash package (latest stable) |
 |---|---|
@@ -52,6 +54,7 @@ Flash packages are named `ESP-IDFv5.5-<board>.zip` (asset names carry no version
 | JLC SZP ESP32-S3 | [ESP-IDFv5.5-esp32s3-JLC-SZP.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/ESP-IDFv5.5-esp32s3-JLC-SZP.zip) |
 | esp32s3-retro-go | [ESP-IDFv5.5-esp32s3-retro-go.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/ESP-IDFv5.5-esp32s3-retro-go.zip) |
 | esp32c3-st7789-320_240-ec11 | [ESP-IDFv5.5-esp32c3-st7789-320_240-ec11.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/ESP-IDFv5.5-esp32c3-st7789-320_240-ec11.zip) |
+| Seeed Wio Terminal | [KlipperScreen-esp-Wio-Terminal.uf2](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/KlipperScreen-esp-Wio-Terminal.uf2) |
 | Windows desktop simulator | [desktop-win-x86_64.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/desktop-win-x86_64.zip) |
 | macOS desktop | [desktop-macos-arm64.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/desktop-macos-arm64.zip) |
 | Linux host (x86_64) | [desktop-linux-x86_64.tar.gz](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/desktop-linux-x86_64.tar.gz) |

@@ -1,4 +1,4 @@
-#if !defined(ESP_PLATFORM)
+#if !defined(ESP_PLATFORM) && !defined(KR_WIO_TERMINAL)
 /*******************************************************************************
  * Size: 40 px
  * Bpp: 4

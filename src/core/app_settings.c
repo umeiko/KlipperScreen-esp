@@ -54,7 +54,11 @@ static char *conf_load(const char *file)
  * 并发：桌面 Moonraker worker、ESP32 esp_timer 回调与 LVGL 线程会并发读写缓存，
  * 因此对 mr_cache_buf 的一切访问（加载/解析/失效）都必须在 mr_cache_lock 临界区内，
  * 缓存内容指针不得带出锁外使用。持锁期间不得调用会失效缓存的写函数（互斥锁不可重入）。 */
-#if defined(_WIN32)
+#if defined(KR_WIO_TERMINAL)
+/* Arduino/SAMD51 port: settings and model access both run from loop(). */
+static void mr_cache_lock(void)   {}
+static void mr_cache_unlock(void) {}
+#elif defined(_WIN32)
 #include <windows.h>
 static CRITICAL_SECTION mr_cs;
 static INIT_ONCE mr_cs_once = INIT_ONCE_STATIC_INIT;

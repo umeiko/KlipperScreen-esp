@@ -1,5 +1,6 @@
 # ESP-IDF / 各 port 构建产物
 src/ports/*/build*/
+src/ports/*/.pio/
 src/ports/esp32/sdkconfig
 src/ports/esp32/sdkconfig.old
 src/ports/esp32/managed_components/
@@ -53,3 +54,4 @@ __pycache__/
 
 # desktop 后端运行时产生的本机配置（勿入库）
 src/ports/desktop/*.conf
+/moonraker.conf

@@ -16,7 +16,7 @@ extern panel_def_t panel_extrude_def;
 extern panel_def_t panel_menu_def;
 extern panel_def_t panel_sensors_def;
 extern panel_def_t panel_macros_def;
-#if !defined(ESP_PLATFORM)
+#if !defined(ESP_PLATFORM) && !defined(KR_WIO_TERMINAL)
 extern panel_def_t panel_macro_params_def;
 #endif
 extern panel_def_t panel_console_def;
@@ -49,7 +49,7 @@ static panel_def_t *registry[] = {
     &panel_menu_def,
     &panel_sensors_def,
     &panel_macros_def,
-#if !defined(ESP_PLATFORM)
+#if !defined(ESP_PLATFORM) && !defined(KR_WIO_TERMINAL)
     &panel_macro_params_def,
 #endif
     &panel_console_def,
