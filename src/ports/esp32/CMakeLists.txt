@@ -13,4 +13,4 @@ set(EXTRA_COMPONENT_DIRS
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 # VERSION 同时写入 esp_app_desc（配置页/OTA 版本对比用）。发布新固件时
 # 更新此处并同步 OTA 服务器 version.txt。
-project(klipper_remote_display VERSION 2026.10.17)
+project(klipper_remote_display VERSION 2026.10.18)
