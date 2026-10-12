@@ -417,7 +417,8 @@ void web_config_server_start(void)
     cfg.max_uri_handlers = 8;
     cfg.send_wait_timeout = 30;
     cfg.recv_wait_timeout = 120;    /* 大固件上传时等待下一段数据的超时 */
-    if (httpd_start(&s_server, &cfg) == ESP_OK) {
+    esp_err_t err = httpd_start(&s_server, &cfg);
+    if (err == ESP_OK) {
         httpd_uri_t u;
         u.user_ctx = NULL;
         u.method = HTTP_GET;
@@ -436,7 +437,8 @@ void web_config_server_start(void)
         httpd_register_uri_handler(s_server, &u);
         ESP_LOGI(TAG, "web config server on :80");
     } else {
-        ESP_LOGE(TAG, "httpd start failed");
+        ESP_LOGE(TAG, "httpd start failed: %s", esp_err_to_name(err));
+        s_server = NULL;
     }
 }
 
