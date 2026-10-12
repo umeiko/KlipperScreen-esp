@@ -4,7 +4,8 @@
 # OTA 升级进度面板：ota_progress_ui.c（依赖 entry 的 ota_auto 进度接口）。
 file(GLOB UI_SRCS "*.c" "panels/*.c" "widgets/*.c" "assets/*.c")
 list(APPEND UI_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/ota_progress_ui.c")
+list(APPEND UI_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/panels/panel_ota.c")
 idf_component_register(SRCS ${UI_SRCS}
                        INCLUDE_DIRS "." "panels" "widgets"
-                       REQUIRES lvgl core bambu heap esp_http_client json
+                       REQUIRES lvgl core bambu heap esp_http_client json esp_app_format
                        PRIV_REQUIRES bsp entry)

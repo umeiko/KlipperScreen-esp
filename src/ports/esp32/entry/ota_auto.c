@@ -260,3 +260,116 @@ void ota_auto_start(void)
         ESP_LOGI(TAG, "auto OTA check started");
     }
 }
+
+/* ================= 手动 OTA（设置菜单入口） ================= */
+
+static ota_check_state_t s_ota_check = { 0 };
+static char s_manual_remote[32];
+static volatile bool s_manual_ready = false;
+
+const ota_check_state_t *ota_check_state_get(void) { return &s_ota_check; }
+
+static void manual_check_task(void *arg)
+{
+    (void)arg;
+    if (!bsp_wifi_connected()) {
+        ESP_LOGW(TAG, "manual check: wifi not connected");
+        s_ota_check.checking = false;
+        s_ota_check.result = -1;
+        vTaskDelete(NULL);
+        return;
+    }
+    char base[160];
+    settings_load_ota_url(base, sizeof(base));
+    if (!base[0]) {
+        ESP_LOGW(TAG, "manual check: no ota_url configured");
+        s_ota_check.checking = false;
+        s_ota_check.result = -1;
+        vTaskDelete(NULL);
+        return;
+    }
+    char url[320];
+    if (base[strlen(base) - 1] == '/')
+        snprintf(url, sizeof(url), "%sversion.txt", base);
+    else
+        snprintf(url, sizeof(url), "%s/version.txt", base);
+
+    char remote[64] = "";
+    int got = http_get_small(url, remote, sizeof(remote));
+    if (got <= 0) {
+        ESP_LOGW(TAG, "manual check: version fetch failed (%d)", got);
+        s_ota_check.checking = false;
+        s_ota_check.result = -1;
+        vTaskDelete(NULL);
+        return;
+    }
+    char *e = remote + strlen(remote);
+    while (e > remote && (e[-1] == '\n' || e[-1] == '\r' || e[-1] == ' ')) *--e = 0;
+
+    const esp_app_desc_t *app = esp_app_get_description();
+    const char *cur = (app && app->version[0]) ? app->version : "?";
+    s_ota_check.remote[0] = 0;
+    if (strcmp(cur, remote) == 0) {
+        s_ota_check.result = 0;   /* 已是最新 */
+    } else {
+        snprintf(s_manual_remote, sizeof(s_manual_remote), "%.31s", remote);
+        s_manual_ready = true;
+        snprintf(s_ota_check.remote, sizeof(s_ota_check.remote), "%.31s", remote);
+        s_ota_check.result = 1;   /* 有新版本 */
+    }
+    s_ota_check.checking = false;
+    ESP_LOGI(TAG, "manual check done: result=%d remote=%s", s_ota_check.result, s_ota_check.remote);
+    vTaskDelete(NULL);
+}
+
+void ota_check_start(void)
+{
+    if (s_ota_check.checking || s_ota_prog.active) return;
+    s_ota_check.checking = true;
+    s_ota_check.result = 0;
+    s_ota_check.remote[0] = 0;
+    if (xTaskCreate(manual_check_task, "ota_check", 4096, NULL, 5, NULL) != pdPASS) {
+        s_ota_check.checking = false;
+        s_ota_check.result = -1;
+    }
+}
+
+static void manual_update_task(void *arg)
+{
+    (void)arg;
+    const esp_app_desc_t *app = esp_app_get_description();
+    const char *cur = (app && app->version[0]) ? app->version : "?";
+    ota_prog_reset();
+    s_ota_prog.active = true;
+    s_ota_prog.phase = 0;
+    snprintf(s_ota_prog.cur_ver, sizeof(s_ota_prog.cur_ver), "%.31s", cur);
+    snprintf(s_ota_prog.new_ver, sizeof(s_ota_prog.new_ver), "%.31s", s_manual_remote);
+
+    char base[160];
+    settings_load_ota_url(base, sizeof(base));
+    char url[320];
+    if (base[strlen(base) - 1] == '/')
+        snprintf(url, sizeof(url), "%sfirmware.bin", base);
+    else
+        snprintf(url, sizeof(url), "%s/firmware.bin", base);
+
+    if (ota_download_firmware(url) != 0) {
+        ESP_LOGE(TAG, "manual OTA failed, keep current firmware");
+        vTaskDelete(NULL);
+        return;
+    }
+    settings_save_ota_applied(s_manual_remote);
+    s_ota_prog.phase = 3;   /* 升级完成，重启中 */
+    ESP_LOGW(TAG, "manual OTA done, rebooting in %d ms", OTA_REBOOT_DELAY_MS);
+    vTaskDelay(OTA_REBOOT_DELAY_MS / portTICK_PERIOD_MS);
+    esp_restart();
+    vTaskDelete(NULL);
+}
+
+int ota_start_update(void)
+{
+    if (s_ota_prog.active || !s_manual_ready || !s_manual_remote[0]) return -1;
+    if (xTaskCreate(manual_update_task, "ota_update", 8192, NULL, 5, NULL) != pdPASS)
+        return -1;
+    return 0;
+}

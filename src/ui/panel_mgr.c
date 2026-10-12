@@ -27,6 +27,7 @@ extern panel_def_t panel_bambu_setup_def;
 extern panel_def_t panel_printers_def;
 extern panel_def_t panel_brightness_def;
 extern panel_def_t panel_saver_def;
+extern panel_def_t panel_ota_def;
 
 static panel_def_t *registry[] = {
     &panel_main_def,
@@ -49,6 +50,7 @@ static panel_def_t *registry[] = {
     &panel_printers_def,
     &panel_brightness_def,
     &panel_saver_def,
+    &panel_ota_def,
 };
 
 #define REG_COUNT (sizeof(registry) / sizeof(registry[0]))

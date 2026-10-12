@@ -31,6 +31,12 @@ static void open_language(lv_event_t *e)
     panel_mgr_open("language");
 }
 
+static void open_ota(lv_event_t *e)
+{
+    LV_UNUSED(e);
+    panel_mgr_open("ota");
+}
+
 static lv_obj_t *create(void)
 {
     lv_obj_t *scr = lv_obj_create(NULL);
@@ -50,6 +56,9 @@ static lv_obj_t *create(void)
     y += step;
 
     theme_row_link(scr, "显示设置", "", y, open_display);
+    y += step;
+
+    theme_row_link(scr, "OTA 升级", "", y, open_ota);
     y += step;
 
     theme_row(scr, "版本", KR_VERSION, y);

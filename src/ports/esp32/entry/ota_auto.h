@@ -15,3 +15,20 @@ typedef struct {
 
 /* 返回全局进度状态指针（UI 线程轮询；无需加锁，字段为 volatile 简单类型） */
 const ota_progress_t *ota_progress_get(void);
+
+/* ---- 手动 OTA（设置菜单入口） ---- */
+
+/* 手动检查状态（UI 轮询显示） */
+typedef struct {
+    volatile bool  checking;   /* 1=检查请求进行中 */
+    volatile int   result;     /* 0=已是最新 1=有新版本 -1=失败（未连WiFi/未配置/网络错） */
+    char remote[32];           /* 服务器版本（result==1 时有效） */
+} ota_check_state_t;
+
+const ota_check_state_t *ota_check_state_get(void);
+
+/* 异步检查服务器新版本；成功后结果写入 ota_check_state_get() */
+void ota_check_start(void);
+
+/* 用最近检查到的新版本开始升级（异步下载→写入→重启）；返回 0=已启动，-1=不可用 */
+int ota_start_update(void);
