@@ -10,7 +10,7 @@
 #include "assets/icons.h"
 #include "assets/weather_icons.h"
 #include "assets/saver_anim.h"
-#include "assets/saver_sky.h"
+#include "assets/saver_scene.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -21,20 +21,36 @@
 #define SAVER_CHG_MV    4150
 #define SAVER_EXIT_MV   4100
 #define SAVER_BG_SOLID  0x5BA9E6   /* 纯色背景（天蓝） */
-#define SAVER_TXT_TIME  0xFFD500   /* 时间：明黄（保留） */
-#define SAVER_TXT_MAIN  0xFFD500   /* 主文字：明黄（备用） */
-#define SAVER_TXT_DATE  0x00E5FF   /* 日期/预报标签：青蓝 */
-#define SAVER_TXT_LUNAR 0xFFB6C1   /* 农历：粉 */
-#define SAVER_TXT_CITY  0x98FB98   /* 城市：淡绿 */
-#define SAVER_TXT_DESC  0x00FA9A   /* 天气描述：春绿 */
-#define SAVER_TXT_TEMP  0xFF7F50   /* 温度：珊瑚橙 */
-#define SAVER_TXT_DIM   0xE0E0E0   /* 次要文字/图标：浅灰 */
+#define SAVER_TXT_TIME  0x000000   /* 时间：黑色 */
+#define SAVER_TXT_MAIN  0x000000   /* 主文字：黑色 */
+#define SAVER_TXT_DATE  0x000000   /* 日期/预报标签：黑色 */
+#define SAVER_TXT_LUNAR 0x000000   /* 农历：黑色 */
+#define SAVER_TXT_CITY  0x000000   /* 城市：黑色 */
+#define SAVER_TXT_DESC  0x000000   /* 天气描述：黑色 */
+#define SAVER_TXT_TEMP  0x000000   /* 温度：黑色 */
+#define SAVER_TXT_DIM   0x000000   /* 次要文字/图标：黑色 */
 
-/* 实景天空背景（AI 摄影风格，320x240 RGB565），索引见 weather_icon_t */
-static const lv_image_dsc_t *s_sky_by_wx[7] = {
-    &img_sky_sun, &img_sky_partly, &img_sky_overcast,
-    &img_sky_rain, &img_sky_snow, &img_sky_fog, &img_sky_unknown,
-};
+/* 地理场景背景（AI 摄影风格，320x240 RGB565）：按天气/温度/风力切换。
+ * 晴=草原，高温晴(≥33℃)=沙漠热气球，大风晴/多云(≥5级)=戈壁公路，
+ * 多云=草原云影，阴=阴云草原，雨=雨中草原，雪=雪原，雾=雾中草原，其余=草原黄昏 */
+static const lv_image_dsc_t *scene_img(const weather_data_t *w)
+{
+    if (!w || !w->valid) return &img_scn_dusk;
+    switch (w->icon) {
+    case WEATHER_SUN:
+        if (w->temp_c >= 33) return &img_scn_desert;
+        if (w->wind_level >= 5) return &img_scn_gobi;
+        return &img_scn_sun;
+    case WEATHER_PARTLY:
+        if (w->wind_level >= 6) return &img_scn_gobi;
+        return &img_scn_partly;
+    case WEATHER_OVERCAST: return &img_scn_overcast;
+    case WEATHER_RAIN:     return &img_scn_rain;
+    case WEATHER_SNOW:     return &img_scn_snow;
+    case WEATHER_FOG:      return &img_scn_fog;
+    default:               return &img_scn_dusk;
+    }
+}
 #define SAVER_TIME_COL_2 0xFFC531  /* 分针金黄 */
 
 /* 模拟表盘参数（右侧，顶部与首排文字 y12 齐平） */
@@ -154,7 +170,7 @@ static void update_clock(void)
     update_hands(tmv->tm_hour, tmv->tm_min, tmv->tm_sec);
 }
 
-static void rebuild_anim(int ic);   /* 前向声明（天气动态背景） */
+static void rebuild_anim(const weather_data_t *w);   /* 前向声明（天气动态背景） */
 
 static void update_weather(void)
 {
@@ -168,7 +184,7 @@ static void update_weather(void)
         lv_obj_set_style_text_color(lbl_desc, lv_color_hex(SAVER_TXT_DESC), 0);
         lv_label_set_text(lbl_temp, "--°");
         lv_obj_set_style_bg_color(scr_layer, lv_color_hex(SAVER_BG_SOLID), 0);
-        rebuild_anim(WEATHER_UNKNOWN);
+        rebuild_anim(NULL);   /* 天气无效 → 默认黄昏场景 */
         lv_obj_add_flag(img_wx, LV_OBJ_FLAG_HIDDEN);
         for (int i = 0; i < 3; i++) {
             lv_obj_add_flag(fx_img[i], LV_OBJ_FLAG_HIDDEN);
@@ -186,8 +202,8 @@ static void update_weather(void)
     weather_icon_t ic = weather_icon_from_code(wd.icon);
     lv_img_set_src(img_wx, wx_icons[ic]);
     lv_obj_remove_flag(img_wx, LV_OBJ_FLAG_HIDDEN);
-    /* 实景天空背景 + 动态背景动画 */
-    rebuild_anim(ic);
+    /* 地理场景背景 + 动态背景动画 */
+    rebuild_anim(&wd);
     /* 天气描述用高德原文（更精确），否则用归并名 */
     lv_label_set_text(lbl_desc, wd.category[0] ? wd.category : wx_desc[ic]);
     lv_obj_set_style_text_color(lbl_desc, lv_color_hex(SAVER_TXT_DESC), 0);
@@ -238,7 +254,8 @@ static anim_item_t s_anim[ANIM_MAX];
 static int s_anim_n = 0;
 static lv_timer_t *s_anim_timer = NULL;
 static int s_anim_ic = -1;
-static lv_obj_t *s_sky = NULL;   /* 实景天空背景图（沉底） */
+static const lv_image_dsc_t *s_anim_scene = NULL;
+static lv_obj_t *s_sky = NULL;   /* 地理场景背景图（沉底） */
 
 static void anim_add(lv_obj_t *obj, float x, float y, float vx, float vy, uint8_t type, uint8_t w, uint8_t h)
 {
@@ -250,17 +267,20 @@ static void anim_add(lv_obj_t *obj, float x, float y, float vx, float vy, uint8_
     lv_obj_move_to_index(obj, 0);   /* 沉底：背景色之上、文字之下 */
 }
 
-static void rebuild_anim(int ic)
+static void rebuild_anim(const weather_data_t *w)
 {
-    if (ic == s_anim_ic) return;
+    int ic = (w && w->valid) ? (int)weather_icon_from_code(w->icon) : WEATHER_UNKNOWN;
+    const lv_image_dsc_t *sc = scene_img(w);
+    if (ic == s_anim_ic && sc == s_anim_scene) return;
     s_anim_ic = ic;
+    s_anim_scene = sc;
     for (int i = 0; i < s_anim_n; i++)
         if (s_anim[i].obj) lv_obj_del(s_anim[i].obj);
     s_anim_n = 0;
 
-    /* 实景天空背景（AI 摄影图），索引见 weather_icon_t */
+    /* 地理场景背景（按天气/温度/风力选择） */
     if (s_sky) {
-        lv_img_set_src(s_sky, s_sky_by_wx[ic < 7 ? ic : 6]);
+        lv_img_set_src(s_sky, sc);
         lv_obj_move_to_index(s_sky, 0);   /* 背景永远在最底 */
     }
     if (!active) return;
@@ -402,7 +422,7 @@ void screensaver_init(void)
 
     /* 背景：实景天空图（随天气切换，先创建保证在最底层） */
     s_sky = lv_img_create(scr_layer);
-    lv_img_set_src(s_sky, &img_sky_unknown);
+    lv_img_set_src(s_sky, &img_scn_dusk);
     lv_obj_align(s_sky, LV_ALIGN_TOP_LEFT, 0, 0);
 
     /* ---- 左侧：大号时间（24h）---- */

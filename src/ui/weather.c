@@ -117,6 +117,24 @@ static weather_icon_t icon_from_text(const char *w)
     return WEATHER_UNKNOWN;
 }
 
+/* 高德 windpower 文本（如"≤3"、"5-6"、"8-9"）→ 取最大等级数字；未知返回 -1 */
+static int wind_level_from_text(const char *s)
+{
+    if (!s) return -1;
+    int best = -1, cur = 0, has = 0;
+    for (const char *p = s; *p; p++) {
+        if (*p >= '0' && *p <= '9') {
+            cur = cur * 10 + (*p - '0');
+            has = 1;
+        } else if (has) {
+            if (cur > best) best = cur;
+            cur = 0; has = 0;
+        }
+    }
+    if (has && cur > best) best = cur;
+    return best;
+}
+
 /* 单次完整刷新；成功返回 true。
  * 高德接口：extensions=base 返回 lives[0]（实时天气/温度），
  *          extensions=all 返回 forecasts[0].casts[]（三天预报），两者不共存，
@@ -146,6 +164,7 @@ static bool fetch_all(void)
     memset(&nd, 0, sizeof(nd));
     nd.precip = -1;
     nd.aqi = -1;
+    nd.wind_level = -1;
     nd.temp_min_c = -100;
     nd.temp_max_c = -100;
     snprintf(nd.city, sizeof(nd.city), "%s", name);
@@ -167,6 +186,7 @@ static bool fetch_all(void)
                     const cJSON *l = cJSON_GetArrayItem(a, 0);
                     const cJSON *t = cJSON_GetObjectItemCaseSensitive(l, "temperature");
                     const cJSON *w = cJSON_GetObjectItemCaseSensitive(l, "weather");
+                    const cJSON *wp = cJSON_GetObjectItemCaseSensitive(l, "windpower");
                     if (t && cJSON_IsString(t) && t->valuestring) {
                         nd.temp_c = atoi(t->valuestring);
                         got_live = true;
@@ -175,6 +195,8 @@ static bool fetch_all(void)
                         nd.icon = (int)icon_from_text(w->valuestring);
                         snprintf(nd.category, sizeof(nd.category), "%s", w->valuestring);
                     }
+                    if (wp && cJSON_IsString(wp) && wp->valuestring)
+                        nd.wind_level = wind_level_from_text(wp->valuestring);
                 }
             } else {
                 ESP_LOGW(TAG, "base infocode=%s resp=%.160s", info, buf);

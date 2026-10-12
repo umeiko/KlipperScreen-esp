@@ -25,6 +25,7 @@ typedef struct {
     int       temp_c;       /* 温度 ℃ */
     int       temp_min_c;   /* 今日最低 ℃（-100=未知） */
     int       temp_max_c;   /* 今日最高 ℃（-100=未知） */
+    int       wind_level;   /* 风力等级（1-12），-1=未知 */
     int       icon;         /* weather_icon_t 枚举 */
     int       precip;       /* 降水概率 %，-1=未知（当前源无） */
     int       aqi;          /* AQI 数值，-1=未知（当前源无） */
