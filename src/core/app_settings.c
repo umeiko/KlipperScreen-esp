@@ -467,6 +467,36 @@ bool settings_save_weather_city_name(const char *name)
     return conf_update_key("klipperscreen.conf", "weather_city_name", name);
 }
 
+bool settings_load_ota_url(char *out, size_t len)
+{
+    if (len) out[0] = 0;
+    char *buf = conf_load("klipperscreen.conf");
+    if (!buf) return false;
+    bool ok = kv_get(buf, "ota_url", out, len);
+    free(buf);
+    return ok;
+}
+
+bool settings_save_ota_url(const char *url)
+{
+    return conf_update_key("klipperscreen.conf", "ota_url", url);
+}
+
+bool settings_load_ota_applied(char *out, size_t len)
+{
+    if (len) out[0] = 0;
+    char *buf = conf_load("klipperscreen.conf");
+    if (!buf) return false;
+    bool ok = kv_get(buf, "ota_applied", out, len);
+    free(buf);
+    return ok;
+}
+
+bool settings_save_ota_applied(const char *ver)
+{
+    return conf_update_key("klipperscreen.conf", "ota_applied", ver);
+}
+
 int settings_load_display_color_order(void)
 {
     char val[16];

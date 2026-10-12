@@ -73,7 +73,8 @@ static const char PAGE_FORM[] =
     "<button onclick='saveCfg()'>保存并重启</button>"
     "<div id='status'></div>"
     "<h2>固件升级（OTA）</h2>"
-    "<div class='tip'>当前版本 <span id='fw'>?</span>。选择 .bin 固件上传，校验成功后自动重启到另一槽位；升级期间请勿断电。</div>"
+    "<div class='tip'>当前版本 <span id='fw'>?</span>。开机自动检测：服务器目录放 version.txt（版本串）与 firmware.bin，版本不同自动升级。也可下方手动上传 .bin 立即升级。升级期间请勿断电。</div>"
+    "<label>OTA 服务器地址</label><input id='otaurl' maxlength='150' placeholder='http://192.168.10.200:8080/fw'>"
     "<input type='file' id='fwfile' accept='.bin'>"
     "<button onclick='otaUp()'>上传并升级</button>"
     "<div id='otastatus'></div>";
@@ -107,6 +108,7 @@ static const char PAGE_JS[] =
     "b.set('wkey',document.getElementById('wkey').value);"
     "b.set('wcity',document.getElementById('wcity').value);"
     "b.set('wcityname',document.getElementById('wcityname').value);"
+    "b.set('otaurl',document.getElementById('otaurl').value);"
     "try{var r=await fetch('/api/config',{method:'POST',body:b});"
     "show(await r.text(),r.ok);if(r.ok)show('保存成功，3 秒后自动重启…',true)}"
     "catch(e){show('网络错误: '+e,false)}}"
@@ -117,6 +119,7 @@ static const char PAGE_JS[] =
     "document.getElementById('wkey').value=J.wkey||'';"
     "document.getElementById('wcity').value=J.wcity||'';"
     "document.getElementById('wcityname').value=J.wcityname||'';"
+    "document.getElementById('otaurl').value=J.otaurl||'';"
     "document.getElementById('fw').textContent=J.fw||'?';"
     "SLOT=(J.active||0);fill();"
     "document.getElementById('slotrow').children[SLOT].style.background='#2d9cdb'}catch(e){}}"
@@ -227,6 +230,9 @@ static esp_err_t handle_status(httpd_req_t *req)
     json_escape(esc_wk, sizeof(esc_wk), wk);
     json_escape(esc_wc, sizeof(esc_wc), wc);
     json_escape(esc_wn, sizeof(esc_wn), wn);
+    char ou[160], esc_ou[320];
+    settings_load_ota_url(ou, sizeof(ou));
+    json_escape(esc_ou, sizeof(esc_ou), ou);
     char esc_ssid[64], esc_pass[128];
     json_escape(esc_ssid, sizeof(esc_ssid), w.ssid);
     json_escape(esc_pass, sizeof(esc_pass), w.pass);
@@ -234,8 +240,8 @@ static esp_err_t handle_status(httpd_req_t *req)
     const char *fw = (app && app->version[0]) ? app->version : "?";
     char *p = buf;
     int n = snprintf(p, sizeof(buf) - (size_t)(p - buf),
-                     "{\"ssid\":\"%s\",\"pass\":\"%s\",\"delay\":%d,\"active\":%d,\"fw\":\"%s\",\"wkey\":\"%s\",\"wcity\":\"%s\",\"wcityname\":\"%s\",\"slots\":[",
-                     esc_ssid, esc_pass, delay, active, fw, esc_wk, esc_wc, esc_wn);
+                     "{\"ssid\":\"%s\",\"pass\":\"%s\",\"delay\":%d,\"active\":%d,\"fw\":\"%s\",\"wkey\":\"%s\",\"wcity\":\"%s\",\"wcityname\":\"%s\",\"otaurl\":\"%s\",\"slots\":[",
+                     esc_ssid, esc_pass, delay, active, fw, esc_wk, esc_wc, esc_wn, esc_ou);
     p += n;
     for (int i = 0; i < PRINTER_SLOTS; i++) {
         moonraker_conf_t m;
@@ -384,6 +390,9 @@ static esp_err_t handle_config(httpd_req_t *req)
     if (form_get(body, "wkey", v, sizeof(v))) settings_save_weather_key(v);
     if (form_get(body, "wcity", v, sizeof(v))) settings_save_weather_city(v);
     if (form_get(body, "wcityname", v, sizeof(v))) settings_save_weather_city_name(v);
+
+    /* OTA 服务器地址（开机自动检测） */
+    if (form_get(body, "otaurl", v, sizeof(v))) settings_save_ota_url(v);
 
     /* 3 秒后重启生效（WiFi/打印机配置变更需要重连） */
     esp_timer_handle_t t;

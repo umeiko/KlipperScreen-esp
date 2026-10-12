@@ -5,6 +5,7 @@
 #include "app_settings.h"
 #include "screensaver.h"
 #include "web_config.h"
+#include "ota_auto.h"
 
 #if CONFIG_BOARD_ESP32S3_ST7789
 #include "moonraker_client.h"
@@ -63,6 +64,8 @@ void app_main(void)
     wifi_conf_t wc;
     if (settings_load_wifi(&wc))
         bsp_wifi_connect(wc.ssid, wc.pass[0] ? wc.pass : NULL);
+
+    ota_auto_start();        /* 开机自动检测 OTA（连上 WiFi 后检查固件服务器） */
 
     debug_cli_start();       /* 串口调试命令行 */
 }

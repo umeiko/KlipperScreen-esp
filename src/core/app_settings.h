@@ -86,6 +86,12 @@ bool settings_load_weather_city(char *out, size_t len);
 bool settings_save_weather_city(const char *city);
 bool settings_load_weather_city_name(char *out, size_t len);
 bool settings_save_weather_city_name(const char *name);
+/* OTA 自动升级：ota_url=固件服务器地址（如 http://192.168.10.200/fw/），
+ * 服务器需提供 version.txt（版本串）与 firmware.bin；ota_applied=已应用过的版本串（防循环） */
+bool settings_load_ota_url(char *out, size_t len);
+bool settings_save_ota_url(const char *url);
+bool settings_load_ota_applied(char *out, size_t len);
+bool settings_save_ota_applied(const char *ver);
 bool settings_save_screen_off(int sec);
 machine_mode_t settings_load_machine_mode(void);             /* 当前槽，缺省 Klipper */
 bool settings_save_machine_mode(machine_mode_t mode);         /* 当前槽 */
