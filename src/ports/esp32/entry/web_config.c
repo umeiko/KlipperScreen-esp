@@ -200,17 +200,13 @@ static void log_req(httpd_req_t *req)
 static esp_err_t handle_root(httpd_req_t *req)
 {
     log_req(req);
-    /* 三段合成一段发送，交由 httpd 自动处理长度 */
-    static char s_page[10240];
-    static bool s_built = false;
-    if (!s_built) {
-        snprintf(s_page, sizeof(s_page), "%s%s%s", PAGE_HEAD, PAGE_FORM, PAGE_JS);
-        s_built = true;
-    }
-    ESP_LOGI(TAG, "PAGE total=%d", (int)strlen(s_page));
+    /* 三段分块发送：不占 10KB 静态缓冲（内部 RAM 紧张），httpd 自动算总长度 */
     httpd_resp_set_type(req, "text/html; charset=utf-8");
     httpd_resp_set_hdr(req, "Cache-Control", "no-cache");   /* 防手机缓存旧页面 */
-    esp_err_t e = httpd_resp_sendstr(req, s_page);
+    esp_err_t e = httpd_resp_send_chunk(req, PAGE_HEAD, HTTPD_RESP_USE_STRLEN);
+    if (e == ESP_OK) e = httpd_resp_send_chunk(req, PAGE_FORM, HTTPD_RESP_USE_STRLEN);
+    if (e == ESP_OK) e = httpd_resp_send_chunk(req, PAGE_JS, HTTPD_RESP_USE_STRLEN);
+    if (e == ESP_OK) e = httpd_resp_send_chunk(req, NULL, 0);   /* 结束块 */
     ESP_LOGI(TAG, "PAGE send: %s", esp_err_to_name(e));
     return ESP_OK;
 }
@@ -219,7 +215,7 @@ static esp_err_t handle_status(httpd_req_t *req)
 {
     log_req(req);
     wifi_conf_t w;
-    char buf[3072];
+    static char buf[3072];   /* httpd 单线程串行处理，静态复用；避免占任务栈 */
     settings_load_wifi(&w);
     int delay = settings_load_saver_delay();
     int active = settings_load_active_printer();
@@ -413,7 +409,7 @@ void web_config_server_start(void)
 
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.server_port = 80;
-    cfg.stack_size = 16384;
+    cfg.stack_size = 8192;      /* 4096 在手机访问大页面时栈溢出；16384 设备内存创建失败，取 8192 */
     cfg.max_uri_handlers = 8;
     cfg.send_wait_timeout = 30;
     cfg.recv_wait_timeout = 120;    /* 大固件上传时等待下一段数据的超时 */
