@@ -24,6 +24,7 @@
 #include "esp_app_desc.h"
 #include "app_settings.h"
 #include "bsp_wifi.h"
+#include "ota_auto.h"
 
 #define TAG "ota_auto"
 
@@ -32,6 +33,21 @@
 #define OTA_HTTP_TIMEOUT_MS 10000
 #define OTA_BUF_SIZE       4096
 #define OTA_REBOOT_DELAY_MS 1500
+
+/* 升级进度（UI 面板轮询） */
+static ota_progress_t s_ota_prog = { 0 };
+
+const ota_progress_t *ota_progress_get(void) { return &s_ota_prog; }
+
+static void ota_prog_reset(void)
+{
+    s_ota_prog.active = false;
+    s_ota_prog.phase = 0;
+    s_ota_prog.total = 0;
+    s_ota_prog.downloaded = 0;
+    s_ota_prog.cur_ver[0] = 0;
+    s_ota_prog.new_ver[0] = 0;
+}
 
 /* 小文件 GET（version.txt），返回读到的字节数 */
 static int http_get_small(const char *url, char *buf, size_t bufsz)
@@ -89,14 +105,22 @@ static int ota_download_firmware(const char *url)
     esp_http_client_fetch_headers(cl);
     if (esp_http_client_get_status_code(cl) != 200) {
         ESP_LOGE(TAG, "http status %d", esp_http_client_get_status_code(cl));
+        s_ota_prog.active = false;
         esp_http_client_cleanup(cl);
         return -1;
     }
+
+    /* 进度：总大小（Content-Length） */
+    s_ota_prog.phase = 1;
+    s_ota_prog.downloaded = 0;
+    s_ota_prog.total = (int)esp_http_client_get_content_length(cl);
+    if (s_ota_prog.total < 0) s_ota_prog.total = 0;
 
     esp_ota_handle_t ota = 0;
     err = esp_ota_begin(part, OTA_WITH_SEQUENTIAL_WRITES, &ota);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "ota begin: %s", esp_err_to_name(err));
+        s_ota_prog.active = false;
         esp_http_client_cleanup(cl);
         return -1;
     }
@@ -111,6 +135,7 @@ static int ota_download_firmware(const char *url)
             goto out;
         }
         total += r;
+        s_ota_prog.downloaded = total;
     }
     if (r < 0) {
         ESP_LOGE(TAG, "download interrupted after %d bytes", total);
@@ -129,10 +154,12 @@ static int ota_download_firmware(const char *url)
         ESP_LOGE(TAG, "set boot: %s", esp_err_to_name(err));
         goto out;
     }
+    s_ota_prog.phase = 2;   /* 写入完成，即将重启 */
     ESP_LOGI(TAG, "OTA success, will reboot to %s", part->label);
     ret = 0;
 
 out:
+    if (ret != 0) s_ota_prog.active = false;
     esp_http_client_cleanup(cl);
     return ret;
 }
@@ -196,6 +223,13 @@ static void ota_check_task(void *arg)
         return;
     }
 
+    /* 开始升级：激活进度状态（UI 面板据此显示） */
+    ota_prog_reset();
+    s_ota_prog.active = true;
+    s_ota_prog.phase = 0;
+    snprintf(s_ota_prog.cur_ver, sizeof(s_ota_prog.cur_ver), "%.31s", cur);
+    snprintf(s_ota_prog.new_ver, sizeof(s_ota_prog.new_ver), "%.31s", remote);
+
     ESP_LOGW(TAG, "new version %s (current %s), downloading firmware...", remote, cur);
 
     if (base[strlen(base) - 1] == '/')
@@ -210,6 +244,7 @@ static void ota_check_task(void *arg)
     }
 
     settings_save_ota_applied(remote);
+    s_ota_prog.phase = 3;   /* 升级完成，重启中 */
     ESP_LOGW(TAG, "auto OTA done, rebooting in %d ms", OTA_REBOOT_DELAY_MS);
     vTaskDelay(OTA_REBOOT_DELAY_MS / portTICK_PERIOD_MS);
     esp_restart();

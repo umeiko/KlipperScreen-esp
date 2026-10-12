@@ -7,6 +7,7 @@
 #include "lang.h"
 #include "ui_nav.h"
 #include "ui_buttons.h"
+#include "ota_progress_ui.h"
 
 
 void ui_app_create(void)
@@ -18,6 +19,7 @@ void ui_app_create(void)
     ui_buttons_init();     /* 语义实体按钮层的共享 keypad indev（物理后端在 BSP 侧接入） */
     titlebar_init();       /* 常驻标题栏（layer_top），必须先于 panel_mgr_init */
     panel_mgr_init();      /* 加载主面板 */
+    ota_progress_ui_init();/* OTA 升级进度面板（lv_timer 自驱动） */
     printer_set_refresh_hook(panel_mgr_tick);   /* 数据层 → UI 刷新回调 */
     printer_init();        /* ESP32/Windows=真实 Moonraker；simulator=mock */
 }

@@ -1,8 +1,10 @@
 # 注意：不能加 CONFIGURE_DEPENDS——IDF 在 script 模式下 include 本文件时会报错。
 # 新增源文件（字体/面板/导航服务）后若链接报 undefined，touch 本文件触发 CMake 重配即可。
 # 包含屏幕色序的独立列表面板 panel_display_color.c。
+# OTA 升级进度面板：ota_progress_ui.c（依赖 entry 的 ota_auto 进度接口）。
 file(GLOB UI_SRCS "*.c" "panels/*.c" "widgets/*.c" "assets/*.c")
+list(APPEND UI_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/ota_progress_ui.c")
 idf_component_register(SRCS ${UI_SRCS}
                        INCLUDE_DIRS "." "panels" "widgets"
                        REQUIRES lvgl core bambu heap esp_http_client json
-                       PRIV_REQUIRES bsp)
+                       PRIV_REQUIRES bsp entry)
