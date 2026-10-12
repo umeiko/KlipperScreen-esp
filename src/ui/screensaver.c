@@ -21,14 +21,14 @@
 #define SAVER_CHG_MV    4150
 #define SAVER_EXIT_MV   4100
 #define SAVER_BG_SOLID  0x5BA9E6   /* 纯色背景（天蓝） */
-#define SAVER_TXT_TIME  0xFFD500   /* 时间：明黄 */
-#define SAVER_TXT_MAIN  0x14305C   /* 深蓝黑（备用） */
-#define SAVER_TXT_DATE  0x14305C   /* 日期/预报标签：深蓝 */
-#define SAVER_TXT_LUNAR 0x14305C   /* 农历：深蓝 */
-#define SAVER_TXT_CITY  0x14305C   /* 城市：深蓝 */
-#define SAVER_TXT_DESC  0x14305C   /* 天气描述：深蓝 */
-#define SAVER_TXT_TEMP  0x14305C   /* 温度：深蓝 */
-#define SAVER_TXT_DIM   0x44505C   /* 次要文字：深灰蓝 */
+#define SAVER_TXT_TIME  0xFFD500   /* 时间：明黄（保留） */
+#define SAVER_TXT_MAIN  0xFFFFFF   /* 主文字：白色（备用） */
+#define SAVER_TXT_DATE  0xFFFFFF   /* 日期/预报标签：白色 */
+#define SAVER_TXT_LUNAR 0xFFFFFF   /* 农历：白色 */
+#define SAVER_TXT_CITY  0xFFFFFF   /* 城市：白色 */
+#define SAVER_TXT_DESC  0xFFFFFF   /* 天气描述：白色 */
+#define SAVER_TXT_TEMP  0xFFFFFF   /* 温度：白色 */
+#define SAVER_TXT_DIM   0xFFFFFF   /* 次要文字：白色 */
 
 /* 实景天空背景（AI 摄影风格，320x240 RGB565），索引见 weather_icon_t */
 static const lv_image_dsc_t *s_sky_by_wx[7] = {
