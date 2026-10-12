@@ -4,29 +4,253 @@
  * 环境变量 KLIPPER_RES=WxH 可模拟其它板型分辨率（如 KLIPPER_RES=800x480 模拟 JC8048W550）。
  */
 #include "bsp.h"
+#include "bsp_caps.h"
+#include "bsp_screen_power.h"
+#include "bsp_linux_host.h"
+#include "ui_buttons.h"
+#include "ui_nav.h"
+#include "ui_anim.h"
+#include "theme.h"
+#include <SDL.h>
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 static int scr_w = 320, scr_h = 240;
+static SDL_mutex *lvgl_mutex;
+
+#if defined(KLIPPER_DESKTOP_SIMULATOR) && defined(KR_DISPLAY_SETTINGS_PREVIEW)
+static bool preview_bgr;
+
+static bool preview_color_order_apply(bool bgr)
+{
+    preview_bgr = bgr;
+    return true;
+}
+
+/* SDL DIRECT/RGB565 同步复制到纹理：flush 前模拟 R/B 互换，flush 后还原。
+ * 不改主题常量，不污染 LVGL 双缓冲的逻辑像素；此路径只用于桌面预览。
+ * 实体面板必须接自己的色序控制，不能把该逐像素路径带到 ESP32。 */
+static void preview_color_flush(lv_event_t *e)
+{
+    if (!preview_bgr) return;
+    lv_display_t *disp = lv_event_get_current_target(e);
+    lv_draw_buf_t *buf = lv_display_get_buf_active(disp);
+    for (uint32_t y = 0; y < buf->header.h; y++) {
+        uint16_t *pixels = (uint16_t *)(buf->data + y * buf->header.stride);
+        for (uint32_t x = 0; x < buf->header.w; x++) {
+            uint16_t p = pixels[x];
+            pixels[x] = (uint16_t)((p & 0x07E0) | ((p & 0xF800) >> 11) | ((p & 0x001F) << 11));
+        }
+    }
+}
+#endif
+
+#if BSP_HAS_ENCODER_SETTINGS
+static int encoder_counts = 4, encoder_remainder;
+static int encoder_hw_counts = 2;  /* 预览默认复现“两格走一下” */
+#endif
+
+int bsp_encoder_default_counts_per_detent(void)
+{
+#if BSP_HAS_ENCODER_SETTINGS
+    return 4;
+#else
+    return 0;
+#endif
+}
+
+int bsp_encoder_get_counts_per_detent(void)
+{
+#if BSP_HAS_ENCODER_SETTINGS
+    return encoder_counts;
+#else
+    return 0;
+#endif
+}
+
+bool bsp_encoder_set_counts_per_detent(int counts)
+{
+#if BSP_HAS_ENCODER_SETTINGS
+    if (counts < 0 || counts > 8) return false;
+    encoder_counts = counts ? counts : bsp_encoder_default_counts_per_detent();
+    encoder_remainder = 0;
+    return true;
+#else
+    LV_UNUSED(counts);
+    return false;
+#endif
+}
+
+static uint64_t screen_now_ms(void)
+{
+    return SDL_GetTicks64();
+}
+
+static void backlight_apply(int pct)
+{
+#if BSP_HAS_LINUX_HOST
+    if (bsp_linux_backlight_apply(pct)) return;   /* 写到了 /sys/class/backlight */
+    if (pct == 0 && !bsp_linux_dpms_ok()) {
+        /* 息屏请求但 sysfs 背光与 X11 DPMS 都不可用/失败：屏幕不会有任何
+           反应，日志 + toast 告知用户，避免"按了没反应"的困惑 */
+        printf("backlight: screen-off has no effect (no sysfs backlight, DPMS failed/unavailable)\n");
+        ui_toast("无背光控制，无法息屏", THEME_COL_WARN);
+    }
+#endif
+    /* Desktop has no physical backlight; keep the state observable in logs. */
+    printf("backlight: %d%%\n", pct);
+}
+
+static int SDLCALL screen_input_filter(void *userdata, SDL_Event *event)
+{
+    (void)userdata;
+    bool activity = event->type == SDL_MOUSEWHEEL ||
+                    event->type == SDL_KEYDOWN ||
+                    event->type == SDL_TEXTINPUT ||
+                    event->type == SDL_FINGERDOWN ||
+                    (event->type == SDL_MOUSEBUTTONDOWN &&
+                     (event->button.button == SDL_BUTTON_LEFT ||
+                      event->button.button == SDL_BUTTON_MIDDLE));
+
+    /* Dropping the first event mirrors the hardware adapters: waking the
+       screen must not also click a control or move encoder focus. */
+    if (activity && bsp_screen_activity()) return 0;
+    /* FINGER 事件在旋转 90/270 下坐标被 lv_sdl_mouse 错误缩放（见 bsp_init），
+       丢弃之；触摸经 SDL touch→mouse 合成以鼠标事件到达，坐标始终正确。
+       FINGERDOWN 已在上面计入息屏唤醒，丢弃不影响唤醒逻辑。 */
+    if (event->type == SDL_FINGERDOWN || event->type == SDL_FINGERUP ||
+        event->type == SDL_FINGERMOTION) return 0;
+#if BSP_HAS_ENCODER_SETTINGS
+    if (event->type == SDL_MOUSEWHEEL) {
+        /* 在 SDL 正常 encoder 驱动之前换算；中键/键盘/触摸不受影响。
+         * setter 与事件泵均运行在主 LVGL 线程，不另建输入后台线程。 */
+        encoder_remainder += event->wheel.y * encoder_hw_counts;
+        event->wheel.y = encoder_remainder / encoder_counts;
+        encoder_remainder -= event->wheel.y * encoder_counts;
+    }
+#endif
+    return 1;
+}
 
 void bsp_init(void)
 {
     const char *res = getenv("KLIPPER_RES");
     if (res) {
         int w = 0, h = 0;
-        if (sscanf(res, "%dx%d", &w, &h) == 2 && w >= 240 && h >= 240) {
+        if (sscanf(res, "%dx%d", &w, &h) == 2 && w >= 128 && h >= 96) {
             scr_w = w; scr_h = h;
         }
+    }
+
+    /* 触摸坐标修复：lv_sdl_mouse 处理 SDL_FINGER* 时把窗口归一化坐标乘的是
+       lv_display_get_horizontal_resolution()——旋转 90/270 后返回交换过的逻辑
+       分辨率，触摸被按错误宽高比缩放（release 坐标错位 → 下拉框选错项、滑条
+       拖不到头）。强制 touch→mouse 合成（窗口像素坐标，任何旋转下都正确），
+       并在 screen_input_filter 里丢弃 FINGER 事件，触摸只走鼠标路径。 */
+    SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "1");
+
+    /* 独占显示服务（Linux systemd 单元设置 KLIPPER_FULLSCREEN=1）：
+       以屏幕原生分辨率建窗并隐藏光标——weston kiosk-shell 会自动全屏化
+       xdg-toplevel；裸 X11（xinit 无 WM）下原生分辨率窗口即铺满全屏。
+       SDL_Init 幂等，提前调只为读显示模式。 */
+    const bool fullscreen = !res && getenv("KLIPPER_FULLSCREEN") &&
+                            getenv("KLIPPER_FULLSCREEN")[0] == '1';
+    if (fullscreen) {
+        SDL_Init(SDL_INIT_VIDEO);
+        SDL_DisplayMode mode;
+        if (SDL_GetCurrentDisplayMode(0, &mode) == 0 &&
+            mode.w >= 128 && mode.h >= 96) {
+            scr_w = mode.w;
+            scr_h = mode.h;
+        }
+        SDL_ShowCursor(SDL_DISABLE);
     }
 
     lv_init();
 
     lv_display_t *disp = lv_sdl_window_create(scr_w, scr_h);
-    lv_sdl_window_set_zoom(disp, scr_w <= 320 ? 2 : 1);
-    lv_sdl_window_set_title(disp, "Klipper Remote (desktop)");
+#if defined(KLIPPER_DESKTOP_SIMULATOR) && defined(KR_DISPLAY_SETTINGS_PREVIEW)
+    /* 仅在已验证的 SDL 模式开放能力，避免误用于异步/局部缓冲驱动。 */
+    if (lv_display_get_color_format(disp) == LV_COLOR_FORMAT_RGB565 &&
+        LV_SDL_RENDER_MODE == LV_DISPLAY_RENDER_MODE_DIRECT && LV_USE_DRAW_SDL == 0) {
+        bsp_disp_color_order_register(false, preview_color_order_apply); /* SDL 原生 RGB */
+        lv_display_add_event_cb(disp, preview_color_flush, LV_EVENT_FLUSH_START, NULL);
+        lv_display_add_event_cb(disp, preview_color_flush, LV_EVENT_FLUSH_FINISH, NULL);
+    }
+#endif
+    /* 小屏放大看：160x128 → 3x，320x240 → 2x，800x480 → 1x；全屏服务不缩放 */
+    if (!fullscreen)
+        lv_sdl_window_set_zoom(disp, scr_w <= 200 ? 3 : (scr_w <= 320 ? 2 : 1));
+#ifdef KLIPPER_DESKTOP_SIMULATOR
+#if defined(KR_DISPLAY_SETTINGS_PREVIEW)
+    lv_sdl_window_set_title(disp, "Display Settings Preview - RGB/BGR + Encoder");
+#elif BSP_HAS_ENCODER_SETTINGS
+    lv_sdl_window_set_title(disp, "Encoder Settings Preview - wheel / middle click");
+#else
+    lv_sdl_window_set_title(disp, "Klipper Remote Simulator");
+#endif
+#else
+    lv_sdl_window_set_title(disp, "Klipper Remote");
+#endif
     lv_sdl_mouse_create();
+    lvgl_mutex = SDL_CreateMutex();
+    if (!lvgl_mutex) {
+        fprintf(stderr, "SDL_CreateMutex failed: %s\n", SDL_GetError());
+        exit(1);
+    }
+    bsp_screen_power_init(backlight_apply, screen_now_ms);
+    SDL_SetEventFilter(screen_input_filter, NULL);
+}
+
+/* 物理键盘 → 语义实体按钮（上/下/左/右/确定/返回）。
+   文本输入会话期间键盘归会话所有（ui_nav 的 desktop_keyboard_watch），这里让路。
+   事件在 SDL_PollEvent（LVGL 定时器内、已持锁）里派发，可直接喂语义层。 */
+static int SDLCALL buttons_sdl_watch(void *userdata, SDL_Event *event)
+{
+    (void)userdata;
+    if (event->type != SDL_KEYDOWN && event->type != SDL_KEYUP) return 0;
+    if (ui_desktop_input_active()) {
+        /* 文本输入会话期间：方向键归导航走位；回车归导航（按下虚拟键盘高亮键 /
+           数字键盘焦点键 = 输入字符），F1 才提交表单；字符/退格/ESC 归会话。 */
+        switch (event->key.keysym.sym) {
+        case SDLK_UP: case SDLK_DOWN: case SDLK_LEFT: case SDLK_RIGHT:
+        case SDLK_RETURN: case SDLK_KP_ENTER:
+            break;
+        default: return 0;
+        }
+    }
+    if (event->key.repeat) return 0;   /* 长按重复由 LVGL keypad 处理，忽略 SDL 自重复 */
+    if (event->type == SDL_KEYDOWN &&
+        (event->key.keysym.mod & (KMOD_CTRL | KMOD_ALT | KMOD_GUI))) return 0;
+
+    ui_button_id_t id;
+    switch (event->key.keysym.sym) {
+    case SDLK_UP:        id = UI_BTN_UP;    break;
+    case SDLK_DOWN:      id = UI_BTN_DOWN;  break;
+    case SDLK_LEFT:      id = UI_BTN_LEFT;  break;
+    case SDLK_RIGHT:     id = UI_BTN_RIGHT; break;
+    case SDLK_RETURN:
+    case SDLK_KP_ENTER:  id = UI_BTN_OK;    break;
+    case SDLK_ESCAPE:
+    case SDLK_BACKSPACE: id = UI_BTN_BACK;  break;
+    default: return 0;
+    }
+    ui_buttons_send(id, event->type == SDL_KEYDOWN);
+    return 0;
+}
+
+void bsp_input_init(void)
+{
+#if BSP_HAS_ENCODER_SETTINGS
+    const char *counts = getenv("KLIPPER_ENCODER_HW_COUNTS");
+    if (counts && strlen(counts) == 1 && counts[0] >= '1' && counts[0] <= '8')
+        encoder_hw_counts = counts[0] - '0';
+#endif
+    /* 滚轮正/反转 = encoder diff；中键按下 = encoder push。 */
+    lv_sdl_mousewheel_create();
+    SDL_AddEventWatch(buttons_sdl_watch, NULL);
 }
 
 /* ---------- 开机动画推屏（boot_anim 调用；首次调用时建全屏 canvas） ---------- */
@@ -73,9 +297,9 @@ lv_display_t *bsp_get_display(void)
     return lv_display_get_default();
 }
 
-/* 桌面端 LVGL 单线程运行（LV_USE_OS=LV_OS_NONE），锁为空操作 */
-void bsp_lvgl_lock(void)   {}
-void bsp_lvgl_unlock(void) {}
+/* 网络线程只在持锁时向 LVGL 投递异步更新。主循环也持同一把锁。 */
+void bsp_lvgl_lock(void)   { if (lvgl_mutex) SDL_LockMutex(lvgl_mutex); }
+void bsp_lvgl_unlock(void) { if (lvgl_mutex) SDL_UnlockMutex(lvgl_mutex); }
 
 void bsp_restart(void)
 {
@@ -84,17 +308,15 @@ void bsp_restart(void)
     exit(0);
 }
 
-void bsp_set_brightness(int pct)
-{
-    /* 桌面端无背光硬件，仅打印便于调试 */
-    printf("bsp_set_brightness: %d%%\n", pct);
-}
+const char *bsp_board_name(void) { return "desktop"; }
 
-/* 桌面端调试前端：反色/旋转不提供（UI 会按 can_* 隐藏开关） */
+/* 桌面端调试前端：反色/旋转/镜像不提供（UI 会按 can_* 隐藏开关） */
 bool bsp_disp_can_invert(void)    { return false; }
 bool bsp_disp_can_rotate180(void) { return false; }
+bool bsp_disp_can_mirror_x(void)  { return false; }
 void bsp_disp_set_invert(bool en)    { LV_UNUSED(en); }
 void bsp_disp_set_rotate180(bool en) { LV_UNUSED(en); }
+void bsp_disp_set_mirror_x(bool en)  { LV_UNUSED(en); }
 
 void bsp_fade_out(uint32_t ms)
 {
@@ -103,14 +325,15 @@ void bsp_fade_out(uint32_t ms)
     lv_delay_ms(ms);
 }
 
-void bsp_set_screen_timeout(uint32_t sec)
-{
-    /* 桌面端不息屏，仅打印便于调试 */
-    printf("bsp_set_screen_timeout: %us\n", (unsigned)sec);
-}
-
 void bsp_time_sync_from_host(const char *host, uint16_t port)
 {
     /* 桌面端直接用本机时间，无需兜底 */
     (void)host; (void)port;
+}
+
+bool bsp_time_sync_from_http_date(const char *http_date)
+{
+    /* 桌面端直接用本机时间；视为已处理，调用方无需平台分支。 */
+    (void)http_date;
+    return true;
 }

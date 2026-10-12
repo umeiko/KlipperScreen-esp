@@ -46,4 +46,3 @@ const lv_image_dsc_t img_nozzle_16 = {
   .data = img_nozzle_16_map,
   .reserved = NULL,
 };
-

@@ -1,0 +1,6 @@
+# 立创实战派 ESP32-S3（esp32s3-JLC-SZP）: 16MB flash, large app + 6MB LittleFS.
+# Name,    Type, SubType, Offset,   Size,      Flags
+nvs,       data, nvs,     0x9000,   0x6000,
+phy_init,  data, phy,     0xf000,   0x1000,
+factory,   app,  factory, 0x10000,  0x9F0000,
+storage,   data, littlefs, 0xA00000, 0x600000,

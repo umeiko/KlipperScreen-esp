@@ -3,13 +3,14 @@
 /*
  * WiFi 抽象：扫描 → 选 AP → 输密码 → 连接，三端实现
  *   esp32   : bsp/esp32/bsp_wifi_esp32.c     （esp_wifi 事件驱动）
- *   Windows : bsp/desktop/bsp_wifi_windows.c （netsh wlan，后台线程 + popen）
+ *   Windows : bsp/desktop/bsp_wifi_windows.c （netsh wlan，后台线程 + 隐藏子进程）
  *   Linux   : bsp/desktop/bsp_wifi_linux.c   （nmcli，后台线程 + popen）
  *
  * 全部为非阻塞轮询模型，UI 在节拍里 poll，不做任何回调注册。
  */
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -47,10 +48,17 @@ int bsp_wifi_scan_poll(bsp_wifi_ap_t *out, int max);
 /* 发起连接；open 网络传 password=NULL。自动取消正在进行的连接 */
 void bsp_wifi_connect(const char *ssid, const char *password);
 
+/* 启动 SoftAP 热点（供首次配置/后台无网时访问）；STA 模式不受影响，AP+STA 共存 */
+void bsp_wifi_start_ap(const char *ssid, const char *password);
+
 bsp_wifi_state_t bsp_wifi_status(void);
 
 /* 当前是否真的连着 WiFi（不依赖本 UI 的连接流程；桌面端为后台轮询缓存） */
 bool bsp_wifi_connected(void);
+
+/* 当前连接信息（WiFi 面板顶部状态卡用）：返回 true=已连接，ssid/ip 尽量填充；
+   未连接返回 false（ssid/ip 为空串）。任一出参可传 NULL。 */
+bool bsp_wifi_current(char *ssid, size_t ssid_len, char *ip, size_t ip_len);
 
 #ifdef __cplusplus
 }

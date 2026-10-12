@@ -8,6 +8,9 @@ src/ports/esp32/dependencies.lock
 # 根目录早期构建残留（真实工程在 src/ports/esp32）
 /managed_components/
 /sdkconfig
+
+# host 端单元测试产物（tools/test-stream-parser.sh）
+/build-tests/
 /dependencies.lock
 
 # 截图产物
@@ -26,9 +29,21 @@ tools/icongen/.venv/
 
 # 临时
 tmp/
+__pycache__/
+*.py[cod]
 
 # MkDocs 本地构建产物（CI 里重新构建）
 /site/
 
+# 本地打包产物（CI/Release 会重新生成）
+/dist/
+
 # desktop 后端运行时产生的本机配置（勿入库）
 src/ports/desktop/*.conf
+
+# 本地构建/烧录辅助脚本与日志（本机路径，勿入库）
+*.bak
+/build_live.log
+/flash_com5.log
+/build_st7789.bat
+/flash_com5.bat

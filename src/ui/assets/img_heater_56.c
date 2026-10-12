@@ -86,4 +86,3 @@ const lv_image_dsc_t img_heater_56 = {
   .data = img_heater_56_map,
   .reserved = NULL,
 };
-

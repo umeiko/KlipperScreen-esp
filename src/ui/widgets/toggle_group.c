@@ -13,8 +13,11 @@ typedef struct {
 static void refresh(tg_ctx_t *ctx)
 {
     for (int i = 0; i < ctx->count; i++) {
+        bool selected = i == ctx->selected;
         lv_obj_set_style_bg_color(ctx->btns[i],
-            theme_col(i == ctx->selected ? THEME_COL_ACCENT : THEME_COL_SURFACE2), 0);
+            theme_col(selected ? THEME_COL_ACCENT : THEME_COL_SURFACE2), 0);
+        theme_focus_bg(ctx->btns[i], THEME_COL_ACCENT,
+                       selected ? LV_OPA_COVER : LV_OPA_30);
     }
 }
 

@@ -46,4 +46,3 @@ const lv_image_dsc_t img_swap_16 = {
   .data = img_swap_16_map,
   .reserved = NULL,
 };
-

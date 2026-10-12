@@ -66,7 +66,9 @@ static lv_obj_t *create(void)
     int ybot = ui_scr_h() - ui_px(6) - ui_px(30) - gap;              /* 归位行上方 */
     int pitch = (ybot - y0) / 3;
     int row_h = pitch - gap;
-    int side_w = ui_px(76);
+    /* 方屏（480x480）：2x 换算的侧键 152px 会挤占轴位置显示区，
+       限到内容宽 1/4（CYD 76/76、JC8048 152/152 不变） */
+    int side_w = LV_MIN(ui_px(76), ui_content_w() / 4);
     int card_w = ui_content_w() - 2 * side_w - 2 * gap;
     for (int a = 0; a < 3; a++) {
         int y = y0 + a * pitch;
@@ -104,8 +106,10 @@ static lv_obj_t *create(void)
 }
 
 panel_def_t panel_move_def = {
-    .name = "move", .title = "移动",
+    .name = "move", .title = "",   /* 无标题：界面语义自明，且标题会与标题栏温度数值压叠 */
     .create = create,
     .on_show = update_pos,
     .on_tick = update_pos,
+    .hide_temps = 1,               /* 标题栏温度让位给右上角关闭电机按钮 */
+    .show_motor_off = 1,
 };

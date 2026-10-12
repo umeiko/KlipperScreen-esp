@@ -1,0 +1,8 @@
+# SenseCAP Indicator 8MB Flash 分区表：全表 GB2312 字库（28/32 不压缩，固件 ~7.25MB），
+# factory 给到 7.4MB，其余 704KB 给 littlefs。
+# 注意：storage 偏移较旧版后移，升级后原设置丢失，需重配 WiFi/Moonraker。
+# Name,    Type, SubType, Offset,   Size,      Flags
+nvs,       data, nvs,     0x9000,   0x6000,
+phy_init,  data, phy,     0xf000,   0x1000,
+factory,   app,  factory, 0x10000,  0x740000,
+storage,   data, littlefs,,         0xB0000,

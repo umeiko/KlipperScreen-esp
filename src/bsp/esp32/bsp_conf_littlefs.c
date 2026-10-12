@@ -28,3 +28,10 @@ int bsp_conf_write(const char *name, const char *buf)
     fclose(f);
     return 0;
 }
+
+/* ESP32 没有"本机 Moonraker"的概念，不提供默认打印机 */
+bool bsp_conf_default_printer(char *host, size_t host_len, char *name, size_t name_len)
+{
+    (void)host; (void)host_len; (void)name; (void)name_len;
+    return false;
+}

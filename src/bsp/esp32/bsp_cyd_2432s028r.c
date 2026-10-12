@@ -1,14 +1,19 @@
 /*
  * BSP: CYD ESP32-2432S028R（2.8" 240x320 ILI9341 + XPT2046 电阻触摸）
+ *   及 CYD ESP32-2432S028R-PLUS（同引脚，面板换 ST7789，无 RST 脚）
  * 逻辑分辨率 320x240 横屏。
  */
 #include "sdkconfig.h"
-#if CONFIG_BOARD_CYD_2432S028R
+#if CONFIG_BOARD_CYD_2432S028R || CONFIG_BOARD_CYD_2432S028R_PLUS
 
 #include "bsp.h"
+#include "bsp_lcd_color_io.h"
+#include "bsp_screen_power.h"
+#include "bsp_sleep_button.h"
 
 #include <math.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "cJSON.h"
 #include "driver/gpio.h"
@@ -16,7 +21,11 @@
 #include "driver/spi_master.h"
 #include "esp_check.h"
 #include "esp_heap_caps.h"
-#include "esp_lcd_ili9341.h"
+#if defined(CONFIG_BOARD_CYD_2432S028R_PLUS)
+#include "esp_lcd_panel_st7789.h"   /* PLUS：ST7789（IDF esp_lcd 内置驱动） */
+#else
+#include "esp_lcd_ili9341.h"        /* 原版 CYD：ILI9341（managed 组件） */
+#endif
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_touch_xpt2046.h"
@@ -36,13 +45,18 @@
 #define PIN_LCD_MISO   12
 #define PIN_LCD_CS     15
 #define PIN_LCD_DC     2
+#if defined(CONFIG_BOARD_CYD_2432S028R_PLUS)
+#define PIN_LCD_RST    (-1)  /* PLUS 无复位脚（厂商文档 TFT_RST=-1），靠驱动内 SWRESET */
+#else
 #define PIN_LCD_RST    4
+#endif
 #define PIN_LCD_BL     21
 #define PIN_TP_SCLK    25
 #define PIN_TP_MOSI    32
 #define PIN_TP_MISO    39
 #define PIN_TOUCH_CS   33
 #define PIN_TOUCH_IRQ  36
+#define PIN_BTN_BOOT    0   /* 板载 BOOT 键：按下息屏，再按唤醒 */
 
 #define LCD_H_RES      320   /* 横屏逻辑分辨率 */
 #define LCD_V_RES      240
@@ -72,12 +86,14 @@ typedef struct {
     float ym, yc;   /* screen_y = raw_y * ym + yc */
 } touch_cal_t;
 
-/* 本机型（2432S028R）出厂默认值，从真机校准结果提取；
-   文件缺失时写入该值，串口 CLI 输入 caltouch 可重新校准 */
+/* 本机型（2432S028R）出厂默认值，从真机校准结果提取；PLUS 触摸部分与原版
+   完全相同（XPT2046 同引脚同结构），沿用同一默认值。
+   文件缺失/损坏时回写该值并直接使用，不会进入校准流程 */
 #define TOUCH_CAL_DEFAULT \
     { -0.081585079f, 325.2913818f, -0.062754944f, 246.2943268f }
 
-#define TOUCH_CAL_PATH  "/littlefs/touch.json"
+#define TOUCH_CAL_PATH       "/littlefs/touch.json"
+#define TOUCH_CAL_FORCE_PATH "/littlefs/.caltouch"   /* CLI caltouch 写入的强制校准标记 */
 
 static touch_cal_t tcal = TOUCH_CAL_DEFAULT;
 
@@ -118,6 +134,14 @@ static void touch_cal_save(void)
 
 static bool touch_cal_load(void)
 {
+    /* CLI `caltouch` 留下的强制校准标记：删除后返回 false → 进两点校准 */
+    FILE *ff = fopen(TOUCH_CAL_FORCE_PATH, "r");
+    if (ff) {
+        fclose(ff);
+        remove(TOUCH_CAL_FORCE_PATH);
+        ESP_LOGW(TAG, "touch calibration forced via CLI");
+        return false;
+    }
     char buf[160] = {0};
     FILE *f = fopen(TOUCH_CAL_PATH, "r");
     if (f) {
@@ -260,15 +284,25 @@ void bsp_delay_ms(uint32_t ms)
     vTaskDelay(pdMS_TO_TICKS(ms));
 }
 
-/* ---------- 反色 / 180° 旋转（运行时生效，设置项由 app 层落盘/回读） ---------- */
-static bool disp_rot180;
+/* ---------- 反色 / 180° 旋转 / 水平镜像（运行时生效，设置项由 app 层落盘/回读） ---------- */
+static bool disp_rot180, disp_mirrorx;
 
 bool bsp_disp_can_invert(void)   { return true; }
 bool bsp_disp_can_rotate180(void) { return true; }
+bool bsp_disp_can_mirror_x(void)  { return true; }
 
 void bsp_disp_set_invert(bool en)
 {
     if (panel_handle) esp_lcd_panel_invert_color(panel_handle, en);
+}
+
+/* 默认 mirror(true,true)。swap_xy 下屏幕水平轴对应面板 Y 轴：
+   panel_mx = 默认 ^ rot180；panel_my = 默认 ^ rot180 ^ mirror_x */
+static void panel_mirror_apply(void)
+{
+    if (panel_handle)
+        esp_lcd_panel_mirror(panel_handle,
+                             !disp_rot180, disp_rot180 == disp_mirrorx);
 }
 
 void bsp_disp_set_rotate180(bool en)
@@ -276,56 +310,31 @@ void bsp_disp_set_rotate180(bool en)
     disp_rot180 = en;
     /* 默认 mirror(true,true)；180° = 两轴都翻 → mirror(false,false)。
        swap_xy 下 mirror 参数仍指面板轴，两轴同翻与 swap 无关 */
-    if (panel_handle) esp_lcd_panel_mirror(panel_handle, !en, !en);
+    panel_mirror_apply();
 }
 
-/* 背光亮度 0-100（0 也会留 5% 兜底，避免黑屏后摸不到设置） */
-static uint8_t bl_duty = 255;
-static int     bl_pct = 100;
+void bsp_disp_set_mirror_x(bool en)
+{
+    disp_mirrorx = en;
+    panel_mirror_apply();
+}
 
-void bsp_set_brightness(int pct)
+/* 板级背光实现：本板非零占空比至少 5%，逻辑亮度与息屏状态由公共状态机管理。 */
+static uint8_t bl_duty = 255;
+
+static void backlight_apply(int pct)
 {
     if (pct < 0) pct = 0;
     if (pct > 100) pct = 100;
     if (pct > 0 && pct < 5) pct = 5;
-    bl_pct = pct;
     bl_duty = (uint8_t)(pct * 255 / 100);
     ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, bl_duty);
     ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
 }
 
-/* ---------- 自动息屏：超时灭背光，触摸唤醒 ---------- */
-static uint32_t so_after_s;                     /* 0 = 永不 */
-static bool     screen_off;
-static int64_t  last_act_us;
-
-void bsp_set_screen_timeout(uint32_t sec)
+static uint64_t screen_now_ms(void)
 {
-    so_after_s = sec;
-    last_act_us = esp_timer_get_time();
-    if (screen_off) {                           /* 改设置时若正息屏，先唤醒 */
-        screen_off = false;
-        bsp_set_brightness(bl_pct);
-    }
-}
-
-static void screen_activity(void)               /* 触摸回调里打点 + 唤醒 */
-{
-    last_act_us = esp_timer_get_time();
-    if (screen_off) {
-        screen_off = false;
-        bsp_set_brightness(bl_pct);
-    }
-}
-
-static void screen_off_check(void)              /* lvgl 任务里周期检查 */
-{
-    if (screen_off || !so_after_s) return;
-    if (esp_timer_get_time() - last_act_us > (int64_t)so_after_s * 1000000) {
-        screen_off = true;
-        ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
-        ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
-    }
+    return (uint64_t)(esp_timer_get_time() / 1000);
 }
 
 /* LEDC 硬件渐变到灭（阻塞至完成）。语言切换重启前调用，避免生硬跳变 */
@@ -340,16 +349,19 @@ void bsp_fade_out(uint32_t ms)
     ledc_fade_start(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, LEDC_FADE_WAIT_DONE);
     bl_duty = 0;
 
-    /* 渐暗后把 GRAM 整屏推黑：否则面板寄存器残留旧帧，下次上电瞬间会闪一下旧画面 */
-    static uint16_t black[LCD_H_RES * 40];   /* 静态零初始化即全黑（RGB565 0x0000） */
-    for (int y = 0; y < LCD_V_RES; y += 40) {
+    /* 渐暗后把 GRAM 整屏推黑：否则面板寄存器残留旧帧，下次上电瞬间会闪一下旧画面。
+       不保留任何常驻缓冲：栈上现场填一行全 0，逐行推完即释放 */
+    uint16_t black[LCD_H_RES];
+    memset(black, 0, sizeof(black));   /* RGB565 0x0000 = 黑 */
+    for (int y = 0; y < LCD_V_RES; y++) {
         xSemaphoreTake(lcd_trans_done, 0);
-        esp_lcd_panel_draw_bitmap(panel_handle, 0, y, LCD_H_RES, y + 40, black);
+        esp_lcd_panel_draw_bitmap(panel_handle, 0, y, LCD_H_RES, y + 1, black);
         xSemaphoreTake(lcd_trans_done, pdMS_TO_TICKS(500));
     }
 }
 
 /* ---------- LVGL 对接 ---------- */
+
 static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
 {
     /* ILI9341 走 SPI 要求先发像素高字节，LVGL 内存是小端 RGB565 → 就地交换字节。
@@ -376,8 +388,7 @@ static void touch_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
 
     uint16_t rx, ry;
     if (tp_read_raw(&rx, &ry)) {
-        if (screen_off) wake_swallow = true;    /* 息屏时的按下只为唤醒 */
-        screen_activity();          /* 息屏唤醒 + 重置超时计时 */
+        if (bsp_screen_activity()) wake_swallow = true; /* 息屏时的按下只为唤醒 */
         last_rx = rx;
         last_ry = ry;
         last_valid_us = esp_timer_get_time();
@@ -403,6 +414,7 @@ static void touch_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
         sx = LCD_H_RES - 1 - sx;
         sy = LCD_V_RES - 1 - sy;
     }
+    if (disp_mirrorx) sx = LCD_H_RES - 1 - sx;   /* 水平镜像：触摸 X 同步翻转 */
     data->state = LV_INDEV_STATE_PRESSED;
     data->point.x = LV_CLAMP(0, sx, LCD_H_RES - 1);
     data->point.y = LV_CLAMP(0, sy, LCD_V_RES - 1);
@@ -410,11 +422,21 @@ static void touch_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
 
 static void lvgl_task(void *arg)
 {
+    /* 堆低水位监控：free 创新低的整 KB 时打 WARN，定位内存泄漏/OOM（WDT 前兆） */
+    size_t low_mark = (size_t)-1;
     for (;;) {
         bsp_lvgl_lock();
         lv_timer_handler();
+        bsp_screen_power_poll();
+        bsp_sleep_button_poll();
         bsp_lvgl_unlock();
-        screen_off_check();
+        size_t free_kb = esp_get_free_heap_size() / 1024;
+        if (free_kb < low_mark) {
+            low_mark = free_kb;
+            ESP_LOGW(TAG, "heap low: free=%uKB min_ever=%uKB largest_blk=%uB",
+                     (unsigned)free_kb, (unsigned)(esp_get_minimum_free_heap_size() / 1024),
+                     (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+        }
         vTaskDelay(pdMS_TO_TICKS(5));
     }
 }
@@ -460,6 +482,7 @@ void bsp_init(void)
         .hpoint = 0,
     };
     ESP_ERROR_CHECK(ledc_channel_config(&bl_ch));
+    bsp_screen_power_init(backlight_apply, screen_now_ms);
 
     /* SPI2 总线（LCD） */
     spi_bus_config_t buscfg = {
@@ -500,17 +523,24 @@ void bsp_init(void)
     esp_lcd_panel_io_callbacks_t io_cbs = { .on_color_trans_done = on_color_trans_done };
     ESP_ERROR_CHECK(esp_lcd_panel_io_register_event_callbacks(io_handle, &io_cbs, NULL));
 
+    ESP_ERROR_CHECK(bsp_lcd_color_io_wrap(&io_handle, true));
     esp_lcd_panel_dev_config_t panel_cfg = {
         .reset_gpio_num = PIN_LCD_RST,
-        .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_BGR,   /* 面板 BGR 原生（对照 TFT_eSPI ILI9341_2 驱动实测） */
+        .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_BGR,   /* 面板 BGR 原生（ILI9341 对照 TFT_eSPI 实测；PLUS 厂商文档同样要求 BGR） */
         .bits_per_pixel = 16,
     };
+#if defined(CONFIG_BOARD_CYD_2432S028R_PLUS)
+    ESP_ERROR_CHECK(esp_lcd_new_panel_st7789(io_handle, &panel_cfg, &panel_handle));
+#else
     ESP_ERROR_CHECK(esp_lcd_new_panel_ili9341(io_handle, &panel_cfg, &panel_handle));
+#endif
     ESP_ERROR_CHECK(esp_lcd_panel_reset(panel_handle));
     ESP_ERROR_CHECK(esp_lcd_panel_init(panel_handle));
-    /* 横屏 320x240；swap_xy 后屏幕水平轴对应面板 Y 轴，水平镜像要翻 mirror_y */
+    /* 横屏 320x240；swap_xy 后屏幕水平轴对应面板 Y 轴，水平镜像要翻 mirror_y。
+       PLUS(ST7789) 沿用同组方向默认值；个别单元画面颠倒用 设置→显示→180° 翻转 */
     ESP_ERROR_CHECK(esp_lcd_panel_swap_xy(panel_handle, true));
     ESP_ERROR_CHECK(esp_lcd_panel_mirror(panel_handle, true, true));
+    /* ST7789 默认 INVOFF 即正常颜色，无需强制 INVON */
     ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_handle, true));
 
     /* 触摸 XPT2046：取原始 ADC，不做驱动层坐标换算/镜像（由两点校准吸收） */
@@ -544,14 +574,23 @@ void bsp_init(void)
     lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
     lv_indev_set_read_cb(indev, touch_read_cb);
 
-    /* 无校准数据 → 阻塞式两点校准（LVGL 任务启动前手动泵帧） */
+    /* touch_cal_load 在文件缺失/损坏时回写出厂默认值并返回 true；
+       CLI `caltouch` 写强制标记重启后才走 touch_cal_run() 两点校准 */
     if (!touch_cal_load()) {
         touch_cal_run();
     }
 
+    /* BOOT 键 = 息屏/唤醒按钮（低电平有效，内部上拉） */
+    const bsp_sleep_button_cfg_t sleep_btns[] = {{ PIN_BTN_BOOT, true }};
+    ESP_ERROR_CHECK(bsp_sleep_button_init(sleep_btns, 1));
+
     xTaskCreatePinnedToCore(lvgl_task, "lvgl", 12288, NULL, 4, NULL, 1);
 
+#if defined(CONFIG_BOARD_CYD_2432S028R_PLUS)
+    ESP_LOGI(TAG, "BSP ready (2432S028R-PLUS ST7789, %dx%d)", LCD_H_RES, LCD_V_RES);
+#else
     ESP_LOGI(TAG, "BSP ready (2432S028R, %dx%d)", LCD_H_RES, LCD_V_RES);
+#endif
 }
 
 void bsp_restart(void)
@@ -562,4 +601,4 @@ void bsp_restart(void)
     esp_restart();
 }
 
-#endif /* CONFIG_BOARD_CYD_2432S028R */
+#endif /* CONFIG_BOARD_CYD_2432S028R || CONFIG_BOARD_CYD_2432S028R_PLUS */

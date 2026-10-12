@@ -1,0 +1,15 @@
+# TODO(board): replace the board selector and chip/flash settings.
+CONFIG_BOARD_TEMPLATE=y
+CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
+CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+
+# Optional external rotary encoder. Delete this block when the board has none.
+# It is initialized by shared BSP code and can coexist with touch.
+# CONFIG_INPUT_ROTARY_ENCODER=y
+# CONFIG_INPUT_ROTARY_GPIO_A=4
+# CONFIG_INPUT_ROTARY_GPIO_B=5
+# CONFIG_INPUT_ROTARY_GPIO_BUTTON=6
+# CONFIG_INPUT_ROTARY_COUNTS_PER_DETENT=4
+# CONFIG_INPUT_ROTARY_PHASE_PULLUPS=y
+# CONFIG_INPUT_ROTARY_BUTTON_ACTIVE_LOW=y

@@ -28,10 +28,15 @@ UI_DIR = ROOT / "src" / "ui"
 CONV_JS = ROOT / "tools" / "fontgen" / "node_modules" / "lv_font_conv" / "lv_font_conv.js"
 CHARSET_OUT = ROOT / "tmp" / "cjk_chars.txt"
 DEFAULT_FONT = r"C:\Windows\Fonts\simhei.ttf"
-# 西文兜底字体：simhei 只覆盖拼音用拉丁字母（é/è/à/ê/ù…），缺 ç/ô/É 等，
-# Latin-1 补充区（0xA0-0xFF）整体由该字体补齐，避免法语/意语出现方框。
-DEFAULT_LATIN_FONT = r"C:\Windows\Fonts\arial.ttf"
-SIZES = (14, 16, 28, 32)   # 14/16: 320x240 基准；28/32: 800x480 双倍档
+# 西文字体：Lato（OFL 许可，可嵌入分发，已随仓库提供）。ASCII(0x20-0x7F)与
+# Latin-1 补充区(0xA0-0xFF，法语/意语重音字母)全部由它提供，界面西文风格统一；
+# 主字体 simhei 只负责 CJK 等非 ASCII 字符。
+DEFAULT_LATIN_FONT = str(ROOT / "tools" / "fontgen" / "fonts" / "Lato-Regular.ttf")
+SIZES = (10, 12, 14, 16, 28, 32, 40, 48)
+# 10/12: 160x128 小屏档；14/16: 320x240 基准；28/32: 800x480 双倍档；
+# 40/48: 桌面端 720p+（scale>=3）大字档——ESP32 用不到，文件体包
+# #if !defined(ESP_PLATFORM)，GLOB 编译进固件工程时整文件为空，不占 flash/编译时间。
+DESKTOP_ONLY_SIZES = (40, 48)
 
 
 def iter_literals(path: Path):
@@ -102,10 +107,12 @@ def decode_literal(raw: str) -> bytes:
     return bytes(out)
 
 
-def gb2312_hanzi() -> str:
-    """GB2312 汉字区（0xB0A1-0xF7FE）全表 6763 字：文件名/SSID 等动态内容不再出方框。"""
+def gb2312_hanzi(level1_only: bool = False) -> str:
+    """GB2312 汉字区全表 6763 字（0xB0A1-0xF7FE）或仅一级常用字 3755 字
+    （0xB0A1-0xD7F9）。一级字覆盖常见城市名/人名/SSID 等动态内容，flash 占用约减半。"""
     chars = []
-    for row in range(0xB0, 0xF8):
+    rows = range(0xB0, 0xD8) if level1_only else range(0xB0, 0xF8)
+    for row in rows:
         # errors="ignore"：0xD7FA-0xD7FE 等个别码位未分配，直接跳过
         chars.append(bytes(b for c in range(0xA1, 0xFF) for b in (row, c))
                      .decode("gb2312", errors="ignore"))
@@ -125,17 +132,26 @@ def collect_chars() -> str:
 
 def gen_font(font: str, latin_font: str, size: int, symbols: str, compress: bool, suffix: str = "") -> Path:
     out = ROOT / "src" / "ui" / "assets" / f"font_cjk_{size}{suffix}.c"
+    # lv_font_conv 的 Ranger 是"后写覆盖"：--symbols 里若包含已被 Lato range
+    # 覆盖的码点（°·Éàâçèéêô 等 Latin-1 字符会被源码扫描收进来），该码点会被
+    # 改派给 simhei 渲染；simhei 缺字形（É/â/ç/ô 等）时码点整个丢失 → 法语界面
+    # 方框。所以 symbols 必须剔除 Latin range 已覆盖的码点（0x20-0x7F/0xA0-0xFF）。
+    symbols = "".join(ch for ch in symbols
+                      if not (0x20 <= ord(ch) <= 0x7F or 0xA0 <= ord(ch) <= 0xFF))
     cmd = [
         "node", str(CONV_JS),
-        "--font", font,
+        "--font", latin_font,
         "--size", str(size),
         "--bpp", "4",
         "--format", "lvgl",
         "--lv-include", "lvgl.h",
-        "--range", "0x20-0x7F",
-        "--symbols", symbols,
-        "--font", latin_font,
-        "--range", "0xA0-0xFF",
+        # ASCII + Latin-1 补充区同用 Lato（风格统一）。
+        # 注意必须是单个 --font 条目 + 逗号分段 range：同一个 ttf 写两个 --font
+        # 条目时 lv_font_conv 会在第二个 range 里莫名丢字形（实测丢 U+00C9 É
+        # 和 U+00E2 â，法语界面大片方框）。
+        "--range", "0x20-0x7F,0xA0-0xFF",
+        "--font", font,
+        "--symbols", symbols,         # CJK 等非 ASCII 用主字体（simhei）
         "-o", str(out),
     ]
     # 全部尺寸主版本不压缩：JC8048W550 滑动列表每帧重绘数百个字形，
@@ -145,7 +161,21 @@ def gen_font(font: str, latin_font: str, size: int, symbols: str, compress: bool
     if not compress:
         cmd.append("--no-compress")
     print(f"[gen] size={size} compress={compress} -> {out.relative_to(ROOT)}")
-    subprocess.run(cmd, check=True, cwd=ROOT)
+    # lv_font_conv 在 Windows 上偶发无症状非零退出（重跑即好），自动重试
+    last = None
+    for attempt in range(3):
+        last = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
+        if last.returncode == 0:
+            break
+        print(f"[gen] 第 {attempt + 1} 次失败 rc={last.returncode}: "
+              f"{(last.stderr or last.stdout or '').strip()[-300:]}", file=sys.stderr)
+    else:
+        raise RuntimeError(f"lv_font_conv 连续失败（size={size} compress={compress}）")
+    if size in DESKTOP_ONLY_SIZES and not suffix:
+        # 桌面大字档：包平台守卫，ESP32 GLOB 编译时整文件为空（见 DESKTOP_ONLY_SIZES）
+        text = out.read_text(encoding="utf-8")
+        out.write_text("#if !defined(ESP_PLATFORM)\n" + text
+                       + "\n#endif /* !ESP_PLATFORM */\n", encoding="utf-8")
     return out
 
 
@@ -153,7 +183,11 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="生成 LVGL CJK 子集字体")
     ap.add_argument("--font", default=DEFAULT_FONT, help="ttf/otf 主字体源路径（CJK+ASCII）")
     ap.add_argument("--font-latin", default=DEFAULT_LATIN_FONT,
-                    help="西文兜底字体源路径（Latin-1 补充区 0xA0-0xFF）")
+                    help="西文字体源路径（ASCII 0x20-0x7F + Latin-1 补充区 0xA0-0xFF，默认 Lato/OFL）")
+    ap.add_argument("--sizes", type=int, nargs="+", default=None,
+                    help="只生成指定字号（默认 SIZES 全量）；增量补新档用，避免重写已有字体文件")
+    ap.add_argument("--level1", action="store_true",
+                    help="只用 GB2312 一级常用字 3755（默认全表 6763）；省 flash，动态内容覆盖 99.9%")
     args = ap.parse_args()
 
     if not Path(args.font).is_file():
@@ -168,15 +202,16 @@ def main() -> int:
         return 1
 
     lit = collect_chars()
-    gb = gb2312_hanzi()
+    gb = gb2312_hanzi(level1_only=args.level1)
     symbols = "".join(sorted(set(lit) | set(gb)))
     CHARSET_OUT.parent.mkdir(exist_ok=True)
     CHARSET_OUT.write_text(symbols, encoding="utf-8")
-    print(f"[scan] GB2312 全表 {len(gb)} + 源码扫描，合计 {len(symbols)} 个非 ASCII 字符"
-          f" -> {CHARSET_OUT.relative_to(ROOT)}")
+    print(f"[scan] GB2312 {'一级' if args.level1 else '全表'} {len(gb)} + 源码扫描，"
+          f"合计 {len(symbols)} 个非 ASCII 字符 -> {CHARSET_OUT.relative_to(ROOT)}")
 
-    for size in SIZES:
-        # 主版本全尺寸不压缩（见 gen_font 注释）；14/16 另出 _cmp 压缩变体给 CYD
+    sizes = args.sizes if args.sizes else SIZES
+    for size in sizes:
+        # 主版本全尺寸不压缩（见 gen_font 注释）；16 及以下另出 _cmp 压缩变体给小 flash 板
         gen_font(args.font, args.font_latin, size, symbols, compress=False)
         if size <= 16:
             gen_font(args.font, args.font_latin, size, symbols, compress=True, suffix="_cmp")
@@ -185,8 +220,21 @@ def main() -> int:
     # 全表 5.4MB 字形在 flash，渲染时走 XIP cache 读；表越大 cache 局部性越差，
     # 文本渲染的 flash 突发读取在 MSPI 上与 EDMA 扫描争抢（滑动抽动嫌疑之一）。
     # 代价：文件名/SSID 里表外汉字会显示方框。
-    for size in (28, 32):
-        gen_font(args.font, args.font_latin, size, lit, compress=False, suffix="_min")
+    if not args.sizes:
+        for size in (28, 32):
+            gen_font(args.font, args.font_latin, size, lit, compress=False, suffix="_min")
+        # 纯西文 24px（Lato，仅 ASCII+Latin-1）：2x 档（480 宽）拉丁语系长词
+        # 放不进按钮时缩一档用（panel_main fit_latin_label），比再链一整张
+        # CJK 16 档省 flash；montserrat 无重音字形（é → 方框）不可用。
+        subprocess.run([
+            "node", str(CONV_JS),
+            "--font", args.font_latin,
+            "--size", "24", "--bpp", "4", "--format", "lvgl",
+            "--lv-include", "lvgl.h",
+            "--range", "0x20-0x7F,0xA0-0xFF",
+            "--no-compress",
+            "-o", str(ROOT / "src" / "ui" / "assets" / "font_latin_24.c"),
+        ], cwd=ROOT, check=True)
     print("[done] 字体生成完成，重新编译固件/桌面端即可生效")
     return 0
 

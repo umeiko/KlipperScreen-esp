@@ -6,6 +6,9 @@
 #include "../lang.h"
 #include "../ui_anim.h"
 #include "../panel_mgr.h"
+#include "../ui_nav.h"
+#include "../widgets/gcode_thumb.h"
+#include "bsp_caps.h"
 #include "printer.h"
 #include <stdio.h>
 #include <string.h>
@@ -99,6 +102,14 @@ static lv_obj_t *create(void)
     lbl_info = theme_label(card, "", THEME_FONT_S, THEME_COL_TEXT_DIM);
     lv_obj_align(lbl_info, LV_ALIGN_BOTTOM_LEFT, 0, 0);
 
+#if BSP_HAS_LINUX_HOST
+    /* Linux 上位机：本地 gcode 的切片缩略图，填信息卡中部空白 */
+    lv_obj_t *thumb = gcode_thumb_create(card, sel_name,
+                                         ui_content_w() - 2 * THEME_PAD,
+                                         card_h - ui_px(70));
+    if (thumb) lv_obj_align(thumb, LV_ALIGN_CENTER, 0, ui_px(4));
+#endif
+
     /* 打印（主操作，accent） */
     int bw = (ui_content_w() - gap) / 2;
     lv_obj_t *btn_print = theme_button(scr, LV_SYMBOL_PLAY, "打印", 1);
@@ -117,12 +128,15 @@ static lv_obj_t *create(void)
     lv_obj_t *ic = theme_label(btn_del, LV_SYMBOL_TRASH, THEME_FONT_ICON, THEME_COL_ERROR);
     lbl_del_text = theme_label(btn_del, "删除", THEME_FONT_S, THEME_COL_ERROR);
 
+    /* 纯列表页：左 = 返回、右 = 进入/确定（ui_nav 白名单） */
+    ui_nav_group_set_list(lv_group_get_default(), true);
     return scr;
 }
 
 panel_def_t panel_file_detail_def = {
-    .name = "file_detail", .title = "文件详情",
+    .name = "file_detail", .title = "文件详情", .title_s = "详情",
     .create = create,
     .on_show = update_ui,
     .on_tick = NULL,
+    .hide_temps = 1,
 };

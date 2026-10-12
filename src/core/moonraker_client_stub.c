@@ -1,9 +1,10 @@
 /*
- * moonraker_client 空桩（desktop）：桌面端不连真实上位机，数据走 printer_mock。
+ * moonraker_client 空桩（desktop simulator）：不连真实上位机，数据走 printer_mock。
  */
 #include "moonraker_client.h"
 
 void moonraker_start(void) {}
+void moonraker_stop(void) {}
 void moonraker_reload(void) {}
 moonraker_state_t moonraker_state(void) { return MOONRAKER_OFFLINE; }
 bool moonraker_send_rpc(const char *method, const char *params_json)

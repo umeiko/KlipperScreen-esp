@@ -1,7 +1,7 @@
 #pragma once
 /*
  * Klipper 控制面薄封装（对照 KlipperScreen ks_includes/MoonrakerApi.py + KlippyGcodes.py）。
- * 全部 fire-and-forget；desktop 端由 printer_mock 直接模拟，不经过这里。
+ * 全部 fire-and-forget；desktop simulator 由 printer_mock 直接模拟，不经过这里。
  */
 #include <stdbool.h>
 

@@ -103,7 +103,10 @@ void boot_anim_play(boot_anim_push_t push, boot_anim_delay_t dly)
     }
     neon_cx = scr_w / 2;
     neon_cy = scr_h / 2;
-    logo_k  = scr_h * 100 / 240;
+    /* 等比缩放取宽/高两档的较小值：480x480 方屏按高度放大后 Logo 宽 560px
+       超出屏宽被裁，改按宽 320 / 高 240 两个基准取 min，宽屏行为不变 */
+    int kw = scr_w * 100 / 320, kh = scr_h * 100 / 240;
+    logo_k  = kw < kh ? kw : kh;
     zfb_y0  = scr_h / 6;
     zfb_y1  = scr_h * 5 / 6;
 

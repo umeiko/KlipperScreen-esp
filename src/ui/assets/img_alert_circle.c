@@ -46,4 +46,3 @@ const lv_image_dsc_t img_alert_circle = {
   .data = img_alert_circle_map,
   .reserved = NULL,
 };
-

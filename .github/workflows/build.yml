@@ -7,125 +7,229 @@ on:
   workflow_dispatch:
 
 jobs:
-  # 所有支持板型全量构建（矩阵）。每板型独立 build 目录与 sdkconfig（芯片不同）。
+  # 16 个板型按芯片合并为 3 个 shard Job：同一 shard 在同一 IDF 容器内顺序构建，
+  # 共享按 shard 分开的 ccache。单板构建失败不中断其余板型：收集失败列表，
+  # 上传可用的部分产物与失败日志后，在末尾令 shard 失败。
   firmware:
+    name: firmware (${{ matrix.shard }})
     runs-on: ubuntu-latest
     container: espressif/idf:v5.5.5
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - board: cyd_2432s028r      # CYD 2.8" ESP32
-            target: esp32
-            bdir: build
-            sdkcfg: sdkconfig          # 仓库已有完整文件，免 set-target
-            defs: sdkconfig.defaults;sdkconfig.defaults.cyd_2432s028r
-            chip: esp32
-            flash_size: 4MB
-            bl_offset: 0x1000
-          - board: e32r35t              # ESP32-32E 3.5" E32R35T
-            target: esp32
-            bdir: build-e32r35t
-            sdkcfg: sdkconfig.e32r35t
-            defs: sdkconfig.defaults;sdkconfig.defaults.e32r35t
-            chip: esp32
-            flash_size: 4MB
-            bl_offset: 0x1000
-          - board: jc8048w550         # JC8048W550 5" ESP32-S3
-            target: esp32s3
-            bdir: build-jc8048w550
-            sdkcfg: sdkconfig.jc8048w550
-            defs: sdkconfig.defaults;sdkconfig.defaults.jc8048w550
-            chip: esp32s3
-            flash_size: 16MB
-            bl_offset: 0x0
+        shard: [esp32, esp32s3, esp32c3]
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build ESP32 firmware (${{ matrix.board }})
+      - name: Setup ccache
+        # 镜像自带则直接用；否则尝试安装；都失败则降级为无缓存构建
         run: |
-          # GH Actions 会覆盖容器 entrypoint，idf 环境需手动激活；并修复容器内 git 属主告警
+          if ! command -v ccache >/dev/null 2>&1; then
+            apt-get update && apt-get install -y --no-install-recommends ccache \
+              || echo "::warning::ccache unavailable, building without cache"
+          fi
+          ccache --version || true
+
+      - name: ccache cache (${{ matrix.shard }})
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ccache-${{ matrix.shard }}-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ matrix.shard }}-
+
+      # board|build_dir|sdkconfig|sdkconfig_defaults|chip|flash_size|bootloader_offset
+      - name: Build firmware shard (${{ matrix.shard }})
+        shell: bash
+        env:
+          IDF_CCACHE_ENABLE: "1"
+          CCACHE_DIR: ${{ github.workspace }}/.ccache
+        run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           . "$IDF_PATH/export.sh"
+
+          boards_table() {
+            case "${{ matrix.shard }}" in
+            esp32)
+              cat <<'EOF'
+          cyd_2432s028r|build|sdkconfig|sdkconfig.defaults;sdkconfig.defaults.cyd_2432s028r|esp32|4MB|0x1000
+          cyd_2432s028r_plus|build-cyd-plus|sdkconfig.cyd_2432s028r_plus|sdkconfig.defaults;sdkconfig.defaults.cyd_2432s028r_plus|esp32|4MB|0x1000
+          e32r35t|build-e32r35t|sdkconfig.e32r35t|sdkconfig.defaults;sdkconfig.defaults.e32r35t|esp32|4MB|0x1000
+          esp32-st7735s-128_160-ec11|build-ec11-knob-esp32|sdkconfig.esp32-st7735s-128_160-ec11|sdkconfig.defaults;sdkconfig.defaults.esp32-st7735s-128_160-ec11|esp32|4MB|0x1000
+          esp32-st7789-320_240-ec11|build-ec11-knob-esp32-st7789|sdkconfig.esp32-st7789-320_240-ec11|sdkconfig.defaults;sdkconfig.defaults.esp32-st7789-320_240-ec11|esp32|4MB|0x1000
+          esp32-ILI9341-320_240-ec11|build-esp32-ili9341-ec11|sdkconfig.esp32-ILI9341-320_240-ec11|sdkconfig.defaults;sdkconfig.defaults.esp32-ILI9341-320_240-ec11|esp32|4MB|0x1000
+          esp32-ST7796-320_240-ec11|build-esp32-st7796-ec11|sdkconfig.esp32-ST7796-320_240-ec11|sdkconfig.defaults;sdkconfig.defaults.esp32-ST7796-320_240-ec11|esp32|4MB|0x1000
+          EOF
+              ;;
+            esp32s3)
+              cat <<'EOF'
+          esp32s3-st7789-320_240-ec11|build-ec11-knob-minimal|sdkconfig.esp32s3-st7789-320_240-ec11|sdkconfig.defaults;sdkconfig.defaults.esp32s3-st7789-320_240-ec11|esp32s3|16MB|0x0
+          esp32s3-st7796-480_320-xpt2046-ec11|build-esp32s3-st7796-ec11|sdkconfig.esp32s3-st7796-480_320-xpt2046-ec11|sdkconfig.defaults;sdkconfig.defaults.esp32s3-st7796-480_320-xpt2046-ec11|esp32s3|16MB|0x0
+          esp32s3-ILI9488-480_320-xpt2046-ec11|build-esp32s3-ili9488-ec11|sdkconfig.esp32s3-ILI9488-480_320-xpt2046-ec11|sdkconfig.defaults;sdkconfig.defaults.esp32s3-ILI9488-480_320-xpt2046-ec11|esp32s3|16MB|0x0
+          esp32s3-ILI9341-320_240-xpt2046-ec11|build-esp32s3-ili9341-ec11|sdkconfig.esp32s3-ILI9341-320_240-xpt2046-ec11|sdkconfig.defaults;sdkconfig.defaults.esp32s3-ILI9341-320_240-xpt2046-ec11|esp32s3|16MB|0x0
+          jc8048w550|build-jc8048w550|sdkconfig.jc8048w550|sdkconfig.defaults;sdkconfig.defaults.jc8048w550|esp32s3|16MB|0x0
+          esp32s3-sensecap-indicator|build-sensecap-indicator|sdkconfig.esp32s3-sensecap-indicator|sdkconfig.defaults;sdkconfig.defaults.esp32s3-sensecap-indicator|esp32s3|8MB|0x0
+          esp32s3-JLC-SZP|build-esp32s3-jlc-szp|sdkconfig.esp32s3-JLC-SZP|sdkconfig.defaults;sdkconfig.defaults.esp32s3-JLC-SZP|esp32s3|16MB|0x0
+          esp32s3-retro-go|build-esp32s3-retro-go|sdkconfig.esp32s3-retro-go|sdkconfig.defaults;sdkconfig.defaults.esp32s3-retro-go|esp32s3|16MB|0x0
+          EOF
+              ;;
+            esp32c3)
+              cat <<'EOF'
+          esp32c3-st7789-320_240-ec11|build-esp32c3-st7789-ec11|sdkconfig.esp32c3-st7789-320_240-ec11|sdkconfig.defaults;sdkconfig.defaults.esp32c3-st7789-320_240-ec11|esp32c3|4MB|0x0
+          EOF
+              ;;
+            esac
+          }
+
           cd src/ports/esp32
-          if [ ! -f "${{ matrix.sdkcfg }}" ]; then
-            idf.py -B "${{ matrix.bdir }}" -DSDKCONFIG="${{ matrix.sdkcfg }}" \
-                   -DSDKCONFIG_DEFAULTS="${{ matrix.defs }}" set-target "${{ matrix.target }}"
-          fi
-          idf.py -B "${{ matrix.bdir }}" -DSDKCONFIG="${{ matrix.sdkcfg }}" \
-                 -DSDKCONFIG_DEFAULTS="${{ matrix.defs }}" build
+          FAILED=""
+          mkdir -p "$GITHUB_WORKSPACE/artifacts/_logs"
 
+          build_one() {
+            board="$1"; bdir="$2"; sdkcfg="$3"; defs="$4"; chip="$5"; flash_size="$6"; bl_offset="$7"
+            log="$GITHUB_WORKSPACE/artifacts/_logs/$board.log"
+            echo "=== [${{ matrix.shard }}] $board (build dir: $bdir) ==="
+            if [ ! -f "$sdkcfg" ]; then
+              idf.py -B "$bdir" -DSDKCONFIG="$sdkcfg" -DSDKCONFIG_DEFAULTS="$defs" \
+                     set-target "${{ matrix.shard }}" >"$log" 2>&1 || return 1
+            fi
+            idf.py -B "$bdir" -DSDKCONFIG="$sdkcfg" -DSDKCONFIG_DEFAULTS="$defs" build >>"$log" 2>&1 || return 1
+            dest="$GITHUB_WORKSPACE/artifacts/$board"
+            mkdir -p "$dest"
+            cp "$bdir/bootloader/bootloader.bin" \
+               "$bdir/partition_table/partition-table.bin" \
+               "$bdir/klipper_remote_display.bin" "$dest/" || return 1
+            if [[ "$GITHUB_REF_NAME" == *wip* ]]; then
+              mkdir -p "$GITHUB_WORKSPACE/symbols"
+              cp "$bdir/klipper_remote_display.elf" "$GITHUB_WORKSPACE/symbols/$board.elf" || return 1
+            fi
+            # 板型参数随产物走：刷机脚本读 flash.cfg 决定 chip/flash 大小/bootloader 偏移；
+            # TOUCH_CAL=1 标记电阻触摸屏板型（XPT2046），刷机脚本据此提供校准引导
+            touch_cal=0
+            case "$board" in
+              cyd_2432s028r|cyd_2432s028r_plus|e32r35t|\
+              esp32s3-st7796-480_320-xpt2046-ec11|esp32s3-ILI9488-480_320-xpt2046-ec11|\
+              esp32s3-ILI9341-320_240-xpt2046-ec11) touch_cal=1 ;;
+            esac
+            printf 'CHIP=%s\nFLASH_SIZE=%s\nBL_OFFSET=%s\nTOUCH_CAL=%s\n' "$chip" "$flash_size" "$bl_offset" "$touch_cal" > "$dest/flash.cfg"
+            rm -f "$log"   # 成功板的构建日志不留档
+          }
+
+          while IFS='|' read -r board bdir sdkcfg defs chip flash_size bl_offset; do
+            [ -n "$board" ] || continue
+            if build_one "$board" "$bdir" "$sdkcfg" "$defs" "$chip" "$flash_size" "$bl_offset"; then
+              echo "OK: $board"
+            else
+              echo "::error::board $board build failed, log tail:"
+              tail -n 80 "$GITHUB_WORKSPACE/artifacts/_logs/$board.log" || true
+              FAILED="$FAILED $board"
+            fi
+          done < <(boards_table)
+
+          : > "$GITHUB_WORKSPACE/failed.txt"
+          for b in $FAILED; do echo "$b" >> "$GITHUB_WORKSPACE/failed.txt"; done
+          echo "shard ${{ matrix.shard }} done; failed boards:${FAILED:- none}"
+          ccache -s || true
+
+      # 聚合 artifact：按 board 分目录（bootloader/partition-table/klipper_remote_display/flash.cfg），
+      # _logs/ 下只有失败板的完整构建日志
       - uses: actions/upload-artifact@v4
         with:
-          name: firmware-bins-${{ matrix.board }}
-          path: |
-            src/ports/esp32/${{ matrix.bdir }}/bootloader/bootloader.bin
-            src/ports/esp32/${{ matrix.bdir }}/partition_table/partition-table.bin
-            src/ports/esp32/${{ matrix.bdir }}/klipper_remote_display.bin
+          name: firmware-${{ matrix.shard }}
+          path: artifacts/
+          if-no-files-found: warn
 
-      # 板型参数随产物走：刷机脚本读 flash.cfg 决定 chip/flash 大小/bootloader 偏移
-      - name: flash.cfg
+      - name: Preserve exact pre-release debug symbols
+        if: ${{ always() && contains(github.ref_name, 'wip') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-symbols-${{ matrix.shard }}-${{ github.ref_name }}
+          path: symbols/*.elf
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Report failed boards
         run: |
-          printf 'CHIP=%s\nFLASH_SIZE=%s\nBL_OFFSET=%s\n' \
-            "${{ matrix.chip }}" "${{ matrix.flash_size }}" "${{ matrix.bl_offset }}" > flash.cfg
-      - uses: actions/upload-artifact@v4
-        with:
-          name: flash-cfg-${{ matrix.board }}
-          path: flash.cfg
+          if [ -s failed.txt ]; then
+            echo "::error::shard ${{ matrix.shard }} failed boards: $(paste -sd' ' failed.txt)"
+            exit 1
+          fi
 
+  # 15 个板型统一打包：只下载三个 shard 聚合 artifact，esptool 只下载一次，
+  # 每个 board 生成与逐板打包完全等价的平铺刷机目录
   package:
     runs-on: ubuntu-latest
     needs: firmware
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - board: cyd_2432s028r
-            suffix: ""
-          - board: e32r35t
-            suffix: ""
-          - board: jc8048w550
-            suffix: ""
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/download-artifact@v4
         with:
-          name: firmware-bins-${{ matrix.board }}
-          path: dist
+          name: firmware-esp32
+          path: fw/esp32
 
       - uses: actions/download-artifact@v4
         with:
-          name: flash-cfg-${{ matrix.board }}
-          path: dist
+          name: firmware-esp32s3
+          path: fw/esp32s3
 
-      - name: Flatten artifact layout
-        # upload-artifact 保留目录层级，下载后需拍平成刷机脚本期望的平铺结构
-        run: |
-          mv dist/bootloader/bootloader.bin dist/
-          mv dist/partition_table/partition-table.bin dist/
-          rmdir dist/bootloader dist/partition_table
-          ls -la dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: firmware-esp32c3
+          path: fw/esp32c3
 
       - name: Download esptool (Windows standalone)
         run: |
-          TAG=$(curl -s https://api.github.com/repos/espressif/esptool/releases/latest | jq -r .tag_name)
+          # GitHub API 匿名限流时拿不到 latest 标签：重试，失败则回退到固定版本
+          TAG=$(curl -sf --retry 5 --retry-all-errors \
+                https://api.github.com/repos/espressif/esptool/releases/latest | jq -r .tag_name) || TAG=""
+          if [ -z "$TAG" ] || [ "$TAG" = "null" ]; then
+            TAG=v5.4.0
+            echo "GitHub API unavailable, falling back to esptool $TAG"
+          fi
           echo "esptool $TAG"
-          curl -L -o /tmp/esptool.zip "https://github.com/espressif/esptool/releases/download/${TAG}/esptool-${TAG}-windows-amd64.zip"
+          curl -fL --retry 5 --retry-all-errors -o /tmp/esptool.zip \
+            "https://github.com/espressif/esptool/releases/download/${TAG}/esptool-${TAG}-windows-amd64.zip"
           unzip -o /tmp/esptool.zip -d /tmp/esptool
-          find /tmp/esptool -name esptool.exe -exec cp {} dist/ \;
+          find /tmp/esptool -name esptool.exe -exec cp {} /tmp/esptool.exe \;
 
-      - name: Add flash scripts
+      - name: Assemble per-board flash packages
         run: |
-          cp tools/release/flash.bat tools/release/flash.sh dist/
-          chmod +x dist/flash.sh
+          set -e
+          BOARDS="cyd_2432s028r cyd_2432s028r_plus e32r35t esp32-st7735s-128_160-ec11 esp32-st7789-320_240-ec11 esp32-ILI9341-320_240-ec11 esp32-ST7796-320_240-ec11 esp32s3-st7789-320_240-ec11 esp32s3-st7796-480_320-xpt2046-ec11 esp32s3-ILI9488-480_320-xpt2046-ec11 esp32s3-ILI9341-320_240-xpt2046-ec11 esp32c3-st7789-320_240-ec11 jc8048w550 esp32s3-sensecap-indicator esp32s3-JLC-SZP esp32s3-retro-go"
+          for board in $BOARDS; do
+            case "$board" in
+              cyd_2432s028r|cyd_2432s028r_plus|e32r35t|esp32-st7735s-128_160-ec11|esp32-st7789-320_240-ec11|esp32-ILI9341-320_240-ec11|esp32-ST7796-320_240-ec11)
+                shard=esp32 ;;
+              esp32c3-st7789-320_240-ec11)
+                shard=esp32c3 ;;
+              *) shard=esp32s3 ;;
+            esac
+            src="fw/$shard/$board"
+            dest="pkg/ESP-IDFv5.5-$board"
+            mkdir -p "$dest"
+            cp "$src/bootloader.bin" "$src/partition-table.bin" \
+               "$src/klipper_remote_display.bin" "$src/flash.cfg" "$dest/"
+            cp /tmp/esptool.exe "$dest/"
+            cp tools/release/flash.bat tools/release/flash.sh "$dest/"
+            chmod +x "$dest/flash.sh"
+            if [ "$board" = "esp32s3-st7789-320_240-ec11" ]; then
+              cp tools/release/README-esp32s3-st7789-320_240-ec11.md "$dest/README.md"
+              cp docs/hardware/ec11_knob_minimal.fzz "$dest/"
+              cp docs/screenshots/boards/ec11_knob_minimal_breadboard.zh.png "$dest/"
+              cp docs/screenshots/boards/ec11_knob_minimal_breadboard.en.png "$dest/"
+            fi
+            echo "packaged $board:"
+            ls "$dest"
+          done
+          count=$(ls -d pkg/ESP-IDFv5.5-* | wc -l)
+          [ "$count" -eq 16 ] || { echo "::error::expected 16 board packages, got $count"; exit 1; }
 
-      # 直接把 dist 内容作为 artifact：GitHub 下载时会打一层 zip，
-      # 解压后即是平铺的刷机文件，不再出现"zip 套 zip"
+      # 聚合 package artifact：内部按 ESP-IDFv5.5-<board> 目录划分
       - uses: actions/upload-artifact@v4
         with:
-          name: klipper-remote-esp32-${{ matrix.board }}-${{ github.ref_name }}
-          path: dist/
+          name: packages-${{ github.ref_name }}
+          path: pkg/
 
   desktop-win:
     runs-on: windows-latest
@@ -140,6 +244,8 @@ jobs:
             mingw-w64-ucrt-x86_64-cmake
             mingw-w64-ucrt-x86_64-ninja
             mingw-w64-ucrt-x86_64-SDL2
+            mingw-w64-ucrt-x86_64-cjson
+            mingw-w64-ucrt-x86_64-openssl
             zip
 
       - name: Fetch LVGL v9.3.0 (third_party/lvgl is gitignored)
@@ -163,17 +269,166 @@ jobs:
         shell: msys2 {0}
         run: |
           mkdir -p dist-win
-          cp src/ports/desktop/build/klipper_remote_desktop.exe src/ports/desktop/build/SDL2.dll dist-win/
+          cp src/ports/desktop/build/KlipperScreen-esp.exe src/ports/desktop/build/klipper_remote_simulator.exe src/ports/desktop/build/SDL2.dll dist-win/
+          cp /ucrt64/share/licenses/cjson/LICENSE dist-win/cJSON-LICENSE.txt
           ls -la dist-win
 
       - uses: actions/upload-artifact@v4
         with:
-          name: klipper-remote-desktop-win-x86_64-${{ github.ref_name }}
+          name: desktop-win-x86_64-${{ github.ref_name }}
           path: dist-win/
+
+  desktop-mac:
+    runs-on: macos-latest   # arm64 runner
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: brew install cmake ninja sdl2 cjson
+
+      - name: Fetch LVGL v9.3.0 (third_party/lvgl is gitignored)
+        run: |
+          curl -L -o /tmp/lvgl.tar.gz https://github.com/lvgl/lvgl/archive/refs/tags/v9.3.0.tar.gz
+          tar xzf /tmp/lvgl.tar.gz -C /tmp
+          mkdir -p third_party
+          mv /tmp/lvgl-9.3.0 third_party/lvgl
+
+      - name: Build macOS desktop (SDL2)
+        run: |
+          cd src/ports/desktop
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_PREFIX_PATH="$(brew --prefix)"
+          cmake --build build
+
+      - name: Package desktop app
+        # 把 SDL2 / cjson 的 dylib 拷到可执行文件旁边，引用改成 @executable_path 相对路径，
+        # 产物脱离 brew 也能跑。引用路径从 otool 实际记录读，不猜 brew 布局。
+        run: |
+          set -e
+          BUILD=src/ports/desktop/build
+          mkdir -p dist-mac
+          cp "$BUILD/KlipperScreen-esp" "$BUILD/klipper_remote_simulator" dist-mac/
+
+          SDL_REF=$(otool -L "$BUILD/KlipperScreen-esp" | awk '/libSDL2.*dylib/{print $1; exit}')
+          CJSON_REF=$(otool -L "$BUILD/KlipperScreen-esp" | awk '/libcjson.*dylib/{print $1; exit}')
+          if [ -z "$SDL_REF" ] || [ -z "$CJSON_REF" ]; then
+            echo "missing dylib refs:"; otool -L "$BUILD/KlipperScreen-esp"; exit 1
+          fi
+
+          SDL_DYLIB=$(basename "$SDL_REF")
+          CJSON_DYLIB=$(basename "$CJSON_REF")
+          cp "$SDL_REF" "$CJSON_REF" dist-mac/
+          chmod +w "dist-mac/$SDL_DYLIB" "dist-mac/$CJSON_DYLIB"
+          # dylib 自身的 id 也要改，否则其他 mach-o 链它时记下的仍是 brew 绝对路径
+          install_name_tool -id "@executable_path/$SDL_DYLIB" "dist-mac/$SDL_DYLIB"
+          install_name_tool -id "@executable_path/$CJSON_DYLIB" "dist-mac/$CJSON_DYLIB"
+          for exe in KlipperScreen-esp klipper_remote_simulator; do
+            install_name_tool -change "$SDL_REF" "@executable_path/$SDL_DYLIB" "dist-mac/$exe"
+          done
+          install_name_tool -change "$CJSON_REF" "@executable_path/$CJSON_DYLIB" \
+            dist-mac/KlipperScreen-esp
+
+          # install_name_tool 会弄坏 arm64 的 ad-hoc 签名，重签（无证书签名即可跑）
+          codesign --force --sign - dist-mac/KlipperScreen-esp \
+            dist-mac/klipper_remote_simulator "dist-mac/$SDL_DYLIB" "dist-mac/$CJSON_DYLIB"
+
+          # brew 不像 msys2 装 share/licenses，按所装版本从上游仓库取 cJSON LICENSE
+          CJSON_VER=$(brew list --versions cjson | awk '{print $2}')
+          curl -fL -o dist-mac/cJSON-LICENSE.txt \
+            "https://raw.githubusercontent.com/DaveGamble/cJSON/v${CJSON_VER}/LICENSE" || \
+          curl -fL -o dist-mac/cJSON-LICENSE.txt \
+            "https://raw.githubusercontent.com/DaveGamble/cJSON/master/LICENSE"
+
+          otool -L dist-mac/KlipperScreen-esp   # 验证引用已全部指向 @executable_path
+          ls -la dist-mac
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-macos-arm64-${{ github.ref_name }}
+          path: dist-mac/
+
+  desktop-linux:
+    # 预编译 Linux 二进制：上位机（x86_64 / aarch64 的 Klipper 主机）不装编译链，
+    # 解压 tar.gz 跑 install.sh 即可。SDL2/cJSON 静态链接（X11/Wayland 库运行时
+    # dlopen），二进制只依赖 glibc；ubuntu-22.04 构建保证 glibc>=2.35 的发行版都能跑。
+    strategy:
+      matrix:
+        include:
+          - { runs-on: ubuntu-22.04,     arch: x86_64 }
+          - { runs-on: ubuntu-22.04-arm, arch: arm64 }
+    runs-on: ${{ matrix.runs-on }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build build-essential pkg-config curl ca-certificates \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev \
+            libxss-dev libxkbcommon-dev libwayland-dev libwayland-bin wayland-protocols \
+            libegl1-mesa-dev libgles2-mesa-dev libdrm-dev libgbm-dev \
+            libasound2-dev libpulse-dev libudev-dev libdbus-1-dev libibus-1.0-dev
+
+      - name: Fetch LVGL v9.3.0 (third_party/lvgl is gitignored)
+        run: |
+          curl -L -o /tmp/lvgl.tar.gz https://github.com/lvgl/lvgl/archive/refs/tags/v9.3.0.tar.gz
+          tar xzf /tmp/lvgl.tar.gz -C /tmp
+          mkdir -p third_party
+          mv /tmp/lvgl-9.3.0 third_party/lvgl
+
+      - name: Build static SDL2
+        run: |
+          curl -L -o /tmp/sdl2.tar.gz https://github.com/libsdl-org/SDL/releases/download/release-2.30.9/SDL2-2.30.9.tar.gz
+          tar xzf /tmp/sdl2.tar.gz -C /tmp
+          cmake -S /tmp/SDL2-2.30.9 -B /tmp/sdl2-build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release -DSDL_SHARED=OFF -DSDL_STATIC=ON \
+            -DCMAKE_INSTALL_PREFIX=/tmp/sdl2-install
+          cmake --build /tmp/sdl2-build
+          cmake --install /tmp/sdl2-build
+
+      - name: Build static cJSON
+        run: |
+          curl -L -o /tmp/cjson.tar.gz https://github.com/DaveGamble/cJSON/archive/refs/tags/v1.7.18.tar.gz
+          tar xzf /tmp/cjson.tar.gz -C /tmp
+          cmake -S /tmp/cJSON-1.7.18 -B /tmp/cjson-build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DENABLE_CJSON_TEST=OFF \
+            -DCMAKE_INSTALL_PREFIX=/tmp/cjson-install
+          cmake --build /tmp/cjson-build
+          cmake --install /tmp/cjson-build
+
+      - name: Build KlipperScreen-esp (Linux)
+        run: |
+          cd src/ports/desktop
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="/tmp/sdl2-install;/tmp/cjson-install"
+          cmake --build build --target KlipperScreen-esp
+          # 静态链接验收：动态依赖里不得出现 SDL2 / cjson
+          if ldd build/KlipperScreen-esp | grep -Ei 'sdl|cjson'; then
+            echo "::error::SDL2/cJSON not statically linked"; exit 1
+          fi
+          ldd build/KlipperScreen-esp
+
+      - name: Package tarball (bin + install.sh + systemd unit)
+        run: |
+          PKG=dist-linux
+          mkdir -p "$PKG/bin"
+          cp src/ports/desktop/build/KlipperScreen-esp "$PKG/bin/"
+          cp scripts/linux/install.sh scripts/linux/uninstall.sh \
+             scripts/linux/KlipperScreen-esp-start.sh scripts/linux/KlipperScreen-esp.service "$PKG/"
+          chmod +x "$PKG/bin/KlipperScreen-esp" "$PKG/install.sh" "$PKG/uninstall.sh" \
+             "$PKG/KlipperScreen-esp-start.sh"
+          tar czf desktop-linux-${{ matrix.arch }}.tar.gz -C "$PKG" .
+          tar tzf desktop-linux-${{ matrix.arch }}.tar.gz
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-linux-${{ matrix.arch }}-${{ github.ref_name }}
+          path: desktop-linux-${{ matrix.arch }}.tar.gz
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [package, desktop-win]
+    needs: [package, desktop-win, desktop-mac, desktop-linux]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -182,28 +437,90 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          path: dl
+          name: packages-${{ github.ref_name }}
+          path: dl/pkg
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: desktop-win-x86_64-${{ github.ref_name }}
+          path: dl/desktop-win
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: desktop-macos-arm64-${{ github.ref_name }}
+          path: dl/desktop-mac
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: desktop-linux-x86_64-${{ github.ref_name }}
+          path: dl/linux-x64
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: desktop-linux-arm64-${{ github.ref_name }}
+          path: dl/linux-arm64
 
       - name: Zip artifacts for release
         # 资产名不带版本号：releases/latest/download/<名字> 直链永远指向最新正式版，
         # 文档站板型页的下载链接依赖这一点
         run: |
-          for d in dl/klipper-remote-esp32-*; do
+          count=$(ls -d dl/pkg/ESP-IDFv5.5-* | wc -l)
+          [ "$count" -eq 16 ] || { echo "::error::expected 16 board packages, got $count"; exit 1; }
+          for d in dl/pkg/ESP-IDFv5.5-*; do
             b=$(basename "$d")
-            b="${b%-${GITHUB_REF_NAME}}"
             (cd "$d" && zip -r "$GITHUB_WORKSPACE/$b.zip" .)
           done
-          (cd dl/klipper-remote-desktop-win-x86_64-* && zip -r "$GITHUB_WORKSPACE/klipper-remote-desktop-win-x86_64.zip" .)
-          ls -la "$GITHUB_WORKSPACE"/*.zip
+          (cd dl/desktop-win && zip -r "$GITHUB_WORKSPACE/desktop-win-x86_64.zip" .)
+          # artifact 往返可能丢 unix 执行位，zip 前先补回（zip 会保存权限位）
+          (cd dl/desktop-mac && chmod +x KlipperScreen-esp klipper_remote_simulator && zip -r "$GITHUB_WORKSPACE/desktop-macos-arm64.zip" .)
+          # Linux 产物在构建 job 里已打成 tar.gz（保留执行位），直接搬上来
+          cp dl/linux-x64/desktop-linux-x86_64.tar.gz dl/linux-arm64/desktop-linux-arm64.tar.gz "$GITHUB_WORKSPACE/"
+          ls -la "$GITHUB_WORKSPACE"/*.zip "$GITHUB_WORKSPACE"/*.tar.gz
 
       - uses: softprops/action-gh-release@v2
         with:
           files: |
-            klipper-remote-esp32-*.zip
-            klipper-remote-desktop-win-x86_64*.zip
+            ESP-IDFv5.5-*.zip
+            desktop-win-x86_64.zip
+            desktop-macos-arm64.zip
+            desktop-linux-x86_64.tar.gz
+            desktop-linux-arm64.tar.gz
+          # 板型产物说明（引脚/接线/刷机地址）见文档站，自动生成 notes 会附加在其后
+          body: |
+            **Supported boards / 支持的板型**: https://umeiko.github.io/KlipperScreen-esp/boards/
+
+            每个 `ESP-IDFv5.5-<board>.zip` 是一种板型的固件刷机包（ESP-IDF v5.5.5 构建，资产名不带版本号）；`desktop-win-x86_64.zip` 与 `desktop-macos-arm64.zip` 是 Windows / macOS 桌面端；`desktop-linux-x86_64.tar.gz` 与 `desktop-linux-arm64.tar.gz` 是 Linux 上位机预编译包（静态链接 SDL2，解压后运行 `install.sh`，可选 systemd 独占显示服务或桌面 App，支持 Wayland-weston / X11）。刷机前请先在上方页面确认你板子的产物名称、接线与刷机说明。
+
+            **本版更新 / What's new**
+            - 新增：ESP32 正式支持拓竹 Cloud Monitor，只读同步打印状态、任务名、温度、进度、剩余时间与层数；登录、验证码、设备选择和重启恢复沿用现有设置页 / ESP32 Bambu Cloud Monitor with sign-in, device selection, and read-only MQTT status sync
+            - 稳定性：无 PSRAM 板采用 4 KiB TLS MFL 与 368B 零分配流式解析器，HTTPS/MQTT 由单一 actor 串行持有，避免大包与双 TLS 会话耗尽堆 / 4 KiB TLS MFL, bounded streaming parsing, and serialized HTTPS/MQTT ownership on low-memory boards
+            - 修复：拓竹模式开机主任务栈溢出，以及主页时钟无时间来源；时钟现在复用拓竹 HTTPS 的标准 `Date` 头，不额外建立 NTP/TLS 连接 / Fix Bambu-mode boot stack overflow and synchronize the home clock from the existing cloud HTTP response
+            - 新增：设置 → 显示设置中的编码器步进 **1 / 2 / 4**（仅带编码器的 ESP32 构建），20 秒试用，确认才保存，取消/返回/超时自动恢复 / Encoder counts per detent with a safe 20-second trial and rollback
+            - 新增：独立屏幕色序页面，**默认 / RGB / BGR** 三行单选及本地化红绿蓝色块；支持的 SPI LCD 即时生效并记忆，旋转/镜像保留选择 / Persistent color order for supported SPI LCDs, with localized test swatches
+            - 完善：小屏与五语言交互、新增繁体字形；正式桌面程序不包含硬件设置预览项 / Small-screen and five-language UI, additional Traditional Chinese glyphs; desktop preview switches remain off in release builds
+            - 使用说明 / Guide: https://umeiko.github.io/KlipperScreen-esp/display-settings/ （中文：https://umeiko.github.io/KlipperScreen-esp/zh/display-settings/）
+            - issue #8 修复候选：ESP32 文件列表改为独立 HTTP 流式接收，只保留一页；界面固定复用 8 行，提供上一页/下一页/刷新，离页取消并忽略迟到响应。低内存、超时、异常应答均走已有状态提示。/ Candidate fix: bounded streaming file pages and reusable UI rows, cancellation and failure handling.
+            - wip.2 新日志已确认真实复现（低堆内存后 StoreProhibited），此前“分批 + 100 行上限”不是完整修复。本构建仍需受影响硬件验收，不宣称 issue 已闭环。/ Hardware confirmation is still required; the earlier row cap was not a complete fix.
+            - 复测与限制 / Retest guide: https://umeiko.github.io/KlipperScreen-esp/issue-8-file-list/
+            - 加固：状态推送链自检与自愈（针对"进度/温度冻结但控制正常"类故障）/ Status-feed watchdog & self-heal — 去重闸卡死 5s 自清；READY 后 30s 无状态合入先自动重订阅、再 30s 仍无则强拆重连；订阅发送失败 2s 自动重试；串口 `status` 新增 `status_age`/`gate` 诊断字段
           generate_release_notes: true
           # 标签含 wip（如 v0.2.0-wip.1）时标为预发布，不抢占 latest
           prerelease: ${{ contains(github.ref_name, 'wip') }}
+
+      # 清理同一 tag 下旧命名（klipper-remote- 前缀）的遗留资产：在新资产全部
+      # 上传成功后执行；按资产 id 删除，匹配不到时正常退出（可重复执行）。
+      # GitHub 自动生成的 Source code zip/tar 不是自定义资产，不会被匹配。
+      - name: Remove legacy klipper-remote-* assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api "repos/${{ github.repository }}/releases/tags/${{ github.ref_name }}" \
+            --jq '.assets[] | select(.name | startswith("klipper-remote-")) | .id' \
+          | while read -r id; do
+              [ -n "$id" ] || continue
+              gh api -X DELETE "repos/${{ github.repository }}/releases/assets/$id"
+              echo "deleted legacy asset id=$id"
+            done
 
       # 维护 latest 移动标签：始终指向最新正式版提交（wip 预发布不移动）
       - name: Move latest tag

@@ -1,0 +1,9 @@
+# ESP32-S3 + ST7789 (16MB flash): dual OTA (7MB x2) + storage(littlefs) ~1.9MB
+# storage holds config files (WiFi/slots/weather etc.)
+# Name,    Type, SubType, Offset,   Size,      Flags
+nvs,       data, nvs,     0x9000,   0x6000,
+phy_init,  data, phy,     0xf000,   0x1000,
+otadata,   data, ota,     0x10000,  0x2000,
+ota_0,     app,  ota_0,   0x20000,  0x700000,
+ota_1,     app,  ota_1,   0x720000, 0x700000,
+storage,   data, littlefs, 0xE20000, 0x1E0000,

@@ -17,6 +17,12 @@ static void open_brightness(lv_event_t *e)
     panel_mgr_open("brightness");
 }
 
+static void open_saver(lv_event_t *e)
+{
+    LV_UNUSED(e);
+    panel_mgr_open("saver");
+}
+
 static void on_invert_toggle(lv_event_t *e)
 {
     int en = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED);
@@ -90,6 +96,12 @@ static lv_obj_t *create(void)
     char br[8];
     snprintf(br, sizeof(br), "%d%%", settings_load_brightness());
     theme_row_link(scr, "背光", br, y, open_brightness);
+    y += step;
+
+    /* 供奉屏保延时：进滑杆 1..60 秒 */
+    char sv[8];
+    snprintf(sv, sizeof(sv), "%d秒", settings_load_saver_delay());
+    theme_row_link(scr, "屏保", sv, y, open_saver);
     y += step;
 
     /* 自动息屏：下拉选择超时（立即生效） */

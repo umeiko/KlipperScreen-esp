@@ -22,6 +22,8 @@ static struct {
     int               ap_count;
     volatile bsp_wifi_state_t conn_state;
     volatile int      net_connected; /* 后台轮询缓存：接口当前是否连着任意 AP */
+    char              cur_ssid[BSP_WIFI_SSID_MAX + 1]; /* 轮询缓存：当前 AP（lock 保护） */
+    char              cur_ip[40];                      /* 轮询缓存：当前 IPv4 */
     int               inited;
     char              target_ssid[BSP_WIFI_SSID_MAX + 1];
     char              password[BSP_WIFI_PASS_MAX + 1];
@@ -113,19 +115,66 @@ static void *connect_thread(void *unused)
     return NULL;
 }
 
-/* 后台轮询接口真实状态（标题栏图标用），5 秒一次 */
+/* 从 `nmcli -t -f <FIELD> dev show <dev>` 输出取第一个值（去掉 "FIELD:" 前缀与尾换行） */
+static void nmcli_field(const char *field, const char *dev, char *out, size_t out_sz)
+{
+    out[0] = 0;
+    char cmd[160];
+    snprintf(cmd, sizeof(cmd), "nmcli -t -f %s dev show '%s' 2>/dev/null", field, dev);
+    FILE *fp = popen(cmd, "r");
+    if (!fp) return;
+    char line[256];
+    if (fgets(line, sizeof(line), fp)) {
+        char *v = strchr(line, ':');
+        if (v) {
+            v++;
+            v[strcspn(v, "\r\n")] = 0;
+            char *slash = strchr(v, '/');          /* IP4.ADDRESS 带 /24 前缀长度 */
+            if (slash) *slash = 0;
+            strncpy(out, v, out_sz - 1);
+            out[out_sz - 1] = 0;
+        }
+    }
+    pclose(fp);
+}
+
+/* 后台轮询接口真实状态（标题栏图标 + WiFi 面板状态卡用），5 秒一次 */
 static void *poll_thread(void *unused)
 {
     (void)unused;
     for (;;) {
-        FILE *fp = popen("nmcli -t -f TYPE,STATE dev 2>/dev/null", "r");
+        FILE *fp = popen("nmcli -t -f TYPE,DEVICE,STATE dev 2>/dev/null", "r");
         int ok = 0;
+        char dev[32] = "";
         if (fp) {
             char line[128];
-            while (fgets(line, sizeof(line), fp))
-                if (strncmp(line, "wifi:connected", 14) == 0) { ok = 1; break; }
+            while (fgets(line, sizeof(line), fp)) {
+                /* 格式 wifi:wlan0:connected */
+                if (strncmp(line, "wifi:", 5) != 0) continue;
+                char *d = line + 5;
+                char *sep = strchr(d, ':');
+                if (!sep) continue;
+                if (strncmp(sep + 1, "connected", 9) != 0) continue;
+                *sep = 0;
+                strncpy(dev, d, sizeof(dev) - 1);
+                ok = 1;
+                break;
+            }
             pclose(fp);
         }
+
+        char ssid[BSP_WIFI_SSID_MAX + 1] = "", ip[40] = "";
+        if (ok && dev[0]) {
+            nmcli_field("GENERAL.CONNECTION", dev, ssid, sizeof(ssid));
+            nmcli_field("IP4.ADDRESS", dev, ip, sizeof(ip));
+        }
+
+        pthread_mutex_lock(&W.lock);
+        strncpy(W.cur_ssid, ssid, sizeof(W.cur_ssid) - 1);
+        W.cur_ssid[sizeof(W.cur_ssid) - 1] = 0;
+        strncpy(W.cur_ip, ip, sizeof(W.cur_ip) - 1);
+        W.cur_ip[sizeof(W.cur_ip) - 1] = 0;
+        pthread_mutex_unlock(&W.lock);
         W.net_connected = ok;
         sleep(5);
     }
@@ -187,6 +236,21 @@ bsp_wifi_state_t bsp_wifi_status(void)
 
 bool bsp_wifi_connected(void)
 {
+    return W.net_connected != 0;
+}
+
+bool bsp_wifi_current(char *ssid, size_t ssid_len, char *ip, size_t ip_len)
+{
+    pthread_mutex_lock(&W.lock);
+    if (ssid && ssid_len) {
+        strncpy(ssid, W.cur_ssid, ssid_len - 1);
+        ssid[ssid_len - 1] = 0;
+    }
+    if (ip && ip_len) {
+        strncpy(ip, W.cur_ip, ip_len - 1);
+        ip[ip_len - 1] = 0;
+    }
+    pthread_mutex_unlock(&W.lock);
     return W.net_connected != 0;
 }
 

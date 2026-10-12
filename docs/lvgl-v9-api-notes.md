@@ -54,7 +54,8 @@
 
 ## SDL2 后端（lvgl/src/drivers/sdl/）
 
-- `lv_sdl_window_create(hor, ver)` → display；`lv_sdl_mouse_create()` → 鼠标 indev。
+- `lv_sdl_window_create(hor, ver)` → display；`lv_sdl_mouse_create()` → 鼠标 pointer indev。
+- `lv_sdl_mousewheel_create()` → encoder indev；滚轮产生 `enc_diff`，中键产生按下/抬起。两者可同时创建。
 - `lv_sdl_window_set_zoom(disp, 2)` 放大窗口便于查看；`lv_sdl_window_set_title`。
 - 事件泵在 `lv_timer_handler()` 内部处理，主循环 `lv_timer_handler(); SDL_Delay(5);` 即可。
 

@@ -3,6 +3,7 @@
  * 由 mock_printer.c 改名而来，逻辑不变。
  */
 #include "printer.h"
+#include "app_settings.h"
 #include "lvgl.h"
 #include <stdlib.h>
 #include <string.h>
@@ -30,6 +31,17 @@ static struct {
 };
 
 printer_state_t printer_state(void) { return P.state; }
+
+printer_capabilities_t printer_capabilities(void)
+{
+    if (settings_load_machine_mode() == MACHINE_MODE_KLIPPER)
+        return PRINTER_CAP_KLIPPER_ALL;
+    if (settings_load_bambu_link() == BAMBU_LINK_CLOUD_MONITOR)
+        return 0;   /* 云端接口只监视状态 */
+    return PRINTER_CAP_TEMP_CONTROL | PRINTER_CAP_MOVE | PRINTER_CAP_EXTRUDE |
+           PRINTER_CAP_FILES | PRINTER_CAP_PRINT_START | PRINTER_CAP_PAUSE |
+           PRINTER_CAP_RESUME | PRINTER_CAP_CANCEL;
+}
 
 /* 截图演示用：直接注入状态（desktop 端 main.c 调用） */
 void printer_mock_set_state(printer_state_t s) { P.state = s; }
@@ -63,6 +75,9 @@ uint32_t printer_print_eta_s(void)
     return el * (1000 - P.progress) / P.progress;
 }
 
+int printer_layer_current(void) { return 0; }
+int printer_layer_total(void) { return 0; }
+
 void printer_set_target_ext(float t) { P.ext_t = t; }
 void printer_set_target_bed(float t) { P.bed_t = t; }
 
@@ -81,6 +96,8 @@ void printer_home(int axis)
 }
 
 void printer_extrude(float mm) { P.e_pos += mm; }
+
+void printer_motors_off(void) { /* M84：mock 无保持力矩概念，状态不变 */ }
 
 void printer_print_start(const char *filename)
 {
@@ -121,24 +138,28 @@ static struct { const char *name; uint32_t size; double modified; bool deleted; 
     {"ercf_gate.gcode",         1990 * 1024,       1757100000, false},
 };
 
-bool printer_files_refresh(printer_files_cb cb, void *ud)
+bool printer_files_refresh(unsigned offset, printer_files_cb cb, void *ud)
 {
     if (!cb) return false;
     int n = 0;
     for (unsigned i = 0; i < sizeof(mock_files) / sizeof(mock_files[0]); i++)
         if (!mock_files[i].deleted) n++;
-    printer_file_t *files = n > 0 ? malloc(n * sizeof(printer_file_t)) : NULL;
+    printer_file_page_t page = { .total = n };
     int k = 0;
     for (unsigned i = 0; i < sizeof(mock_files) / sizeof(mock_files[0]); i++) {
-        if (mock_files[i].deleted || !files) continue;
-        strncpy(files[k].name, mock_files[i].name, sizeof(files[k].name) - 1);
-        files[k].size = mock_files[i].size;
-        files[k].modified = mock_files[i].modified;
-        k++;
+        if (mock_files[i].deleted) continue;
+        if (k++ < (int)offset || page.count >= PRINTER_FILES_PAGE_SIZE) continue;
+        printer_file_t *f = &page.files[page.count++];
+        strncpy(f->name, mock_files[i].name, sizeof(f->name) - 1);
+        f->size = mock_files[i].size;
+        f->modified = mock_files[i].modified;
     }
-    cb(files, n, ud);   /* mock 同步回调（已在 LVGL 上下文） */
+    cb(&page, ud);   /* mock 同步回调（已在 LVGL 上下文） */
     return true;
 }
+
+void printer_files_cancel(void) {}
+void printer_files_poll(void) {}
 
 void printer_file_delete(const char *name)
 {

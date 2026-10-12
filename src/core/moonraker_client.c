@@ -42,10 +42,12 @@ static moonraker_state_t state = MOONRAKER_OFFLINE;
 static moonraker_conf_t conf;
 static bool             conf_valid;
 static bool             started;            /* 客户端实例已创建 */
+static volatile bool    disabled;           /* moonraker_stop() 的 desired 态：抑制重连/心跳/RPC */
 static esp_timer_handle_t reconnect_timer;
 static esp_timer_handle_t klippy_timer;
 static esp_timer_handle_t hb_timer;
 static esp_timer_handle_t reload_timer;
+static esp_timer_handle_t stop_timer;
 static int64_t            hb_sent_us;
 static int64_t            last_rx_ms;       /* 最近一次收到任何 WS 帧（含 ping/pong），僵尸检测用 */
 static int              backoff_s = 1;
@@ -67,9 +69,49 @@ static size_t rx_len;
 static void handshake_step_subscribe(void);
 static void force_reconnect(void);
 
-/* ---------- LVGL 投递 ---------- */
+/* lv_async_call 会改 LVGL 全局 timer 链表；本文件均在 WS/esp_timer/cli 任务上下文
+ * 调用它，必须持 LVGL 锁与 lvgl_task 的 lv_timer_handler 互斥——否则链表竞争会
+ * 导致 async 定时器被执行两次/拿到野指针（曾现网崩溃：lv_async_timer_cb lv_free 断言） */
+static void post_to_lvgl(lv_async_cb_t cb, void *p)
+{
+    bsp_lvgl_lock();
+    lv_async_call(cb, p);
+    bsp_lvgl_unlock();
+}
+
+/* 堆载荷专用：返回是否投递成功。lv_async_call 自身也要申请内存，低内存时会失败，
+ * 失败后回调永远不会执行，按"接收方负责 free"的约定载荷就漏了——调用方必须回收。 */
+static bool post_heap_to_lvgl(lv_async_cb_t cb, void *p)
+{
+    bsp_lvgl_lock();
+    lv_result_t r = lv_async_call(cb, p);
+    bsp_lvgl_unlock();
+    return r == LV_RESULT_OK;
+}
+
+/* 状态投递在途去重：Klipper 状态推送可达 4Hz，逐条 lv_async_call 在 LVGL 忙时
+ * 会积压成无界队列（堆只涨不落的"泄漏"假象，heap trace 还抓不到——因为每条最终
+ * 都会被释放）。有在途投递时丢弃本次快照：温度类数据 ≤250ms 后就有下一帧，无感。 */
+static volatile bool status_async_queued;
+
+/* 推送链死活诊断/自愈（heartbeat_cb 巡检）：
+ * last_status_apply_s —— 最后一次状态合入的时刻（READY 时起步），正常时 4Hz 刷新；
+ * status_async_since_s —— 去重闸置位时刻，置位超 STATUS_GATE_STUCK_S 未清
+ *                        = 置位后回调丢失（罕见竞态），强制清闸恢复投递 */
+#define STATUS_STALL_S      30   /* READY 后超过该时长无任何状态合入 = 推送链死亡 */
+#define STATUS_GATE_STUCK_S 5
+static volatile uint32_t last_status_apply_s;
+static volatile uint32_t status_async_since_s;
+static int status_strikes;                 /* 连续检测到推送链死亡的次数（软恢复→强拆） */
+static esp_timer_handle_t subscribe_timer; /* 订阅发送失败的 2s 重试 */
+
+static uint32_t now_s(void) { return (uint32_t)(esp_timer_get_time() / 1000000); }
+
 static void apply_in_lvgl(void *p)
 {
+    status_async_queued = false;
+    last_status_apply_s = now_s();
+    status_strikes = 0;
     printer_model_apply_status_json((char *)p);   /* 内部负责 free */
 }
 
@@ -93,27 +135,21 @@ static void report_rtt_in_lvgl(void *p)
     printer_model_set_rtt((int)(intptr_t)p);
 }
 
-/* lv_async_call 会改 LVGL 全局 timer 链表；本文件均在 WS/esp_timer/cli 任务上下文
- * 调用它，必须持 LVGL 锁与 lvgl_task 的 lv_timer_handler 互斥——否则链表竞争会
- * 导致 async 定时器被执行两次/拿到野指针（曾现网崩溃：lv_async_timer_cb lv_free 断言） */
-static void post_to_lvgl(lv_async_cb_t cb, void *p)
-{
-    bsp_lvgl_lock();
-    lv_async_call(cb, p);
-    bsp_lvgl_unlock();
-}
-
-/* status 子对象（cJSON，属于 msg 树）序列化后投递；调用方之后负责删 msg 树 */
+/* status 子对象（cJSON，属于 msg 树）序列化后投递；调用方之后负责删 msg 树。
+   有在途投递时直接丢弃本次快照（在途去重，见 apply_in_lvgl 上方注释） */
 static void post_status(cJSON *status_obj)
 {
-    if (!status_obj) return;
+    if (!status_obj || status_async_queued) return;
     char *txt = cJSON_PrintUnformatted(status_obj);
     if (!txt) return;
     char *heap = malloc(strlen(txt) + 1);
     if (!heap) { cJSON_free(txt); return; }
     strcpy(heap, txt);
     cJSON_free(txt);
-    post_to_lvgl(apply_in_lvgl, heap);
+    if (post_heap_to_lvgl(apply_in_lvgl, heap)) {
+        status_async_queued = true;
+        status_async_since_s = now_s();
+    } else free(heap);   /* LVGL 也申请失败：回收，别积压 */
 }
 
 /* ---------- 发送 ---------- */
@@ -141,7 +177,7 @@ static void free_pending(int id)
 static bool send_rpc_full(const char *method, const char *params_json,
                           void (*cb)(cJSON *result), void (*cb_json)(char *, void *), void *ud)
 {
-    if (!ws || !esp_websocket_client_is_connected(ws)) return false;
+    if (disabled || !ws || !esp_websocket_client_is_connected(ws)) return false;
     int id = alloc_pending(cb, cb_json, ud);
     if (id == 0) return false;
 
@@ -198,11 +234,21 @@ bool moonraker_rpc(const char *method, const char *params_json,
 }
 
 /* ---------- 握手 ---------- */
+/* 订阅发送失败（pending 槽满/内存不足/WS 发送失败）时 2s 后补发；
+ * 只在握手未完成时有效，READY 之后由心跳的推送链自检接管 */
+static void subscribe_retry_cb(void *arg)
+{
+    (void)arg;
+    if (state == MOONRAKER_CONNECTING) handshake_step_subscribe();
+}
+
 static void on_subscribe_result(cJSON *result)
 {
     cJSON *status = cJSON_GetObjectItem(result, "status");
     post_status(status);
     state = MOONRAKER_READY;
+    last_status_apply_s = now_s();   /* 推送链自检从 READY 起算宽限 */
+    status_strikes = 0;
     post_to_lvgl(set_online_in_lvgl, (void *)1);
     ESP_LOGI(TAG, "subscribe done, READY");
     bsp_time_sync_from_host(conf.host, conf.port);   /* 内网对时：取 Moonraker HTTP Date */
@@ -225,8 +271,10 @@ static void handshake_step_subscribe(void)
         "\"idle_timeout\":[\"state\"],"
         "\"pause_resume\":[\"is_paused\"]"
         "}}";
-    if (!send_rpc_cb("printer.objects.subscribe", params, on_subscribe_result))
-        ESP_LOGW(TAG, "subscribe send failed");
+    if (!send_rpc_cb("printer.objects.subscribe", params, on_subscribe_result)) {
+        ESP_LOGW(TAG, "subscribe send failed, retry in 2s");
+        esp_timer_start_once(subscribe_timer, 2000000);
+    }
 }
 
 static void on_objects_list_result(cJSON *result)
@@ -273,7 +321,7 @@ static void on_heartbeat_result(cJSON *result)
 static void heartbeat_cb(void *arg)
 {
     (void)arg;
-    if (state != MOONRAKER_READY) return;
+    if (disabled || state != MOONRAKER_READY) return;
 
     /* 僵尸检测：READY 状态下单向流（订阅推送 + pong）从不该断 20s。
        esp_websocket_client 对「对端优雅 FIN」有缺陷——recv 把 EOF 当超时永远空转，
@@ -284,6 +332,34 @@ static void heartbeat_cb(void *arg)
         force_reconnect();
         return;
     }
+
+    /* 推送链自检 1：去重闸置位超 STATUS_GATE_STUCK_S 未清 = 置位后回调丢失
+       （WS/LVGL 双任务手工同步的罕见竞态），强制清闸让后续状态帧恢复投递 */
+    if (status_async_queued && status_async_since_s &&
+        now_s() - status_async_since_s > STATUS_GATE_STUCK_S) {
+        ESP_LOGW(TAG, "status gate stuck >%ds, force clear", STATUS_GATE_STUCK_S);
+        status_async_queued = false;
+    }
+
+    /* 推送链自检 2：READY 后订阅推送应持续到达（温度噪声保证秒级有帧）。
+       >STATUS_STALL_S 无任何合入 = 推送链死亡（症状：进度/温度冻结但控制正常）。
+       第一次软恢复（清闸+重订阅），再一个周期仍无 → 强拆重连 */
+    static uint32_t last_recover_s;
+    if (last_status_apply_s && now_s() - last_status_apply_s > STATUS_STALL_S) {
+        if (status_strikes == 0) {
+            status_strikes = 1;
+            last_recover_s = now_s();
+            ESP_LOGW(TAG, "no status apply for >%ds, soft recover (re-subscribe)", STATUS_STALL_S);
+            status_async_queued = false;
+            handshake_step_subscribe();
+        } else if (now_s() - last_recover_s > STATUS_STALL_S) {
+            ESP_LOGW(TAG, "status feed still dead after soft recover, force reconnect");
+            status_strikes = 0;
+            force_reconnect();
+            return;
+        }
+    }
+
     hb_sent_us = esp_timer_get_time();
     send_rpc_cb("server.info", NULL, on_heartbeat_result);
 }
@@ -293,8 +369,8 @@ static void handshake_begin(void)
     /* client_name 等字段对齐 server.connection.identify 约定（type=display）；
        版本号来自 version.h（KR_VERSION），与设置页显示一致 */
     send_rpc_cb("server.connection.identify",
-                "{\"client_name\":\"klipper-remote-esp32\",\"version\":\"" KR_VERSION "\","
-                "\"type\":\"display\",\"url\":\"https://github.com/klipper-remote\"}",
+                "{\"client_name\":\"KlipperScreen-esp\",\"version\":\"" KR_VERSION "\","
+                "\"type\":\"display\",\"url\":\"https://github.com/umeiko/KlipperScreen-esp\"}",
                 NULL);
     query_server_info();
 }
@@ -312,7 +388,10 @@ static void handle_notify(const char *method, cJSON *params)
         cJSON *s = cJSON_GetArrayItem(params, 0);
         if (cJSON_IsString(s) && s->valuestring && strncmp(s->valuestring, "!!", 2) == 0) {
             char *heap = malloc(strlen(s->valuestring) + 1);
-            if (heap) { strcpy(heap, s->valuestring); post_to_lvgl(report_gcode_in_lvgl, heap); }
+            if (heap) {
+                strcpy(heap, s->valuestring);
+                if (!post_heap_to_lvgl(report_gcode_in_lvgl, heap)) free(heap);
+            }
         }
     } else if (strcmp(method, "notify_klippy_ready") == 0) {
         /* klippy 重启完成：重发订阅拿全新快照 */
@@ -324,7 +403,10 @@ static void handle_notify(const char *method, cJSON *params)
                         ? "{\"webhooks\":{\"state\":\"shutdown\"}}"
                         : "{\"webhooks\":{\"state\":\"disconnected\"}}";
         char *heap = malloc(strlen(s) + 1);
-        if (heap) { strcpy(heap, s); post_to_lvgl(apply_in_lvgl, heap); }
+        if (heap) {
+            strcpy(heap, s);
+            if (!post_heap_to_lvgl(apply_in_lvgl, heap)) free(heap);
+        }
     }
     /* notify_gcode_response 已转 toast；proc_stat / filelist_changed 等本期忽略 */
 }
@@ -355,13 +437,16 @@ static void on_ws_message(const char *data, int len)
                      * 不会走 gcode "!!" 行，必须在这里弹 toast */
                     if (!cb && !cb_json) {
                         char *heap = malloc(strlen(emsg) + 1);
-                        if (heap) { strcpy(heap, emsg); post_to_lvgl(report_rpc_err_in_lvgl, heap); }
+                        if (heap) {
+                            strcpy(heap, emsg);
+                            if (!post_heap_to_lvgl(report_rpc_err_in_lvgl, heap)) free(heap);
+                        }
                     }
                     if (cb_json) {   /* 对外回调也要收到失败信号（NULL） */
                         rpc_delivery_t *d = malloc(sizeof(*d));
                         if (d) {
                             d->cb = cb_json; d->ud = ud; d->json = NULL;
-                            post_to_lvgl(deliver_in_lvgl, d);
+                            if (!post_heap_to_lvgl(deliver_in_lvgl, d)) free(d);
                         }
                     }
                 } else if (cb) {
@@ -372,7 +457,10 @@ static void on_ws_message(const char *data, int len)
                     rpc_delivery_t *d = malloc(sizeof(*d));
                     if (d) {
                         d->cb = cb_json; d->ud = ud; d->json = txt;
-                        post_to_lvgl(deliver_in_lvgl, d);
+                        if (!post_heap_to_lvgl(deliver_in_lvgl, d)) {
+                            cJSON_free(txt);
+                            free(d);
+                        }
                     } else {
                         cJSON_free(txt);
                     }
@@ -392,7 +480,7 @@ static void on_ws_message(const char *data, int len)
 static void reconnect_cb(void *arg)
 {
     (void)arg;
-    if (state == MOONRAKER_OFFLINE && started) {
+    if (state == MOONRAKER_OFFLINE && started && !disabled) {
         ESP_LOGI(TAG, "reconnecting to %s:%u", conf.host, (unsigned)conf.port);
         state = MOONRAKER_CONNECTING;
         esp_websocket_client_start(ws);
@@ -469,6 +557,7 @@ static void on_ws_event(void *arg, esp_event_base_t base, int32_t id, void *data
 
 /* ---------- 对外 ---------- */
 static void reload_cb(void *arg);   /* moonraker_reload 的实际工作，esp_timer 上下文 */
+static void stop_cb(void *arg);     /* moonraker_stop 的实际拆除，esp_timer 上下文 */
 
 static void ensure_timers(void)
 {
@@ -480,6 +569,10 @@ static void ensure_timers(void)
         esp_timer_create_args_t a2 = {.callback = query_server_info_cb, .name = "mr_klippy"};
         esp_timer_create(&a2, &klippy_timer);
     }
+    if (!subscribe_timer) {
+        esp_timer_create_args_t a6 = {.callback = subscribe_retry_cb, .name = "mr_sub"};
+        esp_timer_create(&a6, &subscribe_timer);
+    }
     if (!hb_timer) {
         esp_timer_create_args_t a3 = {.callback = heartbeat_cb, .name = "mr_hb"};
         esp_timer_create(&a3, &hb_timer);
@@ -488,6 +581,10 @@ static void ensure_timers(void)
     if (!reload_timer) {
         esp_timer_create_args_t a4 = {.callback = reload_cb, .name = "mr_reload"};
         esp_timer_create(&a4, &reload_timer);
+    }
+    if (!stop_timer) {
+        esp_timer_create_args_t a5 = {.callback = stop_cb, .name = "mr_stop"};
+        esp_timer_create(&a5, &stop_timer);
     }
 }
 
@@ -509,6 +606,7 @@ static void force_reconnect(void)
     state = MOONRAKER_OFFLINE;
     backoff_s = 1;
     last_rx_ms = 0;
+    esp_timer_stop(subscribe_timer);
     clear_pending();
     post_to_lvgl(set_online_in_lvgl, (void *)0);
     moonraker_start();   /* 立即重连（不等退避），WiFi 还在就秒回 */
@@ -516,6 +614,7 @@ static void force_reconnect(void)
 
 void moonraker_start(void)
 {
+    disabled = false;   /* stop 之后靠 start 恢复；stop_cb 看到 disabled 清除会放弃拆除 */
     if (started) return;
     ensure_timers();
     if (!conf_valid) {
@@ -563,11 +662,12 @@ static void reload_cb(void *arg)
     conf_valid = settings_load_moonraker(&conf);
     esp_timer_stop(reconnect_timer);
     esp_timer_stop(klippy_timer);
+    esp_timer_stop(subscribe_timer);
     backoff_s = 1;
     destroy_client();
     state = MOONRAKER_OFFLINE;
     post_to_lvgl(set_online_in_lvgl, (void *)0);
-    moonraker_start();
+    if (!disabled) moonraker_start();   /* disabled 期间 reload 只更新配置缓存，不起连接 */
 }
 
 void moonraker_reload(void)
@@ -577,7 +677,47 @@ void moonraker_reload(void)
     esp_timer_start_once(reload_timer, 20000);   /* 20ms 后在 esp_timer 任务执行 */
 }
 
+/* 与 reload_cb 同理：destroy_client 会阻塞等 close 握手、post_to_lvgl 要拿 LVGL 锁，
+   都不能在调用方（如 printer_model 的 LVGL 轮询）栈上跑，挪到 esp_timer 任务里。 */
+static void stop_cb(void *arg)
+{
+    (void)arg;
+    if (!disabled) return;   /* stop 后 20ms 内又 start：取消拆除，连接保留 */
+    esp_timer_stop(reconnect_timer);
+    esp_timer_stop(klippy_timer);
+    esp_timer_stop(reload_timer);
+    esp_timer_stop(subscribe_timer);
+    backoff_s = 1;
+    last_rx_ms = 0;
+    destroy_client();
+    state = MOONRAKER_OFFLINE;
+    clear_pending();
+    post_to_lvgl(set_online_in_lvgl, (void *)0);
+}
+
+void moonraker_stop(void)
+{
+    if (disabled) return;   /* 幂等：tick_autostart 每 2s 都会进来一次 */
+    disabled = true;
+    ensure_timers();
+    esp_timer_stop(stop_timer);
+    esp_timer_start_once(stop_timer, 20000);   /* 20ms 后在 esp_timer 任务拆除 */
+}
+
 moonraker_state_t moonraker_state(void)
 {
     return state;
+}
+
+/* 诊断（串口 CLI status 用）：距最后一次状态合入的秒数，<0 = 从未合入 */
+int moonraker_status_age_s(void)
+{
+    if (!last_status_apply_s) return -1;
+    return (int)(now_s() - last_status_apply_s);
+}
+
+/* 诊断（串口 CLI status 用）：状态投递去重闸当前是否置位 */
+bool moonraker_status_gate_pending(void)
+{
+    return status_async_queued;
 }

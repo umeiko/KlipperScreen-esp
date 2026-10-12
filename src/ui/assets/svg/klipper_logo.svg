@@ -1,0 +1,8 @@
+<!-- Klipper emblem extracted from Klipper3d/klipper docs/img/klipper.svg (GPL-3.0). -->
+<svg width="768" height="488" viewBox="0 0 768 488" fill="none"
+     xmlns="http://www.w3.org/2000/svg">
+  <path fill="#3C4B5A"
+        d="M30 34v140l260 255 115-5h80l245-250V34h-10L385 374 40 34H30Z"/>
+  <path fill="#B12F35"
+        d="M259 424h101v-65L30 34h60l295 290L670 34h60L410 359v85c0 5-5 10-10 10H259c-12 0-14-10-14-15s2-15 14-15Z"/>
+</svg>

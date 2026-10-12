@@ -14,6 +14,8 @@
 #include "esp_wifi.h"
 #include "esp_event.h"
 #include "esp_netif.h"
+#include "esp_netif_sntp.h"
+#include "esp_sntp.h"
 #include "esp_http_client.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -25,26 +27,30 @@
 #define SCAN_MAX 16
 #define RECONNECT_DELAY_US (2 * 1000 * 1000)
 
-/* 时间来源完全走内网：Moonraker（Tornado）HTTP 响应自带 Date 头（GMT），
-   不依赖外网 NTP。时区固定 CST-8（中国标准时间）。 */
+/* Moonraker 与 Bambu Cloud 都提供标准 HTTP Date（GMT），无需额外 NTP
+   连接。显示时区沿用项目现有的 CST-8（中国标准时间）。 */
+bool bsp_time_sync_from_http_date(const char *http_date)
+{
+    if (!http_date || !http_date[0]) return false;
+    struct tm tmv = {0};
+    /* "Wed, 04 Sep 2026 01:35:22 GMT" */
+    if (!strptime(http_date, "%a, %d %b %Y %H:%M:%S", &tmv)) return false;
+    /* newlib 无 timegm：临时切 UTC 求 epoch 再切回 CST-8 */
+    setenv("TZ", "UTC0", 1); tzset();
+    time_t t = mktime(&tmv);
+    setenv("TZ", "CST-8", 1); tzset();
+    if (t <= 0) return false;
+    struct timeval tv = { .tv_sec = t, .tv_usec = 0 };
+    if (settimeofday(&tv, NULL) != 0) return false;
+    ESP_LOGI(TAG, "time synced from HTTP Date: %s", http_date);
+    return true;
+}
+
 static esp_err_t http_date_cb(esp_http_client_event_t *evt)
 {
     if (evt->event_id == HTTP_EVENT_ON_HEADER && evt->header_key &&
-        strcasecmp(evt->header_key, "Date") == 0) {
-        struct tm tmv = {0};
-        /* "Wed, 04 Sep 2026 01:35:22 GMT" */
-        if (strptime(evt->header_value, "%a, %d %b %Y %H:%M:%S", &tmv)) {
-            /* newlib 无 timegm：临时切 UTC 求 epoch 再切回 CST-8 */
-            setenv("TZ", "UTC0", 1); tzset();
-            time_t t = mktime(&tmv);
-            setenv("TZ", "CST-8", 1); tzset();
-            if (t > 0) {
-                struct timeval tv = { .tv_sec = t, .tv_usec = 0 };
-                settimeofday(&tv, NULL);
-                ESP_LOGI(TAG, "time synced from moonraker: %s", evt->header_value);
-            }
-        }
-    }
+        evt->header_value && strcasecmp(evt->header_key, "Date") == 0)
+        bsp_time_sync_from_http_date(evt->header_value);
     return ESP_OK;
 }
 
@@ -91,6 +97,19 @@ static struct {
 
 static void on_wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data);
 
+static bool s_sntp_started;
+
+/* 联网即对时（SNTP，国内服务器；间隔由 CONFIG_LWIP_SNTP_UPDATE_DELAY 控制）。
+   屏保时间不再依赖打印机（Moonraker HTTP Date）对时。 */
+static void sntp_start_once(void)
+{
+    if (s_sntp_started) return;
+    s_sntp_started = true;
+    esp_sntp_config_t cfg = ESP_NETIF_SNTP_DEFAULT_CONFIG("ntp.aliyun.com");
+    esp_netif_sntp_init(&cfg);   /* start=true，立即同步 */
+    ESP_LOGI(TAG, "SNTP started (ntp.aliyun.com)");
+}
+
 static void reconnect_cb(void *arg)
 {
     (void)arg;
@@ -104,7 +123,7 @@ static void ensure_init(void)
 {
     if (W.inited) return;
 
-    setenv("TZ", "CST-8", 1);   /* 显示时区：中国标准时间（时间源见 bsp_time_sync_from_host） */
+    setenv("TZ", "CST-8", 1);   /* 显示时区：中国标准时间 */
     tzset();
 
     /* nvs 可能被写满/版本变更，抹掉重来（KlipperScreen 同款处理） */
@@ -116,6 +135,7 @@ static void ensure_init(void)
     esp_netif_init();
     esp_event_loop_create_default();
     esp_netif_create_default_wifi_sta();
+    esp_netif_create_default_wifi_ap();   /* 后台 SoftAP 兜底用（不启动无副作用） */
 
     esp_timer_create_args_t t = {.callback = reconnect_cb, .name = "wifi_reconn"};
     esp_timer_create(&t, &W.reconnect_timer);
@@ -159,6 +179,7 @@ static void on_wifi_event(void *arg, esp_event_base_t base, int32_t id, void *da
     } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
         W.state = BSP_WIFI_CONNECTED;
         W.connected = true;
+        sntp_start_once();   /* 联网后立即 SNTP 对时 */
         ESP_LOGI(TAG, "connected, got ip");
     }
 }
@@ -168,6 +189,31 @@ void bsp_wifi_init(void)
     ensure_init();
 }
 
+void bsp_wifi_start_ap(const char *ssid, const char *password)
+{
+    ensure_init();
+    wifi_config_t ap = { 0 };
+    strlcpy((char *)ap.ap.ssid, ssid, sizeof(ap.ap.ssid));
+    ap.ap.ssid_len = (uint8_t)strlen(ssid);
+    ap.ap.channel = 1;
+    ap.ap.max_connection = 4;
+    if (password && password[0]) {
+        strlcpy((char *)ap.ap.password, password, sizeof(ap.ap.password));
+        ap.ap.authmode = WIFI_AUTH_WPA2_PSK;
+    } else {
+        ap.ap.authmode = WIFI_AUTH_OPEN;
+    }
+    /* 顺序必须：先切模式（含 AP 接口）再配置 AP；wifi 可能已 start（STA），
+       esp_wifi_set_mode 在 started 状态下允许调用，start 重复调用返回 ESP_ERR_WIFI_STATE 需忽略 */
+    esp_err_t r = esp_wifi_set_mode(WIFI_MODE_APSTA);
+    if (r != ESP_OK && r != ESP_ERR_WIFI_NOT_INIT) { ESP_LOGE(TAG, "set_mode APSTA: %s", esp_err_to_name(r)); }
+    r = esp_wifi_set_config(WIFI_IF_AP, &ap);
+    if (r != ESP_OK && r != ESP_ERR_WIFI_NOT_INIT) { ESP_LOGE(TAG, "set_config AP: %s", esp_err_to_name(r)); }
+    r = esp_wifi_start();
+    if (r != ESP_OK && r != ESP_ERR_WIFI_STATE) { ESP_LOGE(TAG, "wifi start: %s", esp_err_to_name(r)); }
+    W.manual = false;
+    ESP_LOGI(TAG, "SoftAP '%s' up at 192.168.4.1 (APSTA)", ssid);
+}
 void bsp_wifi_scan_start(void)
 {
     ensure_init();
@@ -232,4 +278,23 @@ bsp_wifi_state_t bsp_wifi_status(void)
 bool bsp_wifi_connected(void)
 {
     return W.connected;
+}
+
+bool bsp_wifi_current(char *ssid, size_t ssid_len, char *ip, size_t ip_len)
+{
+    if (ssid && ssid_len) ssid[0] = 0;
+    if (ip && ip_len) ip[0] = 0;
+    if (!W.connected) return false;
+
+    wifi_ap_record_t ap;
+    if (esp_wifi_sta_get_ap_info(&ap) != ESP_OK) return false;
+    if (ssid && ssid_len) strlcpy(ssid, (const char *)ap.ssid, ssid_len);
+
+    esp_netif_t *sta = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+    if (sta && ip && ip_len) {
+        esp_netif_ip_info_t ii;
+        if (esp_netif_get_ip_info(sta, &ii) == ESP_OK && ii.ip.addr != 0)
+            snprintf(ip, ip_len, IPSTR, IP2STR(&ii.ip));
+    }
+    return true;
 }
