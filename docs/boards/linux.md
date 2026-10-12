@@ -40,4 +40,22 @@ Uninstall with the bundled `./uninstall.sh`.
 - On Klipper hosts (`~/printer_data` present), config lives in `~/printer_data/config/KlipperScreen-esp/` so fluidd/mainsail can view and edit it directly, and service logs land in `~/printer_data/logs/KlipperScreen-esp.log` (downloadable from the web UI). Every app-written config also refreshes a `.bak` checkpoint — if a hand edit breaks the main file, the last known-good copy is used instead of crashing. On first boot, printer slot 1 is pre-filled with the local Moonraker (`127.0.0.1`, named after the login user).
 - Building from source instead: see [Building from source](../building.md).
 
+### Weston session recovery (since 0.7.7)
+
+The Wayland launcher supervises both Weston and the app. If either exits, it stops the other and systemd restarts the complete display session after 2 seconds. A 5-second socket-readiness timeout prevents starting the app without a compositor. Cleanup sends TERM, then KILL after at most 5 seconds; the service stop timeout is 10 seconds. A private `klipperscreen-esp` socket leaves other sessions' `wayland-0` untouched.
+
+The installer always installs a backlight udev rule; each service start also restores `video` group write access to `/sys/class/backlight/*/brightness`. Re-run the installer once on old installations to update the systemd unit and permission rules. In-app updates replace the binary and launcher but do not modify privileged system units.
+
+On a Redmi 4, Weston aborted in `weston_output_finish_frame` after a backwards frame timestamp, while the app stayed alive, leaving a black screen with its backlight and SSH still working. This recovery addresses the aftermath, not the underlying non-mainline kernel/DRM timestamp bug. It does not disable the GPU, change rotation/scaling or raise the frame rate. A display/kernel hang with both processes still alive is not covered by process-exit supervision.
+
+Preserve evidence before rebooting the host:
+
+```bash
+systemctl status KlipperScreen-esp --no-pager
+pgrep -a weston
+tail -100 ~/printer_data/logs/KlipperScreen-esp.log
+```
+
+To recover just the display session, run `sudo systemctl restart KlipperScreen-esp`; Moonraker, Klipper and Linux are not restarted.
+
 ---

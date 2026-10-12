@@ -40,4 +40,22 @@ KR_BACKEND=wayland KR_START=0 ./install.sh
 - Klipper 上位机（存在 `~/printer_data`）下，配置放在 `~/printer_data/config/KlipperScreen-esp/`，fluidd/mainsail 可直接查看编辑；服务日志写到 `~/printer_data/logs/KlipperScreen-esp.log`，网页端可直接下载。每次应用写配置会同步刷新 `.bak` 检查点——主文件被手改损坏时自动还原到最近一次已知良好的内容，不会崩。首次开机会把打印机槽 1 预填为本机 Moonraker（`127.0.0.1`，名称沿用登录用户名）。
 - 想从源码构建见 [从源码构建](../building.md)。
 
+### 黑屏与 Weston 会话恢复（0.7.7 起）
+
+Wayland 服务同时监控 Weston 和应用：任一进程退出，都会清理另一端，并由 systemd 在 2 秒后重新启动整套显示会话。Weston 5 秒内未创建 socket 时不启动应用；退出清理先发送 TERM，最多等待 5 秒后发送 KILL，systemd 停服务超时为 10 秒。应用使用独立的 `klipperscreen-esp` socket，不会删除其他桌面会话的 `wayland-0`。
+
+安装器始终写入背光 udev 规则，服务每次启动也恢复 `/sys/class/backlight/*/brightness` 的 `video` 组写权限。旧安装建议重新运行一次安装器以更新 systemd 单元和权限规则；应用内更新会更新二进制和启动脚本，但不会以管理员权限修改系统单元。
+
+红米4实测曾发生 Weston `weston_output_finish_frame` 帧时间倒退断言退出，而应用仍存活，导致 SSH 正常、背光亮但画面全黑。0.7.7 修复的是该故障后的自动恢复，不代表修复了非主线内核的 DRM 时间戳问题，也不会禁用 GPU、调整缩放/旋转或提高帧率。进程仍存活但内核显示链路卡死不在此恢复机制的覆盖范围内。
+
+排查时先保留日志，不要直接重启整机：
+
+```bash
+systemctl status KlipperScreen-esp --no-pager
+pgrep -a weston
+tail -100 ~/printer_data/logs/KlipperScreen-esp.log
+```
+
+确认需要恢复显示时，可执行 `sudo systemctl restart KlipperScreen-esp`；只重启显示会话，不重启 Moonraker、Klipper 或 Linux。
+
 ---

@@ -10,6 +10,9 @@
 /* ---------- 面板注册表（panels 目录下实现，集中声明） ---------- */
 extern panel_def_t panel_main_def;
 extern panel_def_t panel_job_status_def;
+#if BSP_HAS_FINE_TUNE
+extern panel_def_t panel_fine_tune_def;
+#endif
 extern panel_def_t panel_temperature_def;
 extern panel_def_t panel_move_def;
 extern panel_def_t panel_extrude_def;
@@ -43,6 +46,9 @@ extern panel_def_t panel_update_def;
 static panel_def_t *registry[] = {
     &panel_main_def,
     &panel_job_status_def,
+#if BSP_HAS_FINE_TUNE
+    &panel_fine_tune_def,
+#endif
     &panel_temperature_def,
     &panel_move_def,
     &panel_extrude_def,
@@ -107,6 +113,25 @@ static panel_def_t *find(const char *name)
     return NULL;
 }
 
+static void sync_titlebar_action(panel_def_t *p)
+{
+    lv_obj_t *btn = titlebar_motoroff_button();
+    int motoroff = p->show_motor_off && printer_has_capability(PRINTER_CAP_MOVE);
+    int tune = 0;
+#if BSP_HAS_FINE_TUNE
+    tune = p->show_fine_tune && printer_can_fine_tune();
+#endif
+    bool was_visible = !lv_obj_has_flag(btn, LV_OBJ_FLAG_HIDDEN);
+    titlebar_show_motoroff(motoroff);
+    titlebar_show_finetune(tune);
+    if (motoroff || tune) {
+        if (lv_obj_get_group(btn) != p->nav_group) lv_group_add_obj(p->nav_group, btn);
+    } else {
+        lv_group_remove_obj(btn);
+        if (was_visible) ui_nav_refocus_visible(p->nav_group);
+    }
+}
+
 static void show(panel_def_t *p, int push, panel_def_t *leaving)
 {
     ensure_created(p);          /* 懒加载：常驻的只有主面板和当前面板 */
@@ -119,10 +144,7 @@ static void show(panel_def_t *p, int push, panel_def_t *leaving)
     /* 小屏（scale<1）标题位窄，子面板的温度让位给标题，只在主面板（时钟位）显示 */
     titlebar_show_temps(!p->hide_temps && (ui_scale() >= 1.0f || nav_top == 0));
     /* 关闭电机按钮：仅声明面板 + 后端支持移动（Klipper）时显示 */
-    int want_motoroff = p->show_motor_off && printer_has_capability(PRINTER_CAP_MOVE);
-    titlebar_show_motoroff(want_motoroff);
-    lv_group_remove_obj(titlebar_motoroff_button());
-    if (want_motoroff) lv_group_add_obj(p->nav_group, titlebar_motoroff_button());
+    sync_titlebar_action(p);
     ui_nav_activate(p->nav_group);
     ui_nav_set_global_obj(titlebar_back_button(), nav_top > 0);
     if (p->on_show) p->on_show();
@@ -136,6 +158,7 @@ void panel_mgr_init(void)
     ensure_created(nav_stack[0]);
     lv_screen_load(nav_stack[0]->scr);
     titlebar_set(nav_stack[0]->title, 0);
+    sync_titlebar_action(nav_stack[0]);
     ui_nav_activate(nav_stack[0]->nav_group);
     ui_nav_set_global_obj(titlebar_back_button(), false);
     if (nav_stack[0]->on_show) nav_stack[0]->on_show();
@@ -163,6 +186,9 @@ void panel_mgr_reload(void)
 
 void panel_mgr_open(const char *name)
 {
+#if BSP_HAS_FINE_TUNE
+    if (strcmp(name, "fine_tune") == 0 && !printer_can_fine_tune()) return;
+#endif
     panel_def_t *p = find(name);
     if (!p || nav_top >= NAV_DEPTH_MAX - 1) return;
     if (nav_top >= 0 && nav_stack[nav_top] == p) return;   /* 栈顶去重 */
@@ -202,5 +228,6 @@ void panel_mgr_tick(void)
 
     if (nav_top >= 0 && nav_stack[nav_top]->on_tick)
         nav_stack[nav_top]->on_tick();
+    if (nav_top >= 0) sync_titlebar_action(nav_stack[nav_top]);
     titlebar_tick();
 }

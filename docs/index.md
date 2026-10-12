@@ -11,6 +11,7 @@ The separately named SDL2 **simulator** uses mock data for layout development, i
 - **Main** — nozzle/bed/chamber temp cards, print progress, quick actions
 - **G-code files** — thumbnails, metadata, history, print/delete
 - **Control** — axis jog & homing, extrude/retract with cold-extrusion guard, temperature presets (PLA/PETG/ABS/cooldown), emergency stop & firmware restart with confirmation
+- **Print fine tuning** — open from the upper-right corner of Job Status while printing or paused. Z uses separate 0.01/0.05mm steps; speed and flow share 1%/5%/10%/25% steps. Tap a value to restore 0mm/100%. Not enabled on Wio Terminal due to executable flash limits.
 - **Robust link** — WebSocket auto-reconnect, app-level heartbeat with RTT display, zombie-connection detection, Klipper error toasts (e.g. endstop not triggered)
 - **Bambu status monitor** — ESP32 and desktop support sign-in, verification codes, bound-device selection, and cloud MQTT status sync. Cloud mode is read-only; LAN Developer Mode controls are reserved for a later backend.
 - **Extras** — "Umeko" boot animation, 5 languages (EN / 简中 / 繁中 / FR / IT, fade-to-black reboot on switch), brightness slider, auto screen-off with touch wake, and a title-bar clock synced from the active backend's standard HTTP time

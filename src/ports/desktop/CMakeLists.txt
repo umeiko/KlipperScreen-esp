@@ -4,6 +4,8 @@ project(KlipperScreen-esp C)
 # 默认关闭：仅手动验收构建开启，不影响产品桌面端或 CI 发布产物。
 option(KR_ENCODER_SETTINGS_PREVIEW "Preview ESP32 encoder settings in simulator" OFF)
 option(KR_DISPLAY_SETTINGS_PREVIEW "Preview RGB/BGR display settings in simulator" OFF)
+option(KR_FINE_TUNE_TEST "Build offline fine-tune integration smoke test (Windows)" OFF)
+option(KR_JOB_CONSOLE_TEST "Build offline thumbnail/console regression test (Windows)" OFF)
 
 # SDL2 desktop ports share every UI source. On Windows the primary target is
 # a real Moonraker controller; a separately named simulator keeps mock data an
@@ -104,6 +106,33 @@ if(WIN32)
     target_compile_definitions(klipper_remote_simulator PRIVATE KLIPPER_DESKTOP_SIMULATOR=1)
     target_include_directories(klipper_remote_simulator PRIVATE ${CJSON_INCLUDE_DIR}/cjson)
     target_link_libraries(klipper_remote_simulator PRIVATE cjson-static winhttp crypt32 iphlpapi ws2_32)
+    if(KR_FINE_TUNE_TEST)
+        set(TUNE_TEST_SRCS ${DESKTOP_COMMON_SRCS})
+        list(REMOVE_ITEM TUNE_TEST_SRCS main.c ${SRC_ROOT}/ui/panels/panel_fine_tune.c)
+        add_executable(test_fine_tune
+            ${REPO_ROOT}/tests/test_fine_tune.c ${TUNE_TEST_SRCS}
+            ${SRC_ROOT}/core/klipper_api.c ${SRC_ROOT}/core/moonraker_client_stub.c
+            ${SRC_ROOT}/core/bambu_status.c ${SRC_ROOT}/core/bambu_monitor_stub.c
+            ${SRC_ROOT}/core/bambu_cloud_stub.c)
+        configure_desktop_target(test_fine_tune)
+        target_compile_options(test_fine_tune PRIVATE -UNDEBUG)
+        target_include_directories(test_fine_tune PRIVATE ${CJSON_INCLUDE_DIR}/cjson)
+        target_link_libraries(test_fine_tune PRIVATE cjson-static winhttp crypt32 iphlpapi ws2_32)
+    endif()
+    if(KR_JOB_CONSOLE_TEST)
+        set(JOB_TEST_SRCS ${DESKTOP_COMMON_SRCS})
+        list(REMOVE_ITEM JOB_TEST_SRCS main.c ${SRC_ROOT}/ui/panels/panel_job_status.c
+            ${SRC_ROOT}/ui/panels/panel_console.c ${SRC_ROOT}/ui/widgets/gcode_thumb.c)
+        add_executable(test_job_console
+            ${REPO_ROOT}/tests/test_job_console.c ${JOB_TEST_SRCS}
+            ${SRC_ROOT}/core/klipper_api.c ${SRC_ROOT}/core/moonraker_client_stub.c
+            ${SRC_ROOT}/core/bambu_status.c ${SRC_ROOT}/core/bambu_monitor_stub.c
+            ${SRC_ROOT}/core/bambu_cloud_stub.c)
+        configure_desktop_target(test_job_console)
+        target_compile_options(test_job_console PRIVATE -UNDEBUG)
+        target_include_directories(test_job_console PRIVATE ${CJSON_INCLUDE_DIR}/cjson)
+        target_link_libraries(test_job_console PRIVATE cjson-static winhttp crypt32 iphlpapi ws2_32)
+    endif()
 else()
     # macOS / Linux：POSIX sockets 原生传输（moonraker_client_posix.c），
     # 另保留 mock 数据的 simulator 目标作开发/布局工具。

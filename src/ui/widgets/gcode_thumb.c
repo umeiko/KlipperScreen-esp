@@ -7,6 +7,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+typedef struct { gcode_thumb_state_t state; } thumb_load_t;
+
+gcode_thumb_state_t gcode_thumb_state(lv_obj_t *img)
+{
+    thumb_load_t *load = img ? lv_obj_get_user_data(img) : NULL;
+    return load ? load->state : GCODE_THUMB_FAILED;
+}
+
 /* 等比缩放到 max_w/max_h 以内：比它大则缩小，比它小也放大（上限 4x，
  * 避免小缩略图在 Linux 大屏上按原始像素显示得过小）。 */
 #ifndef ESP_PLATFORM
@@ -39,6 +47,7 @@ static void png_dims(const unsigned char *png, size_t len, int *w, int *h)
 /* ---------- Linux：本地 gcode 同步解析（首选，彩色） ---------- */
 
 typedef struct {
+    thumb_load_t    load;     /* First member shared with the state accessor. */
     lv_image_dsc_t  dsc;      /* VARIABLE 源：lodepng 解码器直接读 data/data_size */
     unsigned char  *png;
 } thumb_res_t;
@@ -76,6 +85,8 @@ static lv_obj_t *thumb_create_local(lv_obj_t *parent, const char *gcode_name,
     res->dsc.data = res->png;
 
     lv_obj_t *img = lv_image_create(parent);
+    res->load.state = GCODE_THUMB_READY;
+    lv_obj_set_user_data(img, &res->load);
     lv_image_set_src(img, &res->dsc);
     lv_obj_add_event_cb(img, thumb_free_cb, LV_EVENT_DELETE, res);
 
@@ -93,6 +104,7 @@ static lv_obj_t *thumb_create_local(lv_obj_t *parent, const char *gcode_name,
  * 所有权：t 由"后到者"释放——先 DELETE 后投递则投递回调释放，
  * 先投递后 DELETE 则 DELETE 回调释放（fetch 保证投递恰好一次）。 */
 typedef struct {
+    thumb_load_t    load;
     lv_obj_t       *img;     /* 占位 image；面板销毁时 DELETE 回调置 NULL */
     lv_image_dsc_t  dsc;
     unsigned char  *blob;    /* ESP32: 灰度 RGB565 像素；Linux: 原始 PNG */
@@ -180,10 +192,12 @@ static void async_thumb_deliver(unsigned char *png, size_t png_len, void *ud)
 {
     async_thumb_t *t = ud;
     t->delivered = true;
+    t->load.state = GCODE_THUMB_FAILED;
     if (png && t->img) {
 #ifdef ESP_PLATFORM
         if (decode_gray(png, png_len, t)) {
             lv_image_set_src(t->img, &t->dsc);
+            t->load.state = GCODE_THUMB_READY;
         }
 #else
         /* Linux：保留 PNG 字节，lodepng 解码器绘制时现解（彩色） */
@@ -200,6 +214,7 @@ static void async_thumb_deliver(unsigned char *png, size_t png_len, void *ud)
             t->dsc.data = t->blob;
             lv_image_set_src(t->img, &t->dsc);
             fit_scale(t->img, w, h, t->max_w, t->max_h);
+            t->load.state = GCODE_THUMB_READY;
         }
 #endif
     }
@@ -218,6 +233,8 @@ static lv_obj_t *thumb_create_remote(lv_obj_t *parent, const char *gcode_name,
     if (!t) return NULL;
     lv_obj_t *img = lv_image_create(parent);
     t->img = img;
+    t->load.state = GCODE_THUMB_LOADING;
+    lv_obj_set_user_data(img, &t->load);
     t->max_w = max_w;
     t->max_h = max_h;
     lv_obj_add_event_cb(img, async_thumb_free_cb, LV_EVENT_DELETE, t);
@@ -241,6 +258,12 @@ lv_obj_t *gcode_thumb_create(lv_obj_t *parent, const char *gcode_name, int max_w
 }
 
 #else /* !BSP_HAS_GCODE_THUMB */
+
+gcode_thumb_state_t gcode_thumb_state(lv_obj_t *img)
+{
+    (void)img;
+    return GCODE_THUMB_FAILED;
+}
 
 lv_obj_t *gcode_thumb_create(lv_obj_t *parent, const char *gcode_name, int max_w, int max_h)
 {

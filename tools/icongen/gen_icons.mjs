@@ -18,6 +18,9 @@ const PY = join(ROOT, 'tools/icongen/.venv/Scripts/python.exe');
 // [svg 名, 输出尺寸(px), C 变量名后缀, 可选 LVGL 色彩格式]
 // _sm 后缀 = 小屏(160x128) 0.45x 变体，由 ui_icon() 在小屏时自动选用
 const ICONS = [
+  ['tune_speed',     24, 'tune_speed'],
+  ['tune_speed',     11, 'tune_speed_sm'],
+  ['tune_speed',     48, 'tune_speed_48'],
   ['heater',         28, 'heater'],        // 主菜单"温度"、温度面板
   ['heater',         13, 'heater_sm'],
   ['heater',         56, 'heater_56'],     // 大屏(800x480)主菜单 2x 变体

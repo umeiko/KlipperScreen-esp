@@ -3,6 +3,14 @@
  * 不得再直接判断 CONFIG_BOARD_*。新增板型时在下方登记其能力。 */
 #pragma once
 
+/* Wio's fixed-layout/icon-reuse trial still exceeded the 496KiB executable
+ * region. Keep its complete backend behind this gate for future flash savings. */
+#if defined(KR_WIO_TERMINAL)
+#define BSP_HAS_FINE_TUNE 0
+#else
+#define BSP_HAS_FINE_TUNE 1
+#endif
+
 #ifdef ESP_PLATFORM
 #include "sdkconfig.h"
 #endif

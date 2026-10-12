@@ -26,6 +26,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <math.h>
 
 static struct {
     printer_state_t state;
@@ -131,6 +132,42 @@ const char *printer_filename(void)
     return bambu_name;
 }
 float printer_flow_pct(void)   { return klipper_active() ? M.flow : 0; }
+float printer_speed_pct(void)  { return klipper_active() ? M.speed : 0; }
+
+bool printer_set_speed_pct(int percent)
+{
+    if (!printer_can_fine_tune() || !M.online || percent < 1 || percent > 1000) return false;
+    char cmd[24];
+    snprintf(cmd, sizeof(cmd), "M220 S%d", percent);
+    return klipper_gcode_script(cmd);
+}
+
+bool printer_set_flow_pct(int percent)
+{
+    if (!printer_can_fine_tune() || !M.online || percent < 1 || percent > 1000) return false;
+    char cmd[24];
+    snprintf(cmd, sizeof(cmd), "M221 S%d", percent);
+    return klipper_gcode_script(cmd);
+}
+
+bool printer_adjust_z_offset(float delta)
+{
+    float offset;
+    if (!printer_can_fine_tune() || !M.online || !printer_homed(2) ||
+        !printer_homing_origin_z(&offset) || !isfinite(delta) || fabsf(delta) > 0.05001f)
+        return false;
+    char cmd[80];
+    snprintf(cmd, sizeof(cmd), "SET_GCODE_OFFSET Z_ADJUST=%.3f MOVE=1 MOVE_SPEED=5", (double)delta);
+    return klipper_gcode_script(cmd);
+}
+
+bool printer_reset_z_offset(void)
+{
+    float offset;
+    return printer_can_fine_tune() && M.online && printer_homed(2) &&
+           printer_homing_origin_z(&offset) &&
+           klipper_gcode_script("SET_GCODE_OFFSET Z=0 MOVE=1 MOVE_SPEED=5");
+}
 
 /* 取走待提示的 klippy 错误（取后清空）。UI 节拍轮询后弹 toast。 */
 bool printer_take_error(char *out, size_t cap)
@@ -189,6 +226,11 @@ static int endstop_axis_from_name(const char *name, size_t len)
 
 static struct { char text[CONSOLE_LINE_MAX]; uint8_t kind; } M_con[CONSOLE_MAX_LINES];
 static int M_con_head, M_con_cnt;       /* head=最旧 */
+static bool M_con_history_loaded, M_con_history_pending, M_con_batch;
+static uintptr_t M_con_generation;
+static unsigned M_con_revision, M_con_request_revision;
+static char M_con_host[64];
+static uint16_t M_con_port;
 
 /* gcode.help 的校准命令可用性（连接后按存在性建） */
 static char M_zcal_cmds[2][32];
@@ -824,7 +866,8 @@ static void console_append(const char *text, int kind)
     }
     copy_text(M_con[idx].text, sizeof(M_con[idx].text), text);
     M_con[idx].kind = (uint8_t)kind;
-    refresh();
+    M_con_revision++;
+    if (!M_con_batch) refresh();
 }
 
 void printer_console_send(const char *cmd)
@@ -846,9 +889,33 @@ const char *printer_console_line(int i, int *kind)
     return M_con[idx].text;
 }
 
+/* A clear belongs to the currently selected endpoint. Switching printers gets
+ * a fresh history; reopening or reconnecting to the same one retains the clear. */
+static bool console_sync_target(void)
+{
+    moonraker_conf_t conf;
+    if (!klipper_active() || !settings_load_moonraker(&conf) || !conf.valid || !conf.host[0]) return false;
+    uint16_t port = conf.port ? conf.port : 7125;
+    if (strcmp(M_con_host, conf.host) || M_con_port != port) {
+        bool changing_endpoint = M_con_port != 0;
+        snprintf(M_con_host, sizeof(M_con_host), "%s", conf.host);
+        M_con_port = port;
+        if (changing_endpoint) M_con_head = M_con_cnt = 0;
+        M_con_history_loaded = M_con_history_pending = false;
+        M_con_generation++;
+        M_con_revision++;
+    }
+    return true;
+}
+
 void printer_console_clear(void)
 {
+    console_sync_target();
     M_con_head = M_con_cnt = 0;
+    M_con_revision++;
+    M_con_generation++; /* Reject a history reply already in flight. */
+    M_con_history_pending = false;
+    M_con_history_loaded = true;
     refresh();
 }
 
@@ -867,19 +934,31 @@ static bool console_is_temp_line(const char *s)
 
 void printer_console_load_history(void)
 {
-    /* 桌面客户端（winhttp/posix）与 ESP32 客户端都实现 moonraker_rpc */
-    moonraker_rpc("server.gcode_store", "{\"count\":100}", on_gcode_store, NULL);
+    if (!console_sync_target() || M_con_history_loaded || M_con_history_pending) return;
+    M_con_history_pending = true;
+    M_con_request_revision = M_con_revision;
+    M_con_generation++;
+    if (!moonraker_rpc("server.gcode_store", "{\"count\":100}", on_gcode_store,
+                       (void *)M_con_generation)) M_con_history_pending = false;
 }
 
 static void on_gcode_store(char *result_json, void *ud)
 {
-    LV_UNUSED(ud);
+    if (!console_sync_target()) { free(result_json); M_con_history_pending = false; return; }
+    if (!M_con_history_pending || (uintptr_t)ud != M_con_generation) {
+        free(result_json);
+        return;
+    }
+    M_con_history_pending = false;
     cJSON *root = cJSON_Parse(result_json ? result_json : "");
     free(result_json);
     cJSON *store = root ? cJSON_GetObjectItem(root, "gcode_store") : NULL;
     if (cJSON_IsArray(store)) {
-        /* 服务端历史是"权威快照"：整环替换，否则每次进页面都叠加一份（重复 5+5） */
+        M_con_history_loaded = true;
+        /* Do not overwrite live output appended while this snapshot travelled. */
+        if (M_con_revision != M_con_request_revision) { cJSON_Delete(root); return; }
         M_con_head = M_con_cnt = 0;
+        M_con_batch = true; /* Rebuild the UI once, not once per history row. */
         cJSON *it;
         cJSON_ArrayForEach(it, store) {
             cJSON *type = cJSON_GetObjectItem(it, "type");
@@ -900,6 +979,7 @@ static void on_gcode_store(char *result_json, void *ud)
                 console_append(m + (kind == 2 ? 2 : kind == 3 ? 2 : 0), kind);
             }
         }
+        M_con_batch = false;
     }
     cJSON_Delete(root);
     refresh();
@@ -1021,6 +1101,8 @@ void printer_model_set_online(int online)
     M.online = online;
     if (!online) {
         M.rtt_ms = 0;   /* 断线后延迟值失效 */
+        M_con_history_pending = false;
+        M_con_generation++;
         /* 断线时底层 clear_pending 直接丢在途请求且无回调，这里补失败收尾 */
         if (files_req.in_flight) files_req_fail();
     }

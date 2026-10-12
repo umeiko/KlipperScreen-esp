@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 /* UI 注入的刷新回调（panel_mgr_tick） */
 static void (*refresh_hook)(void);
@@ -23,12 +24,12 @@ static struct {
     const char *filename;
     uint32_t tick;         /* 秒计数 */
     uint32_t print_start_tick;
-    float flow;
+    float flow, speed, z_offset;
 } P = {
     .state = PRINTER_STATE_STANDBY,
     .ext = 24.5f, .bed = 23.8f, .ext_t = 0, .bed_t = 0,
     .pos = {0, 0, 0}, .homed = {0, 0, 0},
-    .progress = 0, .filename = "", .flow = 100,
+    .progress = 0, .filename = "", .flow = 100, .speed = 100,
 };
 
 printer_state_t printer_state(void) { return P.state; }
@@ -55,6 +56,32 @@ int printer_homed(int axis)   { return P.homed[axis]; }
 int printer_progress_permille(void) { return P.progress; }
 const char *printer_filename(void)  { return P.filename; }
 float printer_flow_pct(void)  { return P.flow; }
+float printer_speed_pct(void) { return P.speed; }
+bool printer_set_speed_pct(int percent)
+{
+    if (!printer_can_fine_tune() || percent < 1 || percent > 1000) return false;
+    P.speed = percent;
+    return true;
+}
+bool printer_set_flow_pct(int percent)
+{
+    if (!printer_can_fine_tune() || percent < 1 || percent > 1000) return false;
+    P.flow = percent;
+    return true;
+}
+bool printer_adjust_z_offset(float delta)
+{
+    if (!printer_can_fine_tune() || !P.homed[2] || !isfinite(delta) || fabsf(delta) > 0.05001f)
+        return false;
+    P.z_offset += delta;
+    return true;
+}
+bool printer_reset_z_offset(void)
+{
+    if (!printer_can_fine_tune() || !P.homed[2]) return false;
+    P.z_offset = 0;
+    return true;
+}
 int  printer_rtt_ms(void)     { return 0; }   /* mock 无真实连接 */
 
 bool printer_take_error(char *out, size_t cap)   /* mock 不产生 klippy 错误 */
@@ -310,6 +337,7 @@ uint32_t printer_endstop_age_ms(void)
 #define MOCK_CON_MAX 80
 static struct { char text[96]; uint8_t kind; } mock_con[MOCK_CON_MAX];
 static int mock_con_head, mock_con_cnt;
+static bool mock_con_history_loaded;
 
 static void mock_con_add(const char *text, int kind)
 {
@@ -351,10 +379,15 @@ const char *printer_console_line(int i, int *kind)
     if (kind) *kind = mock_con[idx].kind;
     return mock_con[idx].text;
 }
-void printer_console_clear(void) { mock_con_head = mock_con_cnt = 0; }
+void printer_console_clear(void)
+{
+    mock_con_head = mock_con_cnt = 0;
+    mock_con_history_loaded = true;
+}
 void printer_console_load_history(void)
 {
-    if (mock_con_cnt) return;   /* 只补一次 */
+    if (mock_con_history_loaded || mock_con_cnt) return;
+    mock_con_history_loaded = true;
     mock_con_add("// 模拟器控制台历史", 3);
     mock_con_add("> M115", 1);
     mock_con_add("FIRMWARE_NAME:Klipper (mock)", 0);
@@ -368,7 +401,7 @@ bool printer_probe_z_offset(float *out) { if (!out) return false; *out = 1.84f; 
 bool printer_homing_origin_z(float *out)
 {
     if (!out) return false;
-    *out = mock_zcal_active ? 1.72f : 0.0f;   /* 校准中演示一个进行中的新偏移 */
+    *out = mock_zcal_active ? 1.72f : P.z_offset;
     return true;
 }
 const char *printer_zcal_command(int i)

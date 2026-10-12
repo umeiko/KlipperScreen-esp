@@ -212,14 +212,19 @@ install_hardware_integration() {
 
     # /sys/class/backlight/*/brightness 默认 root 0644，放开给 video 组
     # （install_deps 已把安装用户加进 video）。应用按 0..100% 写背光息屏。
-    if [ -d /sys/class/backlight ] && ls /sys/class/backlight/*/brightness >/dev/null 2>&1; then
-        sudo tee /etc/udev/rules.d/99-KlipperScreen-esp-backlight.rules > /dev/null <<'EOF'
+    # 即使安装时节点尚未出现，也安装规则，覆盖手机面板晚注册的情况。
+    sudo tee /etc/udev/rules.d/99-KlipperScreen-esp-backlight.rules > /dev/null <<'EOF'
 ACTION=="add|change", SUBSYSTEM=="backlight", RUN+="/bin/chgrp video /sys%p/brightness", RUN+="/bin/chmod g+w /sys%p/brightness"
 EOF
-        sudo udevadm control --reload 2>/dev/null || true
-        sudo udevadm trigger --subsystem-match=backlight --action=add 2>/dev/null || true
-        echo_ok "Backlight udev rule installed"
-    fi
+    sudo udevadm control --reload 2>/dev/null || true
+    sudo udevadm trigger --subsystem-match=backlight --action=add 2>/dev/null || true
+    sudo udevadm settle --timeout=5 2>/dev/null || true
+    for brightness in /sys/class/backlight/*/brightness; do
+        [ -f "$brightness" ] || continue
+        sudo chgrp video "$brightness" && sudo chmod g+w "$brightness" \
+            || echo_error "Could not grant backlight access: $brightness"
+    done
+    echo_ok "Backlight udev rule installed"
 
     # 电源键默认被 logind 抢走直接关机；交给应用做息屏/唤醒切换。
     sudo mkdir -p /etc/systemd/logind.conf.d

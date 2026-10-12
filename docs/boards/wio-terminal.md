@@ -54,4 +54,6 @@ python tools/make_uf2.py \
 
 The internal 512KB flash leaves 496KiB for the application after the bootloader. The external 4MiB QSPI flash stores configuration and reserved assets; it cannot extend the executable region. The Wio build therefore uses compact, tiered fonts and a reduced feature set while retaining Wi-Fi setup, Moonraker connection, status, movement, temperature, file browsing, and print controls.
 
+The print fine-tuning panel is currently disabled on Wio: even the fixed-layout trial with reused icons exceeded the executable flash limit. Other platforms provide it from Job Status during an active print.
+
 For detailed font layout, RTL8720DN diagnostics, and Windows bootloader/USB recovery, switch the documentation language to 简体中文; the Chinese version of this page keeps the full bring-up record.

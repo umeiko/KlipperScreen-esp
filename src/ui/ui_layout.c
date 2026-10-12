@@ -290,6 +290,7 @@ static const struct { const lv_image_dsc_t *base, *sm; } icon_sm_map[] = {
     { &img_console,         &img_console_sm },
     { &img_fan,             &img_fan_sm },
     { &img_zcal,            &img_zcal_sm },
+    { &img_tune_speed,      &img_tune_speed_sm },
 };
 
 static const lv_image_dsc_t *icon_sm(const lv_image_dsc_t *base)
@@ -331,6 +332,7 @@ static const struct { const lv_image_dsc_t *big, *lg; } icon_lg_map[] = {
     { &img_console,          &img_console_48 },
     { &img_fan,              &img_fan_48 },
     { &img_zcal,             &img_zcal_48 },
+    { &img_tune_speed,       &img_tune_speed_48 },
 };
 
 static const lv_image_dsc_t *icon_lg(const lv_image_dsc_t *big_icon)

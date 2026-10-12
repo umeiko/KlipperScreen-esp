@@ -117,6 +117,9 @@ LV_IMAGE_DECLARE(img_fan_48);
 LV_IMAGE_DECLARE(img_zcal);         /* 24px 垂直双箭头：Z 校准 */
 LV_IMAGE_DECLARE(img_zcal_sm);
 LV_IMAGE_DECLARE(img_zcal_48);
+LV_IMAGE_DECLARE(img_tune_speed);
+LV_IMAGE_DECLARE(img_tune_speed_sm);
+LV_IMAGE_DECLARE(img_tune_speed_48);
 
 /* Wio Terminal has only 496KB of executable flash. Its fixed 320x240 layout
    always selects the normal-size asset, so alias big arguments at preprocess

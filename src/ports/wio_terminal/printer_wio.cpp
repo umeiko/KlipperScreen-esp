@@ -16,6 +16,7 @@ extern "C" {
 #include "bsp_wifi.h"
 #include "moonraker_client.h"
 #include "printer.h"
+#include "bsp_caps.h"
 #include "lvgl.h"
 }
 
@@ -50,6 +51,10 @@ static PrinterState p = {
     {false, false, false}, 0, 0, 0, 0, "", ""
 };
 static void (*refresh_hook)(void);
+#if BSP_HAS_FINE_TUNE
+static float tune_speed = 100, tune_flow = 100, tune_z;
+static bool tune_z_valid;
+#endif
 
 enum LinkState { LINK_OFF, LINK_WAIT_WIFI, LINK_CONNECT, LINK_HTTP, LINK_WS };
 static LinkState link_state = LINK_OFF;
@@ -344,6 +349,14 @@ static void apply_status(const char *json)
 {
     const char *b, *e;
     float n;
+#if BSP_HAS_FINE_TUNE
+    if (object_slice(json, "gcode_move", &b, &e)) {
+        if (get_number(b, e, "speed_factor", &n)) tune_speed = n * 100;
+        if (get_number(b, e, "extrude_factor", &n)) tune_flow = n * 100;
+        float origin[3];
+        if (get_vec3(b, e, "homing_origin", origin)) { tune_z = origin[2]; tune_z_valid = true; }
+    }
+#endif
     if (object_slice(json, "extruder", &b, &e)) {
         if (get_number(b, e, "temperature", &n)) p.ext = n;
         if (get_number(b, e, "target", &n)) p.ext_target = n;
@@ -493,6 +506,9 @@ static void send_startup_rpc(void)
         "\"extruder\":[\"temperature\",\"target\"],"
         "\"heater_bed\":[\"temperature\",\"target\"],"
         "\"toolhead\":[\"position\",\"homed_axes\"],"
+#if BSP_HAS_FINE_TUNE
+        "\"gcode_move\":[\"speed_factor\",\"extrude_factor\",\"homing_origin\"],"
+#endif
         "\"print_stats\":[\"state\",\"filename\",\"print_duration\",\"info\"],"
         "\"display_status\":[\"progress\"],"
         "\"virtual_sdcard\":[\"progress\"],"
@@ -775,9 +791,9 @@ static void network_worker(void *)
 
 static void timer_1s(lv_timer_t *) { if (refresh_hook) refresh_hook(); }
 
-static void gcode(const char *script)
+static bool gcode(const char *script)
 {
-    if (!script || mr_state != MOONRAKER_READY) return;
+    if (!script || mr_state != MOONRAKER_READY) return false;
     char escaped[300];
     size_t n = 0;
     for (const char *s = script; *s && n + 2 < sizeof(escaped); ++s) {
@@ -787,7 +803,7 @@ static void gcode(const char *script)
     escaped[n] = 0;
     char params[340];
     snprintf(params, sizeof(params), "{\"script\":\"%s\"}", escaped);
-    (void)send_rpc_text("printer.gcode.script", params);
+    return send_rpc_text("printer.gcode.script", params);
 }
 
 } // namespace
@@ -815,7 +831,11 @@ printer_capabilities_t printer_capabilities(void)
     return PRINTER_CAP_TEMP_CONTROL | PRINTER_CAP_MOVE | PRINTER_CAP_EXTRUDE |
            PRINTER_CAP_FILES | PRINTER_CAP_PRINT_START |
            PRINTER_CAP_PAUSE | PRINTER_CAP_RESUME | PRINTER_CAP_CANCEL |
-           PRINTER_CAP_EMERGENCY_STOP | PRINTER_CAP_FIRMWARE_RESTART;
+           PRINTER_CAP_EMERGENCY_STOP | PRINTER_CAP_FIRMWARE_RESTART
+#if BSP_HAS_FINE_TUNE
+           | PRINTER_CAP_FINE_TUNE
+#endif
+           ;
 }
 printer_state_t printer_state(void) { return p.state; }
 float printer_temp_ext(void) { return p.ext; }
@@ -834,7 +854,35 @@ uint32_t printer_print_eta_s(void)
 }
 int printer_layer_current(void) { return p.layer; }
 int printer_layer_total(void) { return p.layers; }
+#if BSP_HAS_FINE_TUNE
+float printer_flow_pct(void) { return tune_flow; }
+float printer_speed_pct(void) { return tune_speed; }
+bool printer_set_speed_pct(int percent)
+{
+    if (!printer_can_fine_tune() || percent < 1 || percent > 1000) return false;
+    char cmd[24]; snprintf(cmd, sizeof(cmd), "M220 S%d", percent); return gcode(cmd);
+}
+bool printer_set_flow_pct(int percent)
+{
+    if (!printer_can_fine_tune() || percent < 1 || percent > 1000) return false;
+    char cmd[24]; snprintf(cmd, sizeof(cmd), "M221 S%d", percent); return gcode(cmd);
+}
+bool printer_adjust_z_offset(float delta)
+{
+    if (!printer_can_fine_tune() || !p.homed[2] || !tune_z_valid ||
+        !isfinite(delta) || fabsf(delta) > 0.05001f) return false;
+    char cmd[80];
+    snprintf(cmd, sizeof(cmd), "SET_GCODE_OFFSET Z_ADJUST=%.3f MOVE=1 MOVE_SPEED=5", (double)delta);
+    return gcode(cmd);
+}
+bool printer_reset_z_offset(void)
+{
+    return printer_can_fine_tune() && p.homed[2] && tune_z_valid &&
+           gcode("SET_GCODE_OFFSET Z=0 MOVE=1 MOVE_SPEED=5");
+}
+#else
 float printer_flow_pct(void) { return 100.0f; }
+#endif
 int printer_rtt_ms(void) { return 0; }
 bool printer_take_error(char *out, size_t cap)
 {
@@ -971,7 +1019,15 @@ const char *printer_zcal_command(int) { return ""; }
 bool printer_zcal_commands_pending(void) { return false; }
 bool printer_probe_present(void) { return false; }
 bool printer_probe_z_offset(float *) { return false; }
-bool printer_homing_origin_z(float *) { return false; }
+bool printer_homing_origin_z(float *out)
+{
+#if BSP_HAS_FINE_TUNE
+    if (!out || !tune_z_valid) return false;
+    *out = tune_z; return true;
+#else
+    (void)out; return false;
+#endif
+}
 bool printer_zcal_active(void) { return false; }
 void printer_zcal_start(const char *) {}
 void printer_zcal_testz(float) {}

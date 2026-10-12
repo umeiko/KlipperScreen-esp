@@ -15,6 +15,8 @@ After=moonraker.service
 Type=simple
 Restart=always
 RestartSec=2
+KillMode=control-group
+TimeoutStopSec=10
 User=KR_USER
 SupplementaryGroups=tty video input render
 WorkingDirectory=KR_DIR
@@ -24,8 +26,12 @@ Environment=BACKEND=KR_BACKEND
 # printer_data/logs/KlipperScreen-esp.log 供 fluidd/mainsail 下载）。
 StandardOutput=journal
 StandardError=journal
+# sysfs 权限每次启动都兜底恢复，覆盖缺失 udev 规则/晚注册背光的旧安装。
+# 只触及内核 backlight brightness 文件；应用仍以普通用户运行。
+ExecStartPre=-+/bin/sh -c 'for f in /sys/class/backlight/*/brightness; do [ -f "$$f" ] || continue; chgrp video "$$f" && chmod g+w "$$f"; done'
 ExecStart=KR_DIR/KlipperScreen-esp-start.sh
-ExecStartPost=-+chvt 7   # 最小化系统可能没有 chvt（kbd 包），失败不致命
+# 最小化系统可能没有 chvt（kbd 包），失败不致命。
+ExecStartPost=-+chvt 7
 
 # Log this user with utmp, letting it show up with commands 'w' and
 # 'who'. This is needed since we replace (a)getty.

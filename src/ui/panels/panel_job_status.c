@@ -40,6 +40,45 @@ static bool job_active;
 static char last_file[64];
 static bool narrow_info_rows;
 
+#if BSP_HAS_GCODE_THUMB
+static lv_obj_t *thumb_parent, *job_thumb;
+static char thumb_file[96];
+static int thumb_w, thumb_h, thumb_offset;
+static bool thumb_landscape, thumb_was_active;
+static uint32_t thumb_elapsed, thumb_attempt_at;
+static unsigned thumb_attempts;
+
+static void update_thumbnail(const char *filename, bool active)
+{
+    uint32_t elapsed = printer_print_elapsed_s();
+    bool new_job = active && (!thumb_was_active || elapsed < thumb_elapsed);
+    thumb_was_active = active;
+    thumb_elapsed = elapsed;
+    if (settings_load_machine_mode() != MACHINE_MODE_KLIPPER) filename = "";
+    if (new_job || strcmp(filename, thumb_file) != 0) {
+        /* DELETE detaches an in-flight worker from its old image. Its eventual
+         * callback frees its own result instead of painting the next task. */
+        if (job_thumb) lv_obj_delete(job_thumb);
+        job_thumb = NULL;
+        snprintf(thumb_file, sizeof(thumb_file), "%s", filename);
+        thumb_attempts = 0;
+    }
+    if (!thumb_parent || !thumb_file[0] || thumb_h <= ui_px(24)) return;
+    if (job_thumb && gcode_thumb_state(job_thumb) != GCODE_THUMB_FAILED) return;
+    /* Metadata may not be ready at boot/upload time. Retry failed deliveries
+     * three times, 3/6/12 seconds apart, rather than starting a worker per tick. */
+    if (thumb_attempts >= 4 || (thumb_attempts &&
+        lv_tick_elaps(thumb_attempt_at) < (3000u << (thumb_attempts - 1)))) return;
+    if (job_thumb) lv_obj_delete(job_thumb);
+    thumb_attempt_at = lv_tick_get();
+    thumb_attempts++;
+    job_thumb = gcode_thumb_create(thumb_parent, thumb_file, thumb_w, thumb_h);
+    if (job_thumb)
+        lv_obj_align(job_thumb, thumb_landscape ? LV_ALIGN_TOP_MID : LV_ALIGN_CENTER,
+                     0, thumb_offset);
+}
+#endif
+
 typedef enum {
     INFO_ICON_NONE,
     INFO_ICON_ELAPSED,
@@ -106,7 +145,12 @@ static void update_ui(void)
         strncpy(last_file, filename, sizeof(last_file) - 1);
         last_file[sizeof(last_file) - 1] = 0;
     }
-    const char *shown_file = filename[0] ? filename : last_file;
+    /* A new active task with late filename metadata must not show the previous
+     * task's name/image. Keep last_file only for the completed/restart view. */
+    const char *shown_file = filename[0] ? filename : (printing || paused) ? "" : last_file;
+#if BSP_HAS_GCODE_THUMB
+    update_thumbnail(shown_file, printing || paused);
+#endif
     int layer = printer_layer_current();
     int layers = printer_layer_total();
     char task_caption[64];
@@ -332,7 +376,7 @@ static lv_obj_t *make_info_card(lv_obj_t *parent, int x, int y, int width, int h
     return card;
 }
 
-static lv_obj_t *create(void)
+static lv_obj_t *create_job_status(void)
 {
     lv_obj_t *scr = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(scr, theme_col(THEME_COL_BG), 0);
@@ -349,12 +393,29 @@ static lv_obj_t *create(void)
     /* 横屏高度放不下「圆环 + 缩略图」纵向堆叠：有缩略图能力的平台
      * 改为缩略图占主视觉区，百分比下沉到原模式副标题的位置。 */
     /* 方屏的主体同样是左右两栏，也应采用横向缩略图布局。 */
-    bool thumb_landscape = ui_scr_w() >= ui_scr_h();
+    thumb_landscape = ui_scr_w() >= ui_scr_h();
+    job_thumb = NULL;
+    thumb_file[0] = 0;
+    thumb_attempts = 0;
+    thumb_was_active = false;
+    thumb_elapsed = 0;
 #endif
 
     lv_obj_t *progress_card = theme_card(scr);
     lv_obj_set_size(progress_card, progress_w, body_h);
     lv_obj_set_pos(progress_card, x0, y0);
+#if BSP_HAS_GCODE_THUMB
+    thumb_parent = progress_card;
+    thumb_w = progress_w - ui_px(16);
+    if (thumb_landscape) {
+        thumb_h = body_h - ui_px(48);
+        thumb_offset = ui_px(5);
+    } else {
+        int region_y = ui_px(5) + progress_w - ui_px(16) + ui_px(4);
+        thumb_h = body_h - ui_px(40) - region_y;
+        thumb_offset = region_y + thumb_h / 2 - body_h / 2;
+    }
+#endif
 
     int arc_size = progress_w - ui_px(16);
     arc = lv_arc_create(progress_card);
@@ -462,30 +523,6 @@ static lv_obj_t *create(void)
 
     update_ui();
 
-#if BSP_HAS_GCODE_THUMB
-    /* 竖屏：圆环在上、缩略图在下。横屏：缩略图替代圆环占主视觉区，
-     * 百分比已移到底部。Linux 本地解码；ESP32 PSRAM 板异步拉取灰度图。 */
-    if (thumb_landscape) {
-        int region_h = body_h - ui_px(48);   /* 底部留给状态 + 百分比 */
-        if (region_h > ui_px(24) && last_file[0]) {
-            lv_obj_t *thumb = gcode_thumb_create(progress_card, last_file,
-                                                  progress_w - ui_px(16), region_h);
-            if (thumb) lv_obj_align(thumb, LV_ALIGN_TOP_MID, 0, ui_px(5));
-        }
-    } else {
-        int region_y = ui_px(5) + arc_size + ui_px(4);
-        int region_h = body_h - ui_px(40) - region_y;   /* 底部留给状态/模式两行 */
-        if (region_h > ui_px(24) && last_file[0]) {
-            lv_obj_t *thumb = gcode_thumb_create(progress_card, last_file,
-                                                 progress_w - ui_px(16), region_h);
-            if (thumb) {
-                int center_off = region_y + region_h / 2 - body_h / 2;
-                lv_obj_align(thumb, LV_ALIGN_CENTER, 0, center_off);
-            }
-        }
-    }
-#endif
-
     /* 底部按钮横向排列：方向键几何走位（ui_nav 白名单） */
     ui_nav_group_set_spatial(lv_group_get_default(), true);
     return scr;
@@ -493,6 +530,7 @@ static lv_obj_t *create(void)
 
 panel_def_t panel_job_status_def = {
     .name = "job_status", .title = "打印状态", .title_s = "打印",
-    .create = create, .on_show = update_ui, .on_tick = update_ui,
+    .create = create_job_status, .on_show = update_ui, .on_tick = update_ui,
     .hide_temps = 1,   /* 页面内已有温度显示，长语言标题（如法语）避免与标题栏温度遮挡 */
+    .show_fine_tune = 1,
 };

@@ -52,6 +52,8 @@ Wio Terminal 的 Wi-Fi 由独立的 RTL8720DN 协处理器提供。首次使用�
 
 内置 Flash 的前 16KB 是 UF2/BOSSA Bootloader，应用从 `0x4000` 开始，最多 507904 字节（496KiB）。外置 QSPI 与内置程序 Flash 是两颗物理芯片，不能像 ESP32 分区表那样从“文件系统”直接划容量给程序。若应用空间吃紧，应裁掉程序中的重复表或把完整资源包设计成独立的 QSPI 烧录步骤，不能覆盖 Bootloader。
 
+打印“微调”面板在 Wio 上暂不开放：固定 320×240 布局、复用图标并共用百分比步长后，试编仍超过程序 Flash 上限。能力门控为 `BSP_HAS_FINE_TUNE`，其他平台在打印中/暂停时从打印状态页右上角进入。
+
 当前 Wio 字体采用三级回退：UI 必需汉字及高频前 512 字使用 12px/1bpp；机械、电子、3D 打印领域字与频率第 513–1024 字共同使用 10px/1bpp，领域字晋级时等量下放第二档末尾的非领域普通字；其余频率字使用 8px/1bpp。ASCII、LVGL 图标和 Latin-1 字体不带 kerning 表。第三级使用紧凑码表和打包字形参数以节省 Flash，回调输出的字宽必须把 `lv_font_conv` 的 1/16 像素 advance 转换成实际像素。字库清单分别位于 `tools/fontgen/common_zh_*.txt` 和 `tools/fontgen/domain_zh.txt`。执行下面命令重新生成：
 
 ```powershell

@@ -6,7 +6,7 @@ set -u
 SCRIPTPATH="$(dirname "$(realpath "$0")")"
 KR_BIN="$SCRIPTPATH/bin/KlipperScreen-esp"
 
-XDG_RUNTIME_DIR="/run/user/$(id -u)"
+XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 export XDG_RUNTIME_DIR
 export KLIPPER_FULLSCREEN=1
 
@@ -39,13 +39,42 @@ start_weston() {
     mkdir -p "$XDG_RUNTIME_DIR"
     chmod 700 "$XDG_RUNTIME_DIR"
 
-    export WAYLAND_DISPLAY=wayland-0
+    # 独立 socket：不删除桌面会话/其他服务的 wayland-0 与 lock。
+    export WAYLAND_DISPLAY=klipperscreen-esp
     export SDL_VIDEODRIVER=wayland
 
-    rm -f "$XDG_RUNTIME_DIR/wayland-0"
-    rm -f "$XDG_RUNTIME_DIR/wayland-0.lock"
+    WESTON_PID=
+    APP_PID=
+    cleanup_all() {
+        # 只清理本次启动的子进程。先 TERM，最多等 5s，再 KILL，不能因
+        # 损坏的显示栈永久卡在 wait 里（不可中断的内核 D 状态仍需内核恢复）。
+        trap '' TERM INT HUP
+        local pid running
+        local -a children=()
+        for pid in "$APP_PID" "$WESTON_PID"; do
+            [ -n "$pid" ] && children+=("$pid")
+        done
+        if [ "${#children[@]}" -gt 0 ]; then
+            kill -TERM "${children[@]}" 2>/dev/null || true
+            for _ in {1..50}; do
+                running=0
+                for pid in "${children[@]}"; do
+                    kill -0 "$pid" 2>/dev/null && running=1
+                done
+                [ "$running" = 0 ] && break
+                sleep 0.1
+            done
+            kill -KILL "${children[@]}" 2>/dev/null || true
+            # 不阻塞等待内核 D 状态；systemd 的 KillMode=control-group
+            # 会继续收尾。正常退出/被 KILL 的子进程由 bash 自动回收。
+        fi
+    }
+    trap cleanup_all EXIT
+    trap 'exit 143' TERM
+    trap 'exit 130' INT
+    trap 'exit 129' HUP
 
-    /usr/bin/weston \
+    weston \
         --backend=drm-backend.so \
         --socket="$WAYLAND_DISPLAY" \
         --shell=kiosk-shell.so \
@@ -53,35 +82,35 @@ start_weston() {
 
     WESTON_PID=$!
 
-    cleanup() {
-        kill "$WESTON_PID" 2>/dev/null
-        wait "$WESTON_PID" 2>/dev/null
-    }
-    trap cleanup EXIT
-
-    for _ in $(seq 1 50); do
+    local ready=0
+    for _ in {1..50}; do
+        if ! kill -0 "$WESTON_PID" 2>/dev/null; then
+            echo "Weston exited before becoming ready"
+            return 1
+        fi
         if [ -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ]; then
             echo "Weston ready"
+            ready=1
             break
-        fi
-        if ! kill -0 "$WESTON_PID" 2>/dev/null; then
-            echo "Weston exited unexpectedly"
-            exit 1
         fi
         sleep 0.1
     done
+    if [ "$ready" = 0 ]; then
+        echo "Weston readiness timed out after 5s; not starting the app"
+        return 1
+    fi
 
-    # 不能 exec app：exec 会替换掉脚本进程，cleanup trap 随之消失；systemd
-    # 停服务时 weston 成为孤儿继续占着 DRM/logind 会话，下一次启动的 weston
-    # 报 "no drm device found"。前台跑 app，trap 里连 weston 一起收。
+    # 两个子进程共同监督：仅 wait APP_PID 会漏掉 Weston 的 SIGABRT，
+    # SDL kiosk 又会忽略 close，导致应用活着但永远黑屏、systemd 不重启。
     "$KR_BIN" &
     APP_PID=$!
-    cleanup_all() {
-        kill "$APP_PID" 2>/dev/null
-        cleanup
-    }
-    trap cleanup_all EXIT TERM INT
-    wait "$APP_PID" 2>/dev/null
+    local result=0
+    wait -n "$WESTON_PID" "$APP_PID" || result=$?
+    echo "Wayland session child exited (status=$result); restarting the whole display session"
+    # 即使子进程正常退出也视为 kiosk 会话结束，由 systemd Restart=always
+    # 在清理完另一端后重建；不在同一脚本内重复启动/积累僵尸会话。
+    [ "$result" = 0 ] && result=1
+    return "$result"
 }
 
 if [[ "${BACKEND:-W}" =~ ^[xX]$ ]]; then

@@ -5,6 +5,7 @@
 #include "panel_mgr.h"
 #include "printer.h"
 #include "bsp_wifi.h"
+#include "bsp_caps.h"
 #include "ui_nav.h"
 #include "widgets/confirm.h"
 #include "ui_anim.h"
@@ -13,6 +14,11 @@
 static lv_obj_t *bar;
 static lv_obj_t *btn_back;
 static lv_obj_t *btn_motoroff;
+static lv_obj_t *ic_motor;
+#if BSP_HAS_FINE_TUNE
+static lv_obj_t *ic_tune;
+static int show_tune;
+#endif
 static lv_obj_t *lbl_title;
 static lv_obj_t *lbl_wifi;
 static lv_obj_t *lbl_ext;
@@ -48,6 +54,12 @@ static void do_motoroff(void *ud)
 static void motoroff_cb(lv_event_t *e)
 {
     LV_UNUSED(e);
+#if BSP_HAS_FINE_TUNE
+    if (show_tune) {
+        if (printer_can_fine_tune()) panel_mgr_open("fine_tune");
+        return;
+    }
+#endif
     confirm_open("确认关闭电机？\n所有步进电机将失去保持力矩（M84）", "关闭电机", do_motoroff, NULL);
 }
 
@@ -73,10 +85,16 @@ void titlebar_init(void)
     lv_obj_set_size(btn_motoroff, ui_px(44), THEME_TITLEBAR_H - ui_px(4));
     lv_obj_align(btn_motoroff, LV_ALIGN_RIGHT_MID, -ui_px(2), 0);
     lv_obj_add_event_cb(btn_motoroff, motoroff_cb, LV_EVENT_CLICKED, NULL);
-    lv_obj_t *ic_motor = theme_img(btn_motoroff, ui_icon(&img_motor_off, &img_motor_off_36), THEME_COL_TEXT);
+    ic_motor = theme_img(btn_motoroff, ui_icon(&img_motor_off, &img_motor_off_36), THEME_COL_TEXT);
     /* 真彩色图标（浅灰电机+红叉）：取消 theme_img 的 recolor，保留本色 */
     lv_obj_set_style_image_recolor_opa(ic_motor, LV_OPA_TRANSP, 0);
     lv_obj_center(ic_motor);
+#if BSP_HAS_FINE_TUNE
+    ic_tune = theme_label(btn_motoroff, LV_SYMBOL_SETTINGS, THEME_FONT_ICON, THEME_COL_ACCENT);
+    lv_obj_center(ic_tune);
+    lv_obj_add_flag(ic_tune, LV_OBJ_FLAG_HIDDEN);
+    show_tune = 0;
+#endif
     lv_obj_add_flag(btn_motoroff, LV_OBJ_FLAG_HIDDEN);
 
     /* WiFi 连接状态小图标（左侧，返回键之后）。
@@ -132,9 +150,27 @@ lv_obj_t *titlebar_motoroff_button(void) { return btn_motoroff; }
 
 void titlebar_show_motoroff(int show)
 {
+    lv_obj_remove_flag(ic_motor, LV_OBJ_FLAG_HIDDEN);
     if (show) lv_obj_remove_flag(btn_motoroff, LV_OBJ_FLAG_HIDDEN);
     else      lv_obj_add_flag(btn_motoroff, LV_OBJ_FLAG_HIDDEN);
     title_update_width();
+}
+
+void titlebar_show_finetune(int show)
+{
+#if BSP_HAS_FINE_TUNE
+    show_tune = show;
+    if (show) {
+        lv_obj_add_flag(ic_motor, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(ic_tune, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(btn_motoroff, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(ic_tune, LV_OBJ_FLAG_HIDDEN);
+    }
+    title_update_width();
+#else
+    LV_UNUSED(show);
+#endif
 }
 
 void titlebar_show_temps(int show)

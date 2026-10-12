@@ -5,6 +5,7 @@
  */
 #include "lang.h"
 #include "app_settings.h"
+#include "bsp_caps.h"
 #include <string.h>
 
 static ui_lang_t cur = UI_LANG_ZH;
@@ -27,6 +28,12 @@ typedef struct {
 static const dict_entry_t dict[] = {
     /* 面板标题 / 主菜单            English                    繁體中文                Français                       Italiano */
     {"打印状态",        "Job Status",          "列印狀態",          "Statut d'impression",       "Stato stampa"},
+#if BSP_HAS_FINE_TUNE
+    {"微调",            "Fine Tune",           "微調",              "Réglage fin",               "Regolazione fine"},
+    {"速度",            "Speed",               "速度",              "Vitesse",                   "Velocità"},
+    {"流量",            "Flow",                "流量",              "Débit",                     "Flusso"},
+    {"调整未发送",      "Adjustment not sent", "調整未送出",        "Réglage non envoyé",        "Regolazione non inviata"},
+#endif
     {"温度控制",        "Temperature",         "溫度控制",          "Température",               "Temperatura"},
     {"移动",            "Move",                "移動",              "Déplacer",                  "Muovi"},
     {"挤出",            "Extrude",             "擠出",              "Extruder",                  "Estrudi"},

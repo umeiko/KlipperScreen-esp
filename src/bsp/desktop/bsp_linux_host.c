@@ -107,7 +107,10 @@ int bsp_linux_dpms_ok(void)
 
 int bsp_linux_backlight_apply(int pct)
 {
-    if (bl_state == 0) backlight_discover();
+    /* Failed discovery is not permanent: udev may grant access or register a
+       late backlight after the UI started. Retry on the next brightness/wake
+       request (not in the frame loop). */
+    if (bl_state != 1) backlight_discover();
     dpms_apply(pct);
     if (bl_state != 1) return 0;
     if (pct < 0) pct = 0;

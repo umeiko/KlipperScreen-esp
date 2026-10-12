@@ -19,8 +19,9 @@ typedef struct {
     lv_obj_t *(*create)(void);        /* 首次构建，返回 screen 根对象 */
     void (*on_show)(void);            /* 每次显示时调用（全量刷新数据） */
     void (*on_tick)(void);            /* 数据节拍（仅栈顶面板收到） */
-    int hide_temps;                   /* 标题栏不显示右侧温度（标题长的面板置 1） */
-    int show_motor_off;               /* 标题栏右上角显示关闭电机按钮（移动面板置 1） */
+    unsigned hide_temps : 1;         /* 标题栏不显示右侧温度（标题长的面板置 1） */
+    unsigned show_motor_off : 1;     /* 移动面板右上角关闭电机按钮 */
+    unsigned show_fine_tune : 1;     /* 打印状态页：存在可控制的打印任务时显示微调入口 */
 } panel_def_t;
 
 void panel_mgr_init(void);

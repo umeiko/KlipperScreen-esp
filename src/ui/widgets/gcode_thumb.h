@@ -15,6 +15,15 @@ extern "C" {
 /* max_w/max_h：允许占用的最大像素；缩略图比它小则原大显示，比它大则等比缩小。 */
 lv_obj_t *gcode_thumb_create(lv_obj_t *parent, const char *gcode_name, int max_w, int max_h);
 
+typedef enum {
+    GCODE_THUMB_LOADING,
+    GCODE_THUMB_READY,
+    GCODE_THUMB_FAILED,
+} gcode_thumb_state_t;
+/* Allows a visible panel to retry a failed asynchronous fetch without treating
+ * a still-running request as failure. Call only for a live thumbnail widget. */
+gcode_thumb_state_t gcode_thumb_state(lv_obj_t *img);
+
 #ifdef __cplusplus
 }
 #endif

@@ -37,9 +37,10 @@ enum {
     PRINTER_CAP_CANCEL           = 1u << 7,
     PRINTER_CAP_EMERGENCY_STOP   = 1u << 8,
     PRINTER_CAP_FIRMWARE_RESTART = 1u << 9,
+    PRINTER_CAP_FINE_TUNE        = 1u << 10,
 };
 
-#define PRINTER_CAP_KLIPPER_ALL ((printer_capabilities_t)((1u << 10) - 1u))
+#define PRINTER_CAP_KLIPPER_ALL ((printer_capabilities_t)((1u << 11) - 1u))
 
 /* 初始化并启动 1s 数据节拍（内部创建 LVGL timer，驱动 panel_mgr_tick） */
 void printer_init(void);
@@ -67,6 +68,7 @@ uint32_t printer_print_eta_s(void);
 int  printer_layer_current(void);       /* 0=后端未提供 */
 int  printer_layer_total(void);
 float printer_flow_pct(void);      /* 打印流量 % */
+float printer_speed_pct(void);     /* M220 速度倍率 % */
 int  printer_rtt_ms(void);         /* 到 Moonraker 的应用层心跳延迟 ms，0=未知/离线 */
 
 /* 取走一条待提示的 klippy 错误（如 "Endstop not triggered"，来自 GCode "!!" 响应行）。
@@ -86,6 +88,19 @@ void printer_print_resume(void);
 void printer_print_cancel(void);
 void printer_emergency_stop(void);      /* 对应 M112：立即停止 */
 void printer_firmware_restart(void);    /* 对应 FIRMWARE_RESTART */
+
+/* 打印中/暂停时的微调；所有写接口再次检查任务状态与能力，发送失败返回 false。
+ * Z+ 抬高喷嘴，Z- 靠近热床；仅改变运行时偏移，不执行 SAVE_CONFIG。 */
+static inline bool printer_can_fine_tune(void)
+{
+    printer_state_t state = printer_state();
+    return printer_has_capability(PRINTER_CAP_FINE_TUNE) &&
+           (state == PRINTER_STATE_PRINTING || state == PRINTER_STATE_PAUSED);
+}
+bool printer_set_speed_pct(int percent);   /* 1..1000 */
+bool printer_set_flow_pct(int percent);    /* 1..1000 */
+bool printer_adjust_z_offset(float delta); /* 每次最多 +/-0.05mm，要求 Z 已归位 */
+bool printer_reset_z_offset(void);
 
 /* ---- GCode 文件（历史打印文件面板） ---- */
 typedef struct {
@@ -159,8 +174,8 @@ uint32_t printer_endstop_age_ms(void);    /* UINT32_MAX = 从未刷新 */
 void printer_console_send(const char *cmd);
 int  printer_console_line_count(void);
 const char *printer_console_line(int i, int *kind);
-void printer_console_clear(void);
-void printer_console_load_history(void);  /* 拉取 server.gcode_store（打开控制台时） */
+void printer_console_clear(void);         /* 清本机视图并拒绝旧历史回填，后续实时消息照常显示 */
+void printer_console_load_history(void);  /* 当前打印机首次进入时补历史；重复进入不覆盖/撤销清除 */
 
 /* Z 校准：PROBE_CALIBRATE / Z_ENDSTOP_CALIBRATE 的可用性来自 printer.gcode.help；
  * 校准活跃态来自 manual_probe.is_active 订阅。 */

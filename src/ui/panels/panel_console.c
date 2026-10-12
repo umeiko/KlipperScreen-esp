@@ -17,6 +17,8 @@ static lv_obj_t *list;          /* 回显滚动区 */
 static lv_obj_t *lbl_last;      /* 底行：最近一条 */
 static int built_cnt = -1;
 static char built_tail[96];
+static void rebuild_view(void);
+static void update_last(void);
 
 /* ---- 命令输入弹层 ---- */
 static lv_obj_t *input_overlay;
@@ -97,6 +99,8 @@ static void on_clear(lv_event_t *e)
     LV_UNUSED(e);
     printer_console_clear();
     built_cnt = -1;
+    rebuild_view();
+    update_last();
 }
 
 /* ---- 回显区 ---- */
@@ -148,7 +152,7 @@ static void on_tick(void)
     update_last();
 }
 
-static lv_obj_t *create(void)
+static lv_obj_t *create_console(void)
 {
     lv_obj_t *scr = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(scr, theme_col(THEME_COL_BG), 0);
@@ -200,7 +204,7 @@ static void on_show(void)
 
 panel_def_t panel_console_def = {
     .name = "console", .title = "控制台", .title_s = "控制",
-    .create = create,
+    .create = create_console,
     .on_show = on_show,
     .on_tick = on_tick,
     .hide_temps = 1,

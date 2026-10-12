@@ -11,6 +11,7 @@
 #include "bsp_screen_power.h"
 #include "desktop/bsp_linux_host.h"
 #include "ui_app.h"
+#include "panel_mgr.h"
 #include "printer.h"
 #include "boot_anim.h"
 #include "app_settings.h"
@@ -187,9 +188,11 @@ int main(int argc, char **argv)
         if (argc >= 4)
             ui_app_open(argv[3]);   /* 直接打开指定面板再截图 */
 #ifdef KLIPPER_DESKTOP_SIMULATOR
-        if (argc >= 5 && strcmp(argv[4], "printing") == 0) {
+        if (argc >= 5 && (strcmp(argv[4], "printing") == 0 || strcmp(argv[4], "tuning") == 0)) {
             printer_print_start("3dbenchy.gcode");   /* 演示打印中状态 */
-            ui_app_open("job_status");
+            if (strcmp(argv[4], "tuning") == 0) printer_home(-1);
+            ui_app_open(strcmp(argv[4], "tuning") == 0 ? "fine_tune" : "job_status");
+            panel_mgr_tick(); /* The requested panel may already be open. */
         }
         if (argc >= 5 && strcmp(argv[4], "offline") == 0) {
             extern void printer_mock_set_state(printer_state_t);
