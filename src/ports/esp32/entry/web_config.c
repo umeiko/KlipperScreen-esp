@@ -1,8 +1,9 @@
 /*
  * Web 配置后台：esp_http_server 提供手机配置页
  *  - GET  /                 配置页面（HTML）
- *  - GET  /api/status       当前配置 JSON（WiFi + 全 6 槽位打印机 + 屏保延时）
+ *  - GET  /api/status       当前配置 JSON（WiFi + 全 6 槽位打印机 + 屏保延时 + 固件版本）
  *  - POST /api/config       保存 WiFi/打印机（slot 参数）/屏保延时，3 秒后自动重启生效
+ *  - POST /api/ota          上传 .bin 固件 OTA 升级（流式写另一槽位，校验后重启）
  * 启动时若无 WiFi 配置，自动开启 SoftAP 热点（KlipperScreen-AP / 12345678），
  * 手机连接热点后访问 http://192.168.4.1 完成首次配置。
  * 所有耗时操作都在 httpd 任务内执行，不影响 LVGL UI 任务。
@@ -16,6 +17,8 @@
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_timer.h"
+#include "esp_ota_ops.h"
+#include "esp_app_desc.h"
 #include "app_settings.h"
 #include "bsp_wifi.h"
 
@@ -68,7 +71,12 @@ static const char PAGE_FORM[] =
     "<label>城市代码 adcode</label><input id='wcity' maxlength='15' placeholder='610500'>"
     "<label>城市显示名</label><input id='wcityname' maxlength='15' placeholder='渭南'>"
     "<button onclick='saveCfg()'>保存并重启</button>"
-    "<div id='status'></div>";
+    "<div id='status'></div>"
+    "<h2>固件升级（OTA）</h2>"
+    "<div class='tip'>当前版本 <span id='fw'>?</span>。选择 .bin 固件上传，校验成功后自动重启到另一槽位；升级期间请勿断电。</div>"
+    "<input type='file' id='fwfile' accept='.bin'>"
+    "<button onclick='otaUp()'>上传并升级</button>"
+    "<div id='otastatus'></div>";
 
 static const char PAGE_JS[] =
     "<script>"
@@ -109,8 +117,17 @@ static const char PAGE_JS[] =
     "document.getElementById('wkey').value=J.wkey||'';"
     "document.getElementById('wcity').value=J.wcity||'';"
     "document.getElementById('wcityname').value=J.wcityname||'';"
+    "document.getElementById('fw').textContent=J.fw||'?';"
     "SLOT=(J.active||0);fill();"
     "document.getElementById('slotrow').children[SLOT].style.background='#2d9cdb'}catch(e){}}"
+    "async function otaUp(){var f=document.getElementById('fwfile').files[0];"
+    "if(!f){show('请先选择 .bin 固件文件',false);return}"
+    "if(!confirm('确认升级固件？升级期间请勿断电或关闭页面'))return;"
+    "show('上传中，请保持页面打开…',true);"
+    "try{var r=await fetch('/api/ota',{method:'POST',body:f});"
+    "var t=await r.text();show(t,r.ok);"
+    "if(r.ok)setTimeout(function(){location.href='/'},6000)}"
+    "catch(e){show('上传失败: '+e,false)}}"
     "load();</script></body></html>";
 
 /* ---------------- 工具 ---------------- */
@@ -213,10 +230,12 @@ static esp_err_t handle_status(httpd_req_t *req)
     char esc_ssid[64], esc_pass[128];
     json_escape(esc_ssid, sizeof(esc_ssid), w.ssid);
     json_escape(esc_pass, sizeof(esc_pass), w.pass);
+    const esp_app_desc_t *app = esp_app_get_description();
+    const char *fw = (app && app->version[0]) ? app->version : "?";
     char *p = buf;
     int n = snprintf(p, sizeof(buf) - (size_t)(p - buf),
-                     "{\"ssid\":\"%s\",\"pass\":\"%s\",\"delay\":%d,\"active\":%d,\"wkey\":\"%s\",\"wcity\":\"%s\",\"wcityname\":\"%s\",\"slots\":[",
-                     esc_ssid, esc_pass, delay, active, esc_wk, esc_wc, esc_wn);
+                     "{\"ssid\":\"%s\",\"pass\":\"%s\",\"delay\":%d,\"active\":%d,\"fw\":\"%s\",\"wkey\":\"%s\",\"wcity\":\"%s\",\"wcityname\":\"%s\",\"slots\":[",
+                     esc_ssid, esc_pass, delay, active, fw, esc_wk, esc_wc, esc_wn);
     p += n;
     for (int i = 0; i < PRINTER_SLOTS; i++) {
         moonraker_conf_t m;
@@ -238,6 +257,76 @@ static void reboot_cb(void *arg)
 {
     (void)arg;
     esp_restart();
+}
+
+/* ---------------- OTA 升级 ----------------
+ * POST /api/ota：body 直接为 .bin 固件（application/octet-stream）。
+ * httpd 流式接收 → esp_ota_write 写另一槽位 → esp_ota_end 校验 →
+ * set_boot_partition → 1 秒后重启。失败自动 abort，不影响当前固件。
+ */
+#define OTA_BUF_SIZE 4096
+
+static esp_err_t handle_ota(httpd_req_t *req)
+{
+    log_req(req);
+    ESP_LOGI(TAG, "OTA start, content_len=%d", req->content_len);
+
+    const esp_partition_t *part = esp_ota_get_next_update_partition(NULL);
+    if (!part) {
+        ESP_LOGE(TAG, "no OTA partition");
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "no OTA partition");
+        return ESP_OK;
+    }
+    ESP_LOGI(TAG, "OTA target: %s @0x%x size=%d", part->label,
+             (unsigned)part->address, (int)part->size);
+
+    esp_ota_handle_t handle;
+    esp_err_t err = esp_ota_begin(part, OTA_WITH_SEQUENTIAL_WRITES, &handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "esp_ota_begin: %s", esp_err_to_name(err));
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "ota begin failed");
+        return ESP_OK;
+    }
+
+    static char buf[OTA_BUF_SIZE];   /* httpd 单线程处理，可静态复用 */
+    int len, total = 0;
+    while ((len = httpd_req_recv(req, buf, sizeof(buf))) > 0) {
+        err = esp_ota_write(handle, buf, len);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "esp_ota_write: %s", esp_err_to_name(err));
+            esp_ota_abort(handle);
+            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "ota write failed");
+            return ESP_OK;
+        }
+        total += len;
+    }
+    if (len < 0) {  /* 读错误/超时；recv 返回 0 表示 body 已读尽 */
+        ESP_LOGE(TAG, "upload interrupted, recv=%d after %d bytes", len, total);
+        esp_ota_abort(handle);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "upload interrupted");
+        return ESP_OK;
+    }
+    ESP_LOGI(TAG, "OTA received %d bytes", total);
+
+    err = esp_ota_end(handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "esp_ota_end image invalid: %s", esp_err_to_name(err));
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "firmware image invalid");
+        return ESP_OK;
+    }
+    err = esp_ota_set_boot_partition(part);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "set boot partition: %s", esp_err_to_name(err));
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "set boot failed");
+        return ESP_OK;
+    }
+    ESP_LOGI(TAG, "OTA success, rebooting to %s", part->label);
+    httpd_resp_sendstr(req, "OTA OK, rebooting...");
+    esp_timer_handle_t t;
+    if (esp_timer_create(&(esp_timer_create_args_t){ .callback = reboot_cb, .arg = NULL }, &t) == ESP_OK) {
+        esp_timer_start_once(t, 1 * 1000 * 1000);
+    }
+    return ESP_OK;
 }
 
 static esp_err_t handle_config(httpd_req_t *req)
@@ -315,9 +404,10 @@ void web_config_server_start(void)
 
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.server_port = 80;
-    cfg.stack_size = 8192;
+    cfg.stack_size = 16384;
     cfg.max_uri_handlers = 8;
     cfg.send_wait_timeout = 30;
+    cfg.recv_wait_timeout = 120;    /* 大固件上传时等待下一段数据的超时 */
     if (httpd_start(&s_server, &cfg) == ESP_OK) {
         httpd_uri_t u;
         u.user_ctx = NULL;
@@ -331,6 +421,9 @@ void web_config_server_start(void)
         u.method = HTTP_POST;
         u.handler = handle_config;
         u.uri = "/api/config";
+        httpd_register_uri_handler(s_server, &u);
+        u.handler = handle_ota;
+        u.uri = "/api/ota";
         httpd_register_uri_handler(s_server, &u);
         ESP_LOGI(TAG, "web config server on :80");
     } else {

@@ -42,8 +42,8 @@ static const lv_image_dsc_t *s_sky_by_wx[7] = {
 #define CLK_CY   68
 #define CLK_R     56
 
-LV_FONT_DECLARE(font_cjk_14);
-LV_FONT_DECLARE(font_cjk_16);
+LV_FONT_DECLARE(font_cjk_14_cmp);
+LV_FONT_DECLARE(font_cjk_16_cmp);
 LV_FONT_DECLARE(font_cjk_28);
 LV_FONT_DECLARE(font_cjk_32);
 LV_FONT_DECLARE(lv_font_montserrat_16);
@@ -414,28 +414,28 @@ void screensaver_init(void)
 
     /* 日期（中文样式）：周六 10月3日 */
     lbl_date = lv_label_create(scr_layer);
-    lv_obj_set_style_text_font(lbl_date, &font_cjk_16, 0);
+    lv_obj_set_style_text_font(lbl_date, &font_cjk_16_cmp, 0);
     lv_obj_set_style_text_color(lbl_date, lv_color_hex(SAVER_TXT_DATE), 0);
     lv_label_set_text(lbl_date, "--.--.--");
     lv_obj_align(lbl_date, LV_ALIGN_TOP_LEFT, 18, 66);
 
     /* 农历行 */
     lbl_lunar = lv_label_create(scr_layer);
-    lv_obj_set_style_text_font(lbl_lunar, &font_cjk_14, 0);
+    lv_obj_set_style_text_font(lbl_lunar, &font_cjk_14_cmp, 0);
     lv_obj_set_style_text_color(lbl_lunar, lv_color_hex(SAVER_TXT_LUNAR), 0);
     lv_label_set_text(lbl_lunar, "--");
     lv_obj_align(lbl_lunar, LV_ALIGN_TOP_LEFT, 18, 88);
 
     /* 城市 */
     lbl_city = lv_label_create(scr_layer);
-    lv_obj_set_style_text_font(lbl_city, &font_cjk_16, 0);
+    lv_obj_set_style_text_font(lbl_city, &font_cjk_16_cmp, 0);
     lv_obj_set_style_text_color(lbl_city, lv_color_hex(SAVER_TXT_CITY), 0);
     lv_label_set_text(lbl_city, "--");
     lv_obj_align(lbl_city, LV_ALIGN_TOP_LEFT, 18, 108);
 
     /* 天气描述（实时）：与图标同一行右侧、垂直中心对齐 */
     lbl_desc = lv_label_create(scr_layer);
-    lv_obj_set_style_text_font(lbl_desc, &font_cjk_14, 0);
+    lv_obj_set_style_text_font(lbl_desc, &font_cjk_14_cmp, 0);
     lv_obj_set_style_text_color(lbl_desc, lv_color_hex(SAVER_TXT_DESC), 0);
     lv_label_set_text(lbl_desc, "");
     lv_obj_align(lbl_desc, LV_ALIGN_TOP_LEFT, 120, 144);
@@ -504,7 +504,7 @@ void screensaver_init(void)
         lv_obj_align(fx_img[i], LV_ALIGN_TOP_LEFT, cx - 24, 168);
 
         fx_text[i] = lv_label_create(scr_layer);
-        lv_obj_set_style_text_font(fx_text[i], &font_cjk_14, 0);
+        lv_obj_set_style_text_font(fx_text[i], &font_cjk_14_cmp, 0);
         lv_obj_set_style_text_color(fx_text[i], lv_color_hex(SAVER_TXT_DATE), 0);
         lv_label_set_text(fx_text[i], "--");
         lv_obj_align(fx_text[i], LV_ALIGN_TOP_LEFT, cx - 52, 218);

@@ -107,10 +107,12 @@ def decode_literal(raw: str) -> bytes:
     return bytes(out)
 
 
-def gb2312_hanzi() -> str:
-    """GB2312 汉字区（0xB0A1-0xF7FE）全表 6763 字：文件名/SSID 等动态内容不再出方框。"""
+def gb2312_hanzi(level1_only: bool = False) -> str:
+    """GB2312 汉字区全表 6763 字（0xB0A1-0xF7FE）或仅一级常用字 3755 字
+    （0xB0A1-0xD7F9）。一级字覆盖常见城市名/人名/SSID 等动态内容，flash 占用约减半。"""
     chars = []
-    for row in range(0xB0, 0xF8):
+    rows = range(0xB0, 0xD8) if level1_only else range(0xB0, 0xF8)
+    for row in rows:
         # errors="ignore"：0xD7FA-0xD7FE 等个别码位未分配，直接跳过
         chars.append(bytes(b for c in range(0xA1, 0xFF) for b in (row, c))
                      .decode("gb2312", errors="ignore"))
@@ -184,6 +186,8 @@ def main() -> int:
                     help="西文字体源路径（ASCII 0x20-0x7F + Latin-1 补充区 0xA0-0xFF，默认 Lato/OFL）")
     ap.add_argument("--sizes", type=int, nargs="+", default=None,
                     help="只生成指定字号（默认 SIZES 全量）；增量补新档用，避免重写已有字体文件")
+    ap.add_argument("--level1", action="store_true",
+                    help="只用 GB2312 一级常用字 3755（默认全表 6763）；省 flash，动态内容覆盖 99.9%")
     args = ap.parse_args()
 
     if not Path(args.font).is_file():
@@ -198,12 +202,12 @@ def main() -> int:
         return 1
 
     lit = collect_chars()
-    gb = gb2312_hanzi()
+    gb = gb2312_hanzi(level1_only=args.level1)
     symbols = "".join(sorted(set(lit) | set(gb)))
     CHARSET_OUT.parent.mkdir(exist_ok=True)
     CHARSET_OUT.write_text(symbols, encoding="utf-8")
-    print(f"[scan] GB2312 全表 {len(gb)} + 源码扫描，合计 {len(symbols)} 个非 ASCII 字符"
-          f" -> {CHARSET_OUT.relative_to(ROOT)}")
+    print(f"[scan] GB2312 {'一级' if args.level1 else '全表'} {len(gb)} + 源码扫描，"
+          f"合计 {len(symbols)} 个非 ASCII 字符 -> {CHARSET_OUT.relative_to(ROOT)}")
 
     sizes = args.sizes if args.sizes else SIZES
     for size in sizes:
