@@ -136,6 +136,13 @@ static int save_bmp(const char *path)
     return 0;
 }
 
+/* 截图模式的延迟开面板回调（见 main() 截图分支注释） */
+static void open_panel_timer_cb(lv_timer_t *t)
+{
+    ui_app_open((const char *)lv_timer_get_user_data(t));
+    lv_timer_delete(t);
+}
+
 int main(int argc, char **argv)
 {
     /* 服务模式 stdout 重定向到 printer_data 日志文件：行缓冲保证诊断
@@ -185,8 +192,12 @@ int main(int argc, char **argv)
     if (argc >= 3 && strcmp(argv[1], "--panel") != 0) {
         shot_at = atoi(argv[1]);
         shot_path = argv[2];
-        if (argc >= 4)
-            ui_app_open(argv[3]);   /* 直接打开指定面板再截图 */
+        if (argc >= 4) {
+            /* 延迟到半程再开面板：风扇/宏/传感器等面板只在 create() 时读一次
+               数据模型，t=0 打开会抓到连接建立前的空态（空列表/「未连接」）。 */
+            lv_timer_create(open_panel_timer_cb, (uint32_t)shot_at / 2,
+                            argv[3]);
+        }
 #ifdef KLIPPER_DESKTOP_SIMULATOR
         if (argc >= 5 && (strcmp(argv[4], "printing") == 0 || strcmp(argv[4], "tuning") == 0)) {
             printer_print_start("3dbenchy.gcode");   /* 演示打印中状态 */

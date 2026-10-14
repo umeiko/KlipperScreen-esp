@@ -165,10 +165,10 @@ bool gcode_thumbnail_load(const char *gcode_path, unsigned char **png_out, size_
 #endif
 
 /* ---------- 远程拉取：Moonraker HTTP ----------
- * ESP32（带 PSRAM）的唯一路径；Linux 上位机连远程主机、本地 gcodes 目录
- * 没有该文件时的回退路径。流程与 KlipperScreen 相同：先 metadata 拿
+ * ESP32（带 PSRAM）与 Windows 桌面端的唯一路径；Linux 上位机连远程主机、本地
+ * gcodes 目录没有该文件时的回退路径。流程与 KlipperScreen 相同：先 metadata 拿
  * Moonraker 已提取的缩略图 PNG 相对路径，再下载该小图。 */
-#if (defined(ESP_PLATFORM) && BSP_HAS_GCODE_THUMB) || BSP_HAS_LINUX_HOST
+#if BSP_HAS_GCODE_THUMB
 
 #include "app_settings.h"
 #include "bsp.h"
@@ -184,6 +184,11 @@ bool gcode_thumbnail_load(const char *gcode_path, unsigned char **png_out, size_
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #define THUMB_LOG(...) ESP_LOGD("gcode_thumb", __VA_ARGS__)
+#elif defined(_WIN32)
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <windows.h>
+#define THUMB_LOG(...) ((void)0)
 #else
 #include <pthread.h>
 #include <unistd.h>
@@ -258,6 +263,7 @@ done:
     return body;
 }
 #else /* Linux 上位机：裸 POSIX socket，Connection: close 读到 EOF */
+#ifndef _WIN32
 static char *http_get(const char *host, uint16_t port, const char *path,
                       size_t cap, size_t *out_len)
 {
@@ -311,6 +317,64 @@ static char *http_get(const char *host, uint16_t port, const char *path,
     if (out_len) *out_len = body_len;
     return buf;
 }
+#else /* Windows：Winsock2，语义同上（Connection: close 读到 EOF） */
+static char *http_get(const char *host, uint16_t port, const char *path,
+                      size_t cap, size_t *out_len)
+{
+    WSADATA wsa;
+    if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) return NULL;   /* 引用计数，无需配对 cleanup */
+
+    char portstr[8];
+    snprintf(portstr, sizeof(portstr), "%u", (unsigned)port);
+    struct addrinfo hints = {0}, *res = NULL;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_family = AF_UNSPEC;
+    if (getaddrinfo(host, portstr, &hints, &res) != 0) return NULL;
+    SOCKET fd = INVALID_SOCKET;
+    for (struct addrinfo *ai = res; ai; ai = ai->ai_next) {
+        fd = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+        if (fd == INVALID_SOCKET) continue;
+        DWORD tv = 4000;   /* Winsock 的 RCVTIMEO/SNDTIMEO 是毫秒 DWORD */
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tv, sizeof(tv));
+        setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, (const char *)&tv, sizeof(tv));
+        if (connect(fd, ai->ai_addr, (int)ai->ai_addrlen) == 0) break;
+        closesocket(fd);
+        fd = INVALID_SOCKET;
+    }
+    freeaddrinfo(res);
+    if (fd == INVALID_SOCKET) return NULL;
+
+    char req[600];
+    int rn = snprintf(req, sizeof(req),
+                      "GET %s HTTP/1.1\r\nHost: %s:%u\r\nConnection: close\r\n\r\n",
+                      path, host, (unsigned)port);
+    if (rn <= 0 || send(fd, req, rn, 0) != rn) { closesocket(fd); return NULL; }
+
+    char *buf = malloc(cap + 1);
+    if (!buf) { closesocket(fd); return NULL; }
+    size_t used = 0;
+    while (used < cap) {
+        int got = recv(fd, buf + used, (int)(cap - used), 0);
+        if (got <= 0) break;   /* EOF / 超时：以已收到的为准，交给校验 */
+        used += (size_t)got;
+    }
+    closesocket(fd);
+    buf[used] = 0;
+
+    if (strncmp(buf, "HTTP/1.1 200", 12) != 0 &&
+        strncmp(buf, "HTTP/1.0 200", 12) != 0) {
+        free(buf);
+        return NULL;
+    }
+    char *sep = strstr(buf, "\r\n\r\n");
+    if (!sep) { free(buf); return NULL; }
+    size_t hdr = (size_t)(sep + 4 - buf);
+    size_t body_len = used > hdr ? used - hdr : 0;
+    memmove(buf, buf + hdr, body_len + 1);
+    if (out_len) *out_len = body_len;
+    return buf;
+}
+#endif
 #endif
 
 /* metadata JSON → 最大缩略图的相对路径（目录名由 Moonraker 返回）。 */
@@ -413,6 +477,15 @@ static void thumb_fetch_task(void *arg)
     post_thumb_delivery(job);
     vTaskDelete(NULL);
 }
+#elif defined(_WIN32)
+static DWORD WINAPI thumb_fetch_thread(LPVOID arg)
+{
+    thumb_job_t *job = arg;
+    thumb_fetch_run(job);
+    if (!job->png) THUMB_LOG("no thumbnail for %s", job->name);
+    post_thumb_delivery(job);
+    return 0;
+}
 #else
 static void *thumb_fetch_thread(void *arg)
 {
@@ -440,6 +513,14 @@ bool gcode_thumbnail_fetch_async(const char *gcode_name,
         free(job);
         return false;
     }
+#elif defined(_WIN32)
+    /* CreateThread 免 pthread 依赖（MinGW 的 winpthread 会多拖一个 DLL） */
+    HANDLE th = CreateThread(NULL, 0, thumb_fetch_thread, job, 0, NULL);
+    if (!th) {
+        free(job);
+        return false;
+    }
+    CloseHandle(th);
 #else
     pthread_t th;
     if (pthread_create(&th, NULL, thumb_fetch_thread, job) != 0) {
