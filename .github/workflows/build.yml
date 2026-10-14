@@ -7,6 +7,13 @@ on:
   workflow_dispatch:
 
 jobs:
+  wifi-switch-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: ESP32 Wi-Fi event/driver regression tests
+        run: python3 tests/test_wifi_switch.py
+
   # 16 个板型按芯片合并为 3 个 shard Job：同一 shard 在同一 IDF 容器内顺序构建，
   # 共享按 shard 分开的 ccache。单板构建失败不中断其余板型：收集失败列表，
   # 上传可用的部分产物与失败日志后，在末尾令 shard 失败。
@@ -576,7 +583,7 @@ jobs:
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [package, wio-terminal, desktop-win, desktop-mac, desktop-linux, android]
+    needs: [package, wio-terminal, desktop-win, desktop-mac, desktop-linux, android, wifi-switch-tests]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -675,6 +682,7 @@ jobs:
             - 0.7.7 新增：打印状态页右上角「微调」面板，Z 独立步长，速度/流量共用百分比步长，仅打印中/暂停时可用（Wio Terminal 因 Flash 限制暂不开放）/ Print fine tuning with separate Z steps and shared speed/flow percentage steps, gated to active jobs (except Wio Terminal)
             - 0.7.7 修复：打印开始/切换任务时自动刷新缩略图；控制台清除后重新进入不再恢复旧记录 / Refresh thumbnails on job changes; console clear survives reopening
             - 0.7.7 修复：Linux Weston 与应用联合监控、启动超时和有界退出清理，显示进程崩溃后自动重建会话；补背光权限兜底 / Joint Weston/app supervision, startup timeout, bounded cleanup and backlight permission recovery
+            - 0.7.7 修复：ESP32 切换 Wi-Fi 时取消旧关联及 DHCP，隔离迟到事件，检查驱动返回值并限制连接超时，避免多 SSID 环境一直停在「连接中」；调试日志不再输出 Wi-Fi 密码 / Harden ESP32 Wi-Fi switching, stale-event handling, driver errors and connection timeouts; remove password logging
             - 新增：Android 手机/平板端（APK 资产，方向跟随系统旋转，与桌面端同一套 UI，应用内自更新）/ Android port with APK asset, system-rotation-following UI and in-app self-update
             - 新增：Seeed Wio Terminal（ATSAMD51 + RTL8720DN）端口，五向开关操作，提供拖拽刷写的 UF2 资产 / Seeed Wio Terminal port with five-way navigation and a drag-and-drop UF2 asset
             - 新增：拓竹云登录 + MQTT 云监视扩展到 Linux 桌面与 Android（密码/验证码/TFA 登录、设备列表、打印状态监视）/ Bambu cloud login + MQTT monitor on Linux desktop and Android

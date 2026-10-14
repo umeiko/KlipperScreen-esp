@@ -138,7 +138,7 @@ static void cmd_wifi(char *args)
     const char *pass = "";
     if (sp) { *sp = 0; pass = sp + 1; while (*pass == ' ') pass++; }
     if (!args || !args[0]) { printf("usage: wifi <ssid> <pass>\n"); return; }
-    printf("connecting ssid='%s' pass='%s' (len=%d)\n", args, pass, (int)strlen(pass));
+    printf("connecting ssid='%s' (password length=%d)\n", args, (int)strlen(pass));
     wifi_conf_t wc = {0};
     strlcpy(wc.ssid, args, sizeof(wc.ssid));
     strlcpy(wc.pass, pass, sizeof(wc.pass));

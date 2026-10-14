@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <strings.h>
+#include <stdatomic.h>
 #include <time.h>
 #include <sys/time.h>
 #include "esp_wifi.h"
@@ -24,6 +25,17 @@
 #define TAG "bsp_wifi"
 #define SCAN_MAX 16
 #define RECONNECT_DELAY_US (2 * 1000 * 1000)
+#define SWITCH_TIMEOUT_US  (3 * 1000 * 1000)
+#define CONNECT_TIMEOUT_US (30 * 1000 * 1000)
+
+ESP_EVENT_DEFINE_BASE(BSP_WIFI_CONTROL_EVENT);
+enum { WIFI_CONTROL_CONNECT, WIFI_CONTROL_POLL };
+typedef enum { WIFI_IDLE, WIFI_STOPPING, WIFI_STARTING,
+               WIFI_WAIT_LINK, WIFI_WAIT_IP, WIFI_ONLINE } wifi_phase_t;
+typedef struct {
+    wifi_config_t config;
+    unsigned generation;
+} wifi_connect_request_t;
 
 /* Moonraker 与 Bambu Cloud 都提供标准 HTTP Date（GMT），无需额外 NTP
    连接。显示时区沿用项目现有的 CST-8（中国标准时间）。 */
@@ -86,21 +98,78 @@ static struct {
     bool            scan_done;
     wifi_ap_record_t records[SCAN_MAX];
     uint16_t        record_num;
-    bsp_wifi_state_t state;
-    bool            connected;      /* GOT_IP / DISCONNECTED 事件维护 */
-    bool            manual;         /* 主动断开（切换 AP），不做自动重连 */
-    esp_timer_handle_t reconnect_timer;
+    _Atomic bsp_wifi_state_t state;
+    atomic_bool     connected;      /* 仅代表具有可用 IP，不代表驱动尚未关联 */
+    atomic_uint     requested_generation;
+    atomic_uint     active_generation;
+    atomic_bool     request_failed;
+    /* 以下连接字段只由默认 event loop 修改；UI / CLI / timer 只投递请求。 */
+    wifi_phase_t    phase;
+    bool            driver_running;
+    bool            auto_reconnect;
+    int64_t         deadline_us;
+    int64_t         retry_at_us;
+    uint8_t         bssid[6];
+    wifi_config_t   config;
+    esp_timer_handle_t control_timer;
     char            target_ssid[BSP_WIFI_SSID_MAX + 1];
 } W;
 
 static void on_wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data);
 
-static void reconnect_cb(void *arg)
+static bool current_request(void)
+{
+    return W.active_generation == W.requested_generation;
+}
+
+static void control_timer_cb(void *arg)
 {
     (void)arg;
-    if (!W.connected && !W.manual) {
-        ESP_LOGI(TAG, "auto-reconnect to %s", W.target_ssid);
-        esp_wifi_connect();
+    /* 队列满时下一节拍重试；不在 esp_timer 线程直接操作连接状态。 */
+    esp_event_post(BSP_WIFI_CONTROL_EVENT, WIFI_CONTROL_POLL, NULL, 0, 0);
+}
+
+static void connection_failed(const char *operation, esp_err_t err)
+{
+    ESP_LOGW(TAG, "%s failed: %s", operation, esp_err_to_name(err));
+    W.phase = WIFI_IDLE;
+    W.deadline_us = 0;
+    W.retry_at_us = W.auto_reconnect ? esp_timer_get_time() + RECONNECT_DELAY_US : 0;
+    W.connected = false;
+    if (current_request()) W.state = BSP_WIFI_FAILED;
+}
+
+static void start_configured_wifi(void)
+{
+    esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, &W.config);
+    if (err != ESP_OK) { connection_failed("set config", err); return; }
+    W.phase = WIFI_STARTING;
+    W.deadline_us = esp_timer_get_time() + SWITCH_TIMEOUT_US;
+    err = esp_wifi_start();
+    if (err != ESP_OK) { connection_failed("start", err); return; }
+    W.driver_running = true;
+    /* 等 STA_START 后再 connect；不能让之前排队的断开 / GOT_IP 覆盖新状态。 */
+}
+
+static void begin_switch(void)
+{
+    W.connected = false;
+    W.state = BSP_WIFI_CONNECTING;
+    W.retry_at_us = 0;
+    W.scan_running = false;
+    W.scan_done = false;
+    if (W.phase == WIFI_STOPPING) return; /* 连点 / CLI 请求合并到最新配置 */
+    if (!W.driver_running) { start_configured_wifi(); return; }
+    W.phase = WIFI_STOPPING;
+    W.deadline_us = esp_timer_get_time() + SWITCH_TIMEOUT_US;
+    /* 不凭 GOT_IP 判断是否需要断开：关联中、已关联但 DHCP 未完成也必须取消。
+       STA_STOP 是事件屏障；收到它以后才应用新配置，整个过程不阻塞 LVGL。 */
+    esp_err_t err = esp_wifi_stop();
+    if (err == ESP_ERR_WIFI_NOT_STARTED) {
+        W.driver_running = false;
+        start_configured_wifi();
+    } else if (err != ESP_OK) {
+        connection_failed("stop", err);
     }
 }
 
@@ -121,46 +190,103 @@ static void ensure_init(void)
     esp_event_loop_create_default();
     esp_netif_create_default_wifi_sta();
 
-    esp_timer_create_args_t t = {.callback = reconnect_cb, .name = "wifi_reconn"};
-    esp_timer_create(&t, &W.reconnect_timer);
+    esp_timer_create_args_t t = {
+        .callback = control_timer_cb, .name = "wifi_control", .skip_unhandled_events = true,
+    };
+    ESP_ERROR_CHECK(esp_timer_create(&t, &W.control_timer));
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     esp_wifi_init(&cfg);
     esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, on_wifi_event, NULL);
     esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, on_wifi_event, NULL);
+    ESP_ERROR_CHECK(esp_event_handler_register(BSP_WIFI_CONTROL_EVENT, ESP_EVENT_ANY_ID,
+                                             on_wifi_event, NULL));
     esp_wifi_set_mode(WIFI_MODE_STA);
     /* 市电供电的显示屏没有省电需求。默认 MIN_MODEM 休眠会让下行包在 AP 侧排队到
        下一个 DTIM，实测 ping RTT 300~600ms 抖动，心跳 RTT 持续爬升并引发
        WS pong 超时——必须关掉（实测关后 ping 降到个位数 ms） */
     esp_wifi_set_ps(WIFI_PS_NONE);
-    esp_wifi_start();
+    ESP_ERROR_CHECK(esp_wifi_start());
+    W.driver_running = true;
     W.inited = true;
+    ESP_ERROR_CHECK(esp_timer_start_periodic(W.control_timer, 500000));
 }
 
 static void on_wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
     (void)arg;
-    if (base == WIFI_EVENT && id == WIFI_EVENT_SCAN_DONE) {
+    if (base == BSP_WIFI_CONTROL_EVENT && id == WIFI_CONTROL_CONNECT) {
+        const wifi_connect_request_t *request = data;
+        if (!request || request->generation != W.requested_generation) return;
+        W.config = request->config;
+        W.active_generation = request->generation;
+        memcpy(W.target_ssid, W.config.sta.ssid, sizeof(W.config.sta.ssid));
+        W.target_ssid[sizeof(W.config.sta.ssid)] = 0;
+        W.auto_reconnect = false;
+        begin_switch();
+    } else if (base == BSP_WIFI_CONTROL_EVENT && id == WIFI_CONTROL_POLL) {
+        if (!current_request()) return;
+        int64_t now = esp_timer_get_time();
+        if (W.deadline_us && now >= W.deadline_us) {
+            connection_failed("connection timeout", ESP_ERR_TIMEOUT);
+            /* 超时后也停止悬而未决的关联 / DHCP，迟到的 IP 不再视作成功。 */
+            esp_err_t err = esp_wifi_disconnect();
+            if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_STARTED)
+                ESP_LOGW(TAG, "timeout disconnect failed: %s", esp_err_to_name(err));
+        } else if (W.retry_at_us && now >= W.retry_at_us) {
+            ESP_LOGI(TAG, "auto-reconnect to %s", W.target_ssid);
+            begin_switch();
+        }
+    } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_STOP) {
+        W.driver_running = false;
+        W.connected = false;
+        if (W.phase == WIFI_STOPPING) {
+            if (current_request()) start_configured_wifi();
+            else { W.phase = WIFI_IDLE; W.deadline_us = 0; }
+        } else {
+            /* CLI wifioff 等外部停止不应触发自动重启。 */
+            W.auto_reconnect = false;
+            connection_failed("driver stopped", ESP_ERR_WIFI_NOT_STARTED);
+        }
+    } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
+        W.driver_running = true;
+        if (W.phase != WIFI_STARTING || !current_request()) return;
+        W.phase = WIFI_WAIT_LINK;
+        W.deadline_us = esp_timer_get_time() + CONNECT_TIMEOUT_US;
+        esp_err_t err = esp_wifi_connect();
+        if (err != ESP_OK) connection_failed("connect", err);
+    } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_CONNECTED) {
+        const wifi_event_sta_connected_t *ap = data;
+        size_t len = strlen(W.target_ssid);
+        if (W.phase != WIFI_WAIT_LINK || !current_request() || !ap ||
+            ap->ssid_len != len || memcmp(ap->ssid, W.target_ssid, len) != 0) return;
+        memcpy(W.bssid, ap->bssid, sizeof(W.bssid));
+        W.phase = WIFI_WAIT_IP; /* 关联成功不等于 DHCP 成功，仍保留连接期限。 */
+    } else if (base == WIFI_EVENT && id == WIFI_EVENT_SCAN_DONE) {
+        if (!W.scan_running) return; /* 切网时已取消的扫描结果 */
         W.record_num = SCAN_MAX;
-        esp_wifi_scan_get_ap_records(&W.record_num, W.records);
+        esp_err_t err = esp_wifi_scan_get_ap_records(&W.record_num, W.records);
         W.scan_running = false;
-        W.scan_done = true;
+        W.scan_done = err == ESP_OK;
     } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
         wifi_event_sta_disconnected_t *d = data;
-        ESP_LOGW(TAG, "disconnected from %s, reason=%d%s", W.target_ssid, d ? d->reason : -1,
-                 W.manual ? " (manual)" : "");
-        W.connected = false;
-        if (W.manual) {
-            /* 主动断开（bsp_wifi_connect 切换 AP 前的 disconnect），不算失败也不重连 */
-            W.manual = false;
-        } else if (W.state == BSP_WIFI_CONNECTING) {
-            W.state = BSP_WIFI_FAILED;      /* 连接中收到断开 = 失败 */
-        } else {
-            /* 已连接时掉线 → 2s 后自动重连 */
-            esp_timer_stop(W.reconnect_timer);
-            esp_timer_start_once(W.reconnect_timer, RECONNECT_DELAY_US);
-        }
+        if (!current_request() || W.phase == WIFI_STOPPING || W.phase == WIFI_STARTING ||
+            W.phase == WIFI_IDLE) return;
+        size_t len = strlen(W.target_ssid);
+        if (d && d->ssid_len && (d->ssid_len != len ||
+            memcmp(d->ssid, W.target_ssid, len) != 0)) return;
+        ESP_LOGW(TAG, "disconnected from %s, reason=%d", W.target_ssid, d ? d->reason : -1);
+        connection_failed("association disconnected", ESP_FAIL);
     } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
+        /* 旧连接排队的 GOT_IP 不能结束新连接弹层；同 SSID 重试也核对当前 BSSID。 */
+        if (!current_request() || W.phase != WIFI_WAIT_IP) return;
+        wifi_ap_record_t ap = {0};
+        if (esp_wifi_sta_get_ap_info(&ap) != ESP_OK ||
+            strncmp((char *)ap.ssid, W.target_ssid, sizeof(W.config.sta.ssid)) != 0 ||
+            memcmp(ap.bssid, W.bssid, sizeof(W.bssid)) != 0) return;
+        W.phase = WIFI_ONLINE;
+        W.deadline_us = W.retry_at_us = 0;
+        W.auto_reconnect = true;
         W.state = BSP_WIFI_CONNECTED;
         W.connected = true;
         ESP_LOGI(TAG, "connected, got ip");
@@ -179,7 +305,11 @@ void bsp_wifi_scan_start(void)
     W.scan_running = true;
     W.scan_done = false;
     /* 非阻塞扫描，结果由 WIFI_EVENT_SCAN_DONE 带回 */
-    esp_wifi_scan_start(NULL, false);
+    esp_err_t err = esp_wifi_scan_start(NULL, false);
+    if (err != ESP_OK) {
+        W.scan_running = false;
+        ESP_LOGW(TAG, "scan start failed: %s", esp_err_to_name(err));
+    }
 }
 
 int bsp_wifi_scan_poll(bsp_wifi_ap_t *out, int max)
@@ -199,50 +329,57 @@ int bsp_wifi_scan_poll(bsp_wifi_ap_t *out, int max)
 void bsp_wifi_connect(const char *ssid, const char *password)
 {
     ensure_init();
-    esp_timer_stop(W.reconnect_timer);
-    /* 仅当当前有连接时才主动断开旧 AP（其断开事件用 manual 吞掉，不判失败不重连）。
-       无连接时绝不能置 manual——否则首次连接失败的断开事件会被吞，状态卡死 CONNECTING */
-    if (W.connected) {
-        W.manual = true;
-        esp_wifi_disconnect();
+    wifi_connect_request_t request = {0};
+    size_t ssid_len = ssid ? strlen(ssid) : 0;
+    size_t pass_len = password ? strlen(password) : 0;
+    W.request_failed = false;
+    request.generation = atomic_fetch_add(&W.requested_generation, 1) + 1;
+    W.connected = false;
+    W.state = BSP_WIFI_CONNECTING;
+    if (!ssid_len || ssid_len > BSP_WIFI_SSID_MAX || pass_len > BSP_WIFI_PASS_MAX) {
+        W.request_failed = true;
+        W.state = BSP_WIFI_FAILED;
+        ESP_LOGW(TAG, "invalid SSID/password length");
+        return;
     }
-
-    wifi_config_t cfg = {0};
-    strlcpy((char *)cfg.sta.ssid, ssid, sizeof(cfg.sta.ssid));
+    wifi_config_t *cfg = &request.config;
+    /* STA 的 32 字节 SSID 可没有 NUL；strlcpy 会错误截短最大长度的 SSID。 */
+    memcpy(cfg->sta.ssid, ssid, ssid_len);
     if (password && password[0])
-        strlcpy((char *)cfg.sta.password, password, sizeof(cfg.sta.password));
-    cfg.sta.threshold.authmode = password && password[0] ? WIFI_AUTH_WPA_PSK : WIFI_AUTH_OPEN;
+        strlcpy((char *)cfg->sta.password, password, sizeof(cfg->sta.password));
+    cfg->sta.threshold.authmode = pass_len ? WIFI_AUTH_WPA_PSK : WIFI_AUTH_OPEN;
     /* PMF(802.11w) 声明支持但不强制：
        WPA2/WPA3 混合模式路由器要求协商 PMF，不支持会导致 4 次握手超时(reason=15) */
-    cfg.sta.pmf_cfg.capable = true;
-    cfg.sta.pmf_cfg.required = false;
-
-    strlcpy(W.target_ssid, ssid, sizeof(W.target_ssid));
-    /* 调试：记录驱动实际收到的 ssid/密码（hex 用来抓隐藏字符、编码问题） */
-    ESP_LOGI(TAG, "connect ssid='%s' pass='%s' len=%d", ssid,
-             password ? password : "", password ? (int)strlen(password) : 0);
-    if (password)
-        ESP_LOG_BUFFER_HEX(TAG, password, strlen(password));
-    W.state = BSP_WIFI_CONNECTING;
-    esp_wifi_set_config(WIFI_IF_STA, &cfg);
-    esp_wifi_connect();
+    cfg->sta.pmf_cfg.capable = true;
+    cfg->sta.pmf_cfg.required = false;
+    ESP_LOGI(TAG, "connect ssid='%s', password length=%u", ssid, (unsigned)pass_len);
+    /* 按值投递，密码不依赖调用方栈 / textarea 的生命周期。 */
+    esp_err_t err = esp_event_post(BSP_WIFI_CONTROL_EVENT, WIFI_CONTROL_CONNECT,
+                                  &request, sizeof(request), 0);
+    if (err != ESP_OK) {
+        W.request_failed = true;
+        W.state = BSP_WIFI_FAILED;
+        ESP_LOGW(TAG, "queue connect failed: %s", esp_err_to_name(err));
+    }
 }
 
 bsp_wifi_state_t bsp_wifi_status(void)
 {
+    if (!current_request())
+        return W.request_failed ? BSP_WIFI_FAILED : BSP_WIFI_CONNECTING;
     return W.state;
 }
 
 bool bsp_wifi_connected(void)
 {
-    return W.connected;
+    return current_request() && W.connected;
 }
 
 bool bsp_wifi_current(char *ssid, size_t ssid_len, char *ip, size_t ip_len)
 {
     if (ssid && ssid_len) ssid[0] = 0;
     if (ip && ip_len) ip[0] = 0;
-    if (!W.connected) return false;
+    if (!bsp_wifi_connected()) return false;
 
     wifi_ap_record_t ap;
     if (esp_wifi_sta_get_ap_info(&ap) != ESP_OK) return false;
