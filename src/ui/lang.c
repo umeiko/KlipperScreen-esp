@@ -26,6 +26,20 @@ typedef struct {
 
 /* clang-format off */
 static const dict_entry_t dict[] = {
+#if BSP_HAS_BED_LEVEL
+    {"手动调平", "Bed Level", "手動調平", "Nivellement manuel", "Livellamento manuale"},
+    {"调平", "Level", "調平", "Niveau", "Livella"},
+    {"螺丝调整", "Screws Adjust", "螺絲調整", "Régler les vis", "Regola viti"},
+    {"基准", "Reference", "基準", "Référence", "Riferimento"},
+    {"请配置 [bed_screws] 或 [screws_tilt_adjust]", "Configure [bed_screws] or [screws_tilt_adjust]",
+     "請配置 [bed_screws] 或 [screws_tilt_adjust]", "Configurez [bed_screws] ou [screws_tilt_adjust]", "Configura [bed_screws] o [screws_tilt_adjust]"},
+    {"请配置有效的三点或四点螺丝坐标", "Configure 3 or 4 valid screw positions", "請配置有效的三點或四點螺絲座標",
+     "Configurez 3 ou 4 positions de vis valides", "Configura 3 o 4 posizioni valide delle viti"},
+    {"操作未发送", "Action not sent", "操作未送出", "Action non envoyée", "Azione non inviata"},
+    {"操作失败，请检查控制台", "Action failed; check console", "操作失敗，請檢查控制台", "Échec ; consultez la console", "Errore; controlla la console"},
+    {"执行中…", "Working…", "執行中…", "En cours…", "In corso…"},
+    {"打印中不可调平", "Cannot level during a print", "列印中不可調平", "Nivellement interdit en impression", "Livellamento vietato in stampa"},
+#endif
     /* 面板标题 / 主菜单            English                    繁體中文                Français                       Italiano */
     {"打印状态",        "Job Status",          "列印狀態",          "Statut d'impression",       "Stato stampa"},
 #if BSP_HAS_FINE_TUNE

@@ -308,8 +308,9 @@ jobs:
         run: |
           export PATH=/ucrt64/bin:$PATH
           cd src/ports/desktop
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DKR_BED_LEVEL_TEST=ON
           cmake --build build
+          ./build/test_bed_level.exe
           cp /ucrt64/bin/SDL2.dll build/
 
       - name: Package desktop exe
@@ -679,6 +680,8 @@ jobs:
             每个 `ESP-IDFv5.5-<board>.zip` 是一种 ESP32 板型的固件刷机包（ESP-IDF v5.5.5 构建，资产名不带版本号）；`KlipperScreen-esp-Wio-Terminal.uf2` 是 Seeed Wio Terminal（SAMD51）可直接拖入 UF2 磁盘的固件；`desktop-win-x86_64.zip` 与 `desktop-macos-arm64.zip` 是 Windows / macOS 桌面端；`desktop-linux-x86_64.tar.gz` / `desktop-linux-arm64.tar.gz` / `desktop-linux-armhf.tar.gz` 是 Linux 上位机预编译包（静态链接 SDL2，解压后运行 `install.sh`，可选 systemd 独占显示服务或桌面 App，支持 Wayland-weston / X11）；`KlipperScreen-esp-android.apk` 是 Android 手机/平板端（方向跟随系统旋转，侧载安装，与桌面端同一套 UI）。刷机前请先在上方页面确认你板子的产物名称、接线与刷机说明。
 
             **本版更新 / What's new**（汇总 0.7.0 以来的主要变化 / cumulative since 0.7.0）
+            - 0.7.8 新增：手动螺丝调平面板，支持 `[bed_screws]` / `[screws_tilt_adjust]` 三点和四点布局、安全移头与探针螺丝调整结果；打印中禁用，Wio Terminal 因 Flash 限制暂不开放 / Manual three/four-point screw leveling with safe moves and probe adjustment results (except Wio Terminal)
+            - 0.7.8 优化：轻量螺丝/旋向图标，横屏、竖屏和方屏等比布局，螺丝说明与结果不再滚动；后台查询失败退避重试，不再误报操作失败 / Lightweight icons, proportional layouts and static captions; retry background queries without false operation errors
             - 0.7.7 新增：打印状态页右上角「微调」面板，Z 独立步长，速度/流量共用百分比步长，仅打印中/暂停时可用（Wio Terminal 因 Flash 限制暂不开放）/ Print fine tuning with separate Z steps and shared speed/flow percentage steps, gated to active jobs (except Wio Terminal)
             - 0.7.7 修复：打印开始/切换任务时自动刷新缩略图；控制台清除后重新进入不再恢复旧记录 / Refresh thumbnails on job changes; console clear survives reopening
             - 0.7.7 修复：Linux Weston 与应用联合监控、启动超时和有界退出清理，显示进程崩溃后自动重建会话；补背光权限兜底 / Joint Weston/app supervision, startup timeout, bounded cleanup and backlight permission recovery

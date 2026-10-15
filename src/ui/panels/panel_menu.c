@@ -9,6 +9,7 @@
 #include "../panel_mgr.h"
 #include "../ui_nav.h"
 #include "../ui_anim.h"
+#include "bsp_caps.h"
 
 static void open_panel(lv_event_t *e)
 {
@@ -57,6 +58,10 @@ static lv_obj_t *create(void)
     menu_row(scr, ui_icon(&img_fan, &img_fan_48), TR("风扇"), y, "fan");
     y += step;
     menu_row(scr, ui_icon(&img_zcal, &img_zcal_48), TR("Z 校准"), y, "zcalibrate");
+#if BSP_HAS_BED_LEVEL
+    y += step;
+    menu_row(scr, ui_icon(&img_bed_32, &img_bed_64), TR("手动调平"), y, "bed_level");
+#endif
 
     /* 纯列表页：左 = 返回、右 = 进入/确定（ui_nav 白名单） */
     ui_nav_group_set_list(lv_group_get_default(), true);

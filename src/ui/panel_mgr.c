@@ -25,6 +25,9 @@ extern panel_def_t panel_macro_params_def;
 extern panel_def_t panel_console_def;
 extern panel_def_t panel_fan_def;
 extern panel_def_t panel_zcalibrate_def;
+#if BSP_HAS_BED_LEVEL
+extern panel_def_t panel_bed_level_def;
+#endif
 extern panel_def_t panel_files_def;
 extern panel_def_t panel_file_detail_def;
 extern panel_def_t panel_settings_def;
@@ -61,6 +64,9 @@ static panel_def_t *registry[] = {
     &panel_console_def,
     &panel_fan_def,
     &panel_zcalibrate_def,
+#if BSP_HAS_BED_LEVEL
+    &panel_bed_level_def,
+#endif
     &panel_files_def,
     &panel_file_detail_def,
     &panel_settings_def,

@@ -16,6 +16,7 @@
 #include "bambu_monitor.h"
 #include "bsp_wifi.h"
 #include "file_list_stream.h"
+#include "bed_level.h"
 #ifdef ESP_PLATFORM
 #include "moonraker_files_esp32.h"
 #endif
@@ -1100,6 +1101,9 @@ void printer_model_set_online(int online)
 {
     M.online = online;
     if (!online) {
+#if BSP_HAS_BED_LEVEL
+        bed_level_reset();
+#endif
         M.rtt_ms = 0;   /* 断线后延迟值失效 */
         M_con_history_pending = false;
         M_con_generation++;
@@ -1188,6 +1192,11 @@ void printer_model_apply_status_json(char *json_heap)
         if (cJSON_IsNumber(s)) M.speed = (float)(s->valuedouble * 100);
     }
     if ((it = cJSON_GetObjectItem(status, "webhooks"))) {
+#if BSP_HAS_BED_LEVEL
+        cJSON *state = cJSON_GetObjectItem(it, "state");
+        if (cJSON_IsString(state) && state->valuestring && strcmp(state->valuestring, M.klippy))
+            bed_level_reset(); /* Config may change after RESTART without a WS disconnect. */
+#endif
         jstr(it, "state", M.klippy, sizeof(M.klippy));
     }
     /* 菜单页扩展对象的增量合入（订阅集在 client 按 objects.list 动态生成） */

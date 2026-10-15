@@ -56,4 +56,6 @@ The internal 512KB flash leaves 496KiB for the application after the bootloader.
 
 The print fine-tuning panel is currently disabled on Wio: even the fixed-layout trial with reused icons exceeded the executable flash limit. Other platforms provide it from Job Status during an active print.
 
+Manual bed leveling (`bed_level`) is also excluded from the Wio build to preserve the remaining executable flash headroom.
+
 For detailed font layout, RTL8720DN diagnostics, and Windows bootloader/USB recovery, switch the documentation language to 简体中文; the Chinese version of this page keeps the full bring-up record.

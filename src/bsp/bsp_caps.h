@@ -7,8 +7,10 @@
  * region. Keep its complete backend behind this gate for future flash savings. */
 #if defined(KR_WIO_TERMINAL)
 #define BSP_HAS_FINE_TUNE 0
+#define BSP_HAS_BED_LEVEL 0
 #else
 #define BSP_HAS_FINE_TUNE 1
+#define BSP_HAS_BED_LEVEL 1
 #endif
 
 #ifdef ESP_PLATFORM

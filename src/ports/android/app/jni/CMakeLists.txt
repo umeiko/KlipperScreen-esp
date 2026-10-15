@@ -106,6 +106,8 @@ file(GLOB UI_SRCS
 add_library(main SHARED
     "${DESKTOP_PORT}/main.c"
     "${SRC_ROOT}/bsp/bsp_screen_power.c"
+    "${SRC_ROOT}/core/bed_level.c"
+    "${SRC_ROOT}/core/bed_level_config.c"
     "${SRC_ROOT}/bsp/bsp_display_color.c"
     "${SRC_ROOT}/bsp/desktop/bsp_sdl2.c"
     "${SRC_ROOT}/bsp/desktop/bsp_linux_host.c"

@@ -6,6 +6,19 @@
  */
 #include "lvgl.h"
 
+LV_IMAGE_DECLARE(img_bed_screw);
+LV_IMAGE_DECLARE(img_bed_screw_sm);
+LV_IMAGE_DECLARE(img_bed_screw_48);
+LV_IMAGE_DECLARE(img_bed_screw_96);
+LV_IMAGE_DECLARE(img_bed_turn_cw);
+LV_IMAGE_DECLARE(img_bed_turn_cw_sm);
+LV_IMAGE_DECLARE(img_bed_turn_cw_20);
+LV_IMAGE_DECLARE(img_bed_turn_cw_40);
+LV_IMAGE_DECLARE(img_bed_turn_ccw);
+LV_IMAGE_DECLARE(img_bed_turn_ccw_sm);
+LV_IMAGE_DECLARE(img_bed_turn_ccw_20);
+LV_IMAGE_DECLARE(img_bed_turn_ccw_40);
+
 #ifdef __cplusplus
 extern "C" {
 #endif

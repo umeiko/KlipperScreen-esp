@@ -1,5 +1,6 @@
 #include "ui_layout.h"
 #include "assets/icons.h"
+#include "bsp_caps.h"
 
 #ifdef ESP_PLATFORM
 #include "sdkconfig.h"   /* CONFIG_BOARD_* 板型宏（裁剪全表字体尺寸档用） */
@@ -261,6 +262,11 @@ const lv_font_t *ui_font_value_compact(void)
    Wio Terminal 内部 flash 只有 496KB，它固定用基准图标，不编译这张
    映射表，让链接器能够完整裁掉所有 _sm 资源。 */
 static const struct { const lv_image_dsc_t *base, *sm; } icon_sm_map[] = {
+#if BSP_HAS_BED_LEVEL
+    { &img_bed_screw,       &img_bed_screw_sm },
+    { &img_bed_turn_cw,     &img_bed_turn_cw_sm },
+    { &img_bed_turn_ccw,    &img_bed_turn_ccw_sm },
+#endif
     { &img_heater,          &img_heater_sm },
     { &img_nozzle_16,       &img_nozzle_16_sm },
     { &img_bed_16,          &img_bed_16_sm },
@@ -305,6 +311,11 @@ static const lv_image_dsc_t *icon_sm(const lv_image_dsc_t *base)
 /* 桌面端 720p+（huge 档）图标映射：big 档返回值 → 2x 变体（tools/icongen 生成）。
    ESP32 不编译此表，_lg/_36/_64/_112 图标全部不进固件。 */
 static const struct { const lv_image_dsc_t *big, *lg; } icon_lg_map[] = {
+#if BSP_HAS_BED_LEVEL
+    { &img_bed_screw_48,    &img_bed_screw_96 },
+    { &img_bed_turn_cw_20,  &img_bed_turn_cw_40 },
+    { &img_bed_turn_ccw_20, &img_bed_turn_ccw_40 },
+#endif
     { &img_heater_56,        &img_heater_112 },
     { &img_move_56,          &img_move_112 },
     { &img_extrude_56,       &img_extrude_112 },

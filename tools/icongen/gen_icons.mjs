@@ -18,6 +18,18 @@ const PY = join(ROOT, 'tools/icongen/.venv/Scripts/python.exe');
 // [svg 名, 输出尺寸(px), C 变量名后缀, 可选 LVGL 色彩格式]
 // _sm 后缀 = 小屏(160x128) 0.45x 变体，由 ui_icon() 在小屏时自动选用
 const ICONS = [
+  ['bed_screw',      24, 'bed_screw'],
+  ['bed_screw',      11, 'bed_screw_sm'],
+  ['bed_screw',      48, 'bed_screw_48'],
+  ['bed_screw',      96, 'bed_screw_96'],
+  ['bed_turn_cw',    10, 'bed_turn_cw'],
+  ['bed_turn_cw',     5, 'bed_turn_cw_sm'],
+  ['bed_turn_cw',    20, 'bed_turn_cw_20'],
+  ['bed_turn_cw',    40, 'bed_turn_cw_40'],
+  ['bed_turn_ccw',   10, 'bed_turn_ccw'],
+  ['bed_turn_ccw',    5, 'bed_turn_ccw_sm'],
+  ['bed_turn_ccw',   20, 'bed_turn_ccw_20'],
+  ['bed_turn_ccw',   40, 'bed_turn_ccw_40'],
   ['tune_speed',     24, 'tune_speed'],
   ['tune_speed',     11, 'tune_speed_sm'],
   ['tune_speed',     48, 'tune_speed_48'],

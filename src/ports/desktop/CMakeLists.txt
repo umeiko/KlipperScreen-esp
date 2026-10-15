@@ -6,6 +6,7 @@ option(KR_ENCODER_SETTINGS_PREVIEW "Preview ESP32 encoder settings in simulator"
 option(KR_DISPLAY_SETTINGS_PREVIEW "Preview RGB/BGR display settings in simulator" OFF)
 option(KR_FINE_TUNE_TEST "Build offline fine-tune integration smoke test (Windows)" OFF)
 option(KR_JOB_CONSOLE_TEST "Build offline thumbnail/console regression test (Windows)" OFF)
+option(KR_BED_LEVEL_TEST "Build offline manual-leveling regression test (Windows)" OFF)
 
 # SDL2 desktop ports share every UI source. On Windows the primary target is
 # a real Moonraker controller; a separately named simulator keeps mock data an
@@ -37,6 +38,8 @@ set(DESKTOP_COMMON_SRCS
     ${SRC_ROOT}/bsp/bsp_screen_power.c
     ${SRC_ROOT}/bsp/bsp_display_color.c
     ${SRC_ROOT}/core/file_list_stream.c
+    ${SRC_ROOT}/core/bed_level.c
+    ${SRC_ROOT}/core/bed_level_config.c
     ${SRC_ROOT}/bsp/desktop/bsp_sdl2.c
     ${SRC_ROOT}/bsp/desktop/bsp_linux_host.c
     ${SRC_ROOT}/bsp/desktop/bsp_wifi_windows.c
@@ -132,6 +135,13 @@ if(WIN32)
         target_compile_options(test_job_console PRIVATE -UNDEBUG)
         target_include_directories(test_job_console PRIVATE ${CJSON_INCLUDE_DIR}/cjson)
         target_link_libraries(test_job_console PRIVATE cjson-static winhttp crypt32 iphlpapi ws2_32)
+    endif()
+    if(KR_BED_LEVEL_TEST)
+        add_executable(test_bed_level ${REPO_ROOT}/tests/test_bed_level.c ${SRC_ROOT}/core/bed_level_config.c)
+        target_include_directories(test_bed_level PRIVATE ${SRC_ROOT}/core ${SRC_ROOT}/bsp
+            ${CMAKE_CURRENT_SOURCE_DIR} ${REPO_ROOT}/third_party/lvgl ${CJSON_INCLUDE_DIR}/cjson)
+        target_compile_options(test_bed_level PRIVATE -UNDEBUG)
+        target_link_libraries(test_bed_level PRIVATE cjson-static)
     endif()
 else()
     # macOS / Linux：POSIX sockets 原生传输（moonraker_client_posix.c），
