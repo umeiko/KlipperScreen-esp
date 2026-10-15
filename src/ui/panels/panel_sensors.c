@@ -112,8 +112,8 @@ static lv_obj_t *create(void)
         lv_obj_t *k = theme_label(row, title, THEME_FONT_M, THEME_COL_TEXT);
         lv_obj_align(k, LV_ALIGN_LEFT_MID, ui_px(4), 0);
         lbl_endstop[i] = theme_label(row, "", THEME_FONT_M, THEME_COL_TEXT_DIM);
-        lv_obj_set_width(lbl_endstop[i], ui_px(80));
-        lv_obj_set_style_text_align(lbl_endstop[i], LV_TEXT_ALIGN_RIGHT, 0);
+        /* 不定宽：TR("触发") 在英文是 9 字符 "TRIGGERED"，定宽会在大字号档换行；
+           自适应宽度 + 右对齐即可锚在右缘（行内只有轴字母，空间充足） */
         lv_obj_align(lbl_endstop[i], LV_ALIGN_RIGHT_MID, -ui_px(4), 0);
         y += ui_px(32);
     }
@@ -143,8 +143,7 @@ static lv_obj_t *create(void)
             lv_obj_align(name, LV_ALIGN_LEFT_MID, ui_px(4), 0);
 
             lbl_fil_state[i] = theme_label(row, "", THEME_FONT_S, THEME_COL_TEXT_DIM);
-            lv_obj_set_width(lbl_fil_state[i], ui_px(36));
-            lv_obj_set_style_text_align(lbl_fil_state[i], LV_TEXT_ALIGN_CENTER, 0);
+            /* 同上不定宽："有料" 英文 "Filament" 8 字符，定宽 ui_px(36) 必换行 */
             lv_obj_align(lbl_fil_state[i], LV_ALIGN_RIGHT_MID, -ui_px(52), 0);
 
             sw_fil[i] = lv_switch_create(row);
