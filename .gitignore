@@ -25,6 +25,7 @@ third_party/SDL2/
 third_party/cjson/
 third_party/mbedtls/
 third_party/cacert.pem
+third_party/local/
 .reff/
 tools/dl/
 tools/msys64/

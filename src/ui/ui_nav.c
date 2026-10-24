@@ -1,5 +1,7 @@
 #include "ui_nav.h"
 #include "theme.h"
+#include "ui_pid.h"
+#include <math.h>
 
 #if !defined(ESP_PLATFORM) && !defined(KR_WIO_TERMINAL)
 #include <SDL.h>
@@ -25,6 +27,105 @@ static modal_entry_t modal_stack[UI_NAV_MODAL_MAX];
 static unsigned modal_depth;
 static lv_obj_t *global_obj;
 static bool global_enabled;
+
+#define UI_FOCUS_FRAME_MS 15
+#define UI_FOCUS_SETTLE_POS 6.0f
+#define UI_FOCUS_SETTLE_SPEED 8.0f
+
+static lv_obj_t *focus_ring;
+static lv_obj_t *focus_target;
+static lv_group_t *focus_group;
+static ui_pid_t focus_pid[4];
+static uint32_t focus_last_tick;
+
+static int32_t focus_round(float value)
+{
+    return (int32_t)(value >= 0.0f ? value + 0.5f : value - 0.5f);
+}
+
+static void focus_ring_apply(void)
+{
+    lv_obj_set_pos(focus_ring, focus_round(focus_pid[0].position),
+                   focus_round(focus_pid[1].position));
+    lv_obj_set_size(focus_ring, LV_MAX(focus_round(focus_pid[2].position), 0),
+                    LV_MAX(focus_round(focus_pid[3].position), 0));
+}
+
+static void focus_ring_hide(void)
+{
+    focus_target = NULL;
+    focus_group = NULL;
+    if (focus_ring) lv_obj_add_flag(focus_ring, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void focus_ring_sync(lv_group_t *group, lv_obj_t *obj, bool snap)
+{
+    if (!focus_ring || group != active_group) return;
+    if (!obj) {
+        focus_ring_hide();
+        return;
+    }
+
+    bool new_context = focus_group != group ||
+                       lv_obj_has_flag(focus_ring, LV_OBJ_FLAG_HIDDEN);
+    if (obj != focus_target) {
+        for (unsigned i = 0; i < 4; i++) focus_pid[i].integral = 0.0f;
+    }
+    focus_target = obj;
+    focus_group = group;
+    lv_obj_update_layout(obj);
+    lv_area_t area;
+    lv_obj_get_coords(obj, &area);
+    float target[] = {
+        (float)area.x1, (float)area.y1,
+        (float)lv_area_get_width(&area), (float)lv_area_get_height(&area),
+    };
+    if (snap || new_context) {
+        for (unsigned i = 0; i < 4; i++) ui_pid_reset(&focus_pid[i], target[i]);
+        focus_ring_apply();
+    }
+    focus_last_tick = lv_tick_get();
+    lv_obj_remove_flag(focus_ring, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(focus_ring);
+}
+
+static void focus_ring_tick(lv_timer_t *timer)
+{
+    LV_UNUSED(timer);
+    if (!focus_ring || !focus_target || focus_group != active_group) return;
+    if (!lv_obj_is_valid(focus_target)) {
+        focus_ring_hide();
+        return;
+    }
+
+    lv_obj_t *focused = lv_group_get_focused(focus_group);
+    if (focused != focus_target) {
+        focus_ring_sync(focus_group, focused, false);
+        return;
+    }
+
+    lv_obj_update_layout(focus_target);
+    lv_area_t area;
+    lv_obj_get_coords(focus_target, &area);
+    float target[] = {
+        (float)area.x1, (float)area.y1,
+        (float)lv_area_get_width(&area), (float)lv_area_get_height(&area),
+    };
+    float dt = (float)lv_tick_elaps(focus_last_tick) * 0.001f;
+    focus_last_tick = lv_tick_get();
+    bool settled = true;
+    for (unsigned i = 0; i < 4; i++) {
+        ui_pid_step(&focus_pid[i], target[i], dt);
+        if (fabsf(target[i] - focus_pid[i].position) > UI_FOCUS_SETTLE_POS ||
+            fabsf(focus_pid[i].velocity) > UI_FOCUS_SETTLE_SPEED) {
+            settled = false;
+        }
+    }
+    if (settled) {
+        for (unsigned i = 0; i < 4; i++) ui_pid_reset(&focus_pid[i], target[i]);
+    }
+    focus_ring_apply();
+}
 
 #if !defined(ESP_PLATFORM) && !defined(KR_WIO_TERMINAL)
 static lv_obj_t *desktop_textarea;
@@ -116,6 +217,7 @@ static void desktop_input_start(void)
 static void focus_changed(lv_group_t *group)
 {
     lv_obj_t *obj = lv_group_get_focused(group);
+    focus_ring_sync(group, obj, false);
     if (!obj || obj == global_obj) return;
 
     /*
@@ -171,6 +273,17 @@ void ui_nav_init(void)
     modal_depth = 0;
     global_obj = NULL;
     global_enabled = false;
+    focus_target = NULL;
+    focus_group = NULL;
+    focus_ring = lv_obj_create(lv_layer_top());
+    lv_obj_remove_style_all(focus_ring);
+    lv_obj_remove_flag(focus_ring, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_bg_opa(focus_ring, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_color(focus_ring, theme_col(THEME_COL_ACCENT), 0);
+    lv_obj_set_style_border_width(focus_ring, ui_px(2), 0);
+    lv_obj_set_style_radius(focus_ring, THEME_RADIUS_BTN, 0);
+    lv_obj_add_flag(focus_ring, LV_OBJ_FLAG_HIDDEN);
+    lv_timer_create(focus_ring_tick, UI_FOCUS_FRAME_MS, NULL);
 }
 
 lv_group_t *ui_nav_group_create(void)
@@ -360,6 +473,7 @@ void ui_nav_activate(lv_group_t *group)
     bind_navigation_indevs(group);
     if (global_obj && global_enabled && modal_depth == 0)
         lv_group_add_obj(group, global_obj);
+    focus_ring_sync(group, lv_group_get_focused(group), true);
 }
 
 void ui_nav_group_destroy(lv_obj_t *root, lv_group_t *group)
@@ -368,6 +482,7 @@ void ui_nav_group_destroy(lv_obj_t *root, lv_group_t *group)
     if (!group) return;
     ui_nav_group_set_spatial(group, false);
     ui_nav_group_set_list(group, false);
+    if (focus_group == group) focus_ring_hide();
     if (active_group == group) {   /* 正常不会发生（只销毁已离开的面板），兜底解绑 */
         active_group = NULL;
         lv_group_set_default(NULL);
@@ -435,6 +550,7 @@ void ui_nav_modal_end(lv_group_t *group)
         lv_group_set_default(NULL);
         bind_navigation_indevs(NULL);
     }
+    if (focus_group == group) focus_ring_hide();
     lv_group_delete(group);
 }
 

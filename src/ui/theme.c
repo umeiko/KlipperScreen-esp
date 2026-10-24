@@ -67,12 +67,8 @@ static void style_card(lv_obj_t *obj)
 
 void theme_focusable(lv_obj_t *obj)
 {
-    /* 淡色填充标出整个焦点范围，实色轮廓与页面本身的强调色控件区分。 */
+    /* 淡色填充由控件负责，运动轮廓由 ui_nav 的共享焦点框统一绘制。 */
     theme_focus_bg(obj, THEME_COL_ACCENT, LV_OPA_30);
-    lv_obj_set_style_outline_color(obj, theme_col(THEME_COL_ACCENT), LV_STATE_FOCUS_KEY);
-    lv_obj_set_style_outline_width(obj, ui_px(2), LV_STATE_FOCUS_KEY);
-    lv_obj_set_style_outline_pad(obj, 0, LV_STATE_FOCUS_KEY);
-    lv_obj_set_style_outline_opa(obj, LV_OPA_COVER, LV_STATE_FOCUS_KEY);
     ui_nav_register_obj(obj);
 }
 
