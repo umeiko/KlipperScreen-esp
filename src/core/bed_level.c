@@ -16,11 +16,13 @@ static uint32_t generation = 1, request_ms, status_ms, command_ms;
 static uint32_t status_token = 1;
 #define STATUS_POLL_MS 2000
 #define STATUS_RETRY_MS 5000
+#define COMPLETION_POLL_MS 200
+#define POSITION_TOLERANCE 0.05f
 static bool config_requested, status_pending, command_pending, fresh, homed, unsafe;
 static int action = -1; /* >=0 point, -2 calculate, -3 motor off, -1 no command */
-static bool after_home;
+static bool after_home, completion_pending, target_valid;
 static float minimum[3], maximum[3], offset[3];
-static float current_z;
+static float current_z, current_position[3], target_position[3];
 static moonraker_conf_t endpoint;
 static bool allowed(void)
 {
@@ -32,6 +34,7 @@ static bool allowed(void)
 static void stop_action(void)
 {
     action = -1; command_pending = false; data.busy = false; after_home = false;
+    completion_pending = target_valid = false;
 }
 void bed_level_reset(void)
 {
@@ -72,7 +75,10 @@ static void on_status(char *json, void *ud)
         offset[i] = physical[i] - logical[i];
         if (minimum[i] >= maximum[i] || !isfinite(offset[i])) fresh = false;
     }
-    if (fresh) current_z = physical[2];
+    if (fresh) {
+        current_z = physical[2];
+        for (int i = 0; i < 3; i++) current_position[i] = physical[i];
+    }
     cJSON *ha = cJSON_GetObjectItemCaseSensitive(th, "homed_axes");
     homed = cJSON_IsString(ha) && strchr(ha->valuestring, 'x') && strchr(ha->valuestring, 'y') && strchr(ha->valuestring, 'z');
     cJSON *idle = cJSON_GetObjectItemCaseSensitive(st, "idle_timeout");
@@ -95,7 +101,22 @@ static void on_status(char *json, void *ud)
     }
     cJSON_Delete(root);
     data.status_failed = !fresh;
-    if (action != -1) execute_action();
+    if (completion_pending) {
+        bool arrived = !target_valid;
+        if (fresh && target_valid) {
+            arrived = true;
+            for (int i = 0; i < 3; i++) {
+                if (fabsf(current_position[i] - target_position[i]) > POSITION_TOLERANCE) {
+                    arrived = false;
+                    break;
+                }
+            }
+        }
+        if (fresh && !unsafe && arrived) stop_action();
+        else status_ms = lv_tick_get() - COMPLETION_POLL_MS;
+    } else if (action != -1) {
+        execute_action();
+    }
 }
 static void request_status(void)
 {
@@ -122,11 +143,20 @@ static void on_command(char *json, void *ud)
         /* An intermediate G1 can fail even inside the axis bounding box (e.g.
            delta kinematics). Restore modes without motion; never alter a new
            print which may have started since the request. */
-        action = -1;
+        action = -1; target_valid = false;
         if (send_command("RESTORE_GCODE_STATE NAME=KS_BED_LEVEL MOVE=0")) return;
     }
-    if (ok && after_home && action != -1 && allowed()) request_status();
-    else { stop_action(); request_status(); }
+    if (ok && after_home && action != -1 && allowed()) {
+        request_status();
+    } else {
+        if (ok) {
+            completion_pending = true;
+            command_ms = lv_tick_get();
+        } else {
+            stop_action();
+        }
+        request_status();
+    }
 }
 static bool send_command(const char *script)
 {
@@ -164,6 +194,10 @@ static void execute_action(void)
     bed_level_point_t *p = &data.points[action];
     if (p->x < minimum[0] || p->x > maximum[0] || p->y < minimum[1] || p->y > maximum[1] ||
         data.paper_z < minimum[2] || data.travel_z > maximum[2]) { data.operation_failed = true; stop_action(); return; }
+    target_position[0] = p->x;
+    target_position[1] = p->y;
+    target_position[2] = data.paper_z;
+    target_valid = true;
     char script[320];
     /* Preserve G90/G91, extrusion mode, feedrate and G92/SET_GCODE_OFFSET.
        Physical minus logical position yields the current coordinate offset. */
@@ -227,21 +261,25 @@ const bed_level_data_t *bed_level_poll(void)
     moonraker_bed_level_poll(&data);
 #endif
     if (data.state == BED_LEVEL_LOADING && config_requested && lv_tick_elaps(request_ms) > 20000) bed_level_reset();
-    if (command_pending && lv_tick_elaps(command_ms) > 180000) { bed_level_reset(); data.operation_failed = true; return &data; }
+    if ((command_pending || completion_pending) && lv_tick_elaps(command_ms) > 180000) {
+        bed_level_reset(); data.operation_failed = true; return &data;
+    }
     if (status_pending && lv_tick_elaps(status_ms) > 10000) {
         status_pending = false; status_token++; fresh = false; data.status_failed = true;
         status_ms = lv_tick_get();
         if (action != -1) { data.operation_failed = true; stop_action(); }
     }
+    uint32_t poll_ms = completion_pending ? COMPLETION_POLL_MS :
+        data.status_failed ? STATUS_RETRY_MS : STATUS_POLL_MS;
     if (data.state == BED_LEVEL_READY && !status_pending && !command_pending &&
-        lv_tick_elaps(status_ms) >= (data.status_failed ? STATUS_RETRY_MS : STATUS_POLL_MS)) request_status();
+        lv_tick_elaps(status_ms) >= poll_ms) request_status();
     data.can_move = allowed() && fresh && !unsafe && !data.busy && !command_pending;
     return &data;
 #endif
 }
 static bool start_action(int which)
 {
-    if (!allowed() || data.state != BED_LEVEL_READY || data.busy || command_pending) return false;
+    if (!allowed() || data.state != BED_LEVEL_READY || data.busy || command_pending || completion_pending) return false;
 #ifdef KLIPPER_DESKTOP_SIMULATOR
     (void)which; return true;
 #else

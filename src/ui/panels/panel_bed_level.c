@@ -45,8 +45,14 @@ static void on_off(lv_event_t *e)
 }
 static void on_point(lv_event_t *e)
 {
-    selected = (int)(intptr_t)lv_event_get_user_data(e);
-    if (!bed_level_move(selected)) ui_toast(TR("操作未发送"), THEME_COL_WARN);
+    int point = (int)(intptr_t)lv_event_get_user_data(e);
+    const bed_level_data_t *d = bed_level_poll();
+    if (!d->can_move || d->busy) {
+        update_ui();
+        return;
+    }
+    if (bed_level_move(point)) selected = point;
+    else ui_toast(TR("操作未发送"), THEME_COL_WARN);
     update_ui();
 }
 static void on_focus(lv_event_t *e)
@@ -236,9 +242,6 @@ static lv_obj_t *create_bed_level(void)
         lv_obj_add_event_cb(b, on_focus, LV_EVENT_FOCUSED, (void *)(intptr_t)i);
         lv_obj_t *head = theme_img(b, ui_icon(&img_bed_screw, &img_bed_screw_48), THEME_COL_TEXT);
         lv_obj_center(head);
-        char n[4]; snprintf(n, sizeof(n), "%d", i+1);
-        lv_obj_t *number = theme_label(b, n, ui_font_value_compact(), THEME_COL_ACCENT);
-        lv_obj_align(number, LV_ALIGN_TOP_RIGHT, ui_gap(2), -ui_gap(2));
 
         result_rows[i] = decor(diagram);
         lv_obj_set_size(result_rows[i], result_width, LV_MAX(lv_font_get_line_height(THEME_FONT_S),

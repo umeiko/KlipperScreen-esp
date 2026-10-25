@@ -40,6 +40,14 @@ static const char *config = "{\"status\":{\"configfile\":{\"config\":{\"bed_scre
 static const char *position = "{\"status\":{\"toolhead\":{\"axis_minimum\":[0,0,-5],\"axis_maximum\":[220,220,250],"
     "\"position\":[50,60,10],\"homed_axes\":\"xyz\"},\"gcode_move\":{\"gcode_position\":[48,57,9.5]},"
     "\"idle_timeout\":{\"state\":\"Ready\"},\"bed_screws\":{\"is_active\":false}}}";
+static const char *point0_state(const char *state)
+{
+    static char json[768];
+    snprintf(json, sizeof(json), "{\"status\":{\"toolhead\":{\"axis_minimum\":[0,0,-5],\"axis_maximum\":[220,220,250],"
+             "\"position\":[20,20,0],\"homed_axes\":\"xyz\"},\"gcode_move\":{\"gcode_position\":[18,17,-0.5]},"
+             "\"idle_timeout\":{\"state\":\"%s\"},\"bed_screws\":{\"is_active\":false}}}", state);
+    return json;
+}
 static void reply(unsigned i, const char *text) { rpc[i].cb(text ? strdup(text) : NULL, rpc[i].ud); }
 static void parser_tests(void)
 {
@@ -80,7 +88,12 @@ int main(void)
     assert(!strcmp(rpc[requests-1].method,"printer.gcode.script"));
     assert(strstr(rpc[requests-1].params,"G1 Z9.500 F300") && strstr(rpc[requests-1].params,"G1 X18.000 Y17.000 F3000"));
     assert(strstr(rpc[requests-1].params,"RESTORE_GCODE_STATE") && !bed_level_move(1));
-    reply(requests-1,"\"ok\""); reply(requests-1,position); assert(!bed_level_poll()->busy);
+    reply(requests-1,"\"ok\""); reply(requests-1,position);
+    assert(data.busy && !bed_level_poll()->can_move && !bed_level_move(1));
+    clock_ms += COMPLETION_POLL_MS; bed_level_poll(); reply(requests-1,point0_state("Printing"));
+    assert(data.busy && !bed_level_poll()->can_move && !bed_level_move(1));
+    clock_ms += COMPLETION_POLL_MS; bed_level_poll(); reply(requests-1,point0_state("Ready"));
+    assert(!bed_level_poll()->busy && bed_level_poll()->can_move);
     /* Printing and paused states must never emit motion or motor-off commands. */
     state=PRINTER_STATE_PRINTING; assert(!bed_level_move(0) && !bed_level_motors_off());
     state=PRINTER_STATE_PAUSED; assert(!bed_level_move(0)); state=PRINTER_STATE_STANDBY;
