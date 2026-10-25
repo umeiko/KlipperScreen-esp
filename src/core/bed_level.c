@@ -246,7 +246,8 @@ const bed_level_data_t *bed_level_poll(void)
         }
         config_requested = true;
     }
-    data.can_move = allowed(); return &data;
+    data.busy = getenv("KLIPPER_BED_BUSY") != NULL;
+    data.can_move = allowed() && !data.busy; return &data;
 #else
     if (!config_requested) {
 #ifdef ESP_PLATFORM

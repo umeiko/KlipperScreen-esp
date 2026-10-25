@@ -21,8 +21,13 @@ static void update_ui(void);
 
 static void enabled(lv_obj_t *o, bool on)
 {
-    if (on) lv_obj_remove_state(o, LV_STATE_DISABLED);
-    else lv_obj_add_state(o, LV_STATE_DISABLED);
+    if (on) {
+        lv_obj_remove_state(o, LV_STATE_DISABLED);
+        lv_obj_add_flag(o, LV_OBJ_FLAG_CLICKABLE);
+    } else {
+        lv_obj_add_state(o, LV_STATE_DISABLED);
+        lv_obj_remove_flag(o, LV_OBJ_FLAG_CLICKABLE);
+    }
 }
 static void visible(lv_obj_t *o, bool on)
 {
@@ -241,6 +246,8 @@ static lv_obj_t *create_bed_level(void)
         lv_obj_add_event_cb(b, on_point, LV_EVENT_CLICKED, (void *)(intptr_t)i);
         lv_obj_add_event_cb(b, on_focus, LV_EVENT_FOCUSED, (void *)(intptr_t)i);
         lv_obj_t *head = theme_img(b, ui_icon(&img_bed_screw, &img_bed_screw_48), THEME_COL_TEXT);
+        lv_obj_set_style_image_recolor(head, theme_col(THEME_COL_TEXT_DIM), LV_STATE_DISABLED);
+        lv_obj_set_style_image_recolor_opa(head, LV_OPA_50, LV_STATE_DISABLED);
         lv_obj_center(head);
 
         result_rows[i] = decor(diagram);
