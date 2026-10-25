@@ -29,39 +29,135 @@ static lv_obj_t *global_obj;
 static bool global_enabled;
 
 #define UI_FOCUS_FRAME_MS 15
-#define UI_FOCUS_SETTLE_POS 6.0f
-#define UI_FOCUS_SETTLE_SPEED 8.0f
+#define UI_FOCUS_SETTLE_POS 0.15f
+#define UI_FOCUS_SETTLE_SPEED 0.8f
+#define UI_FOCUS_WATCH_MAX 12
+#define UI_FOCUS_TRANSITION_MS 350
 
 static lv_obj_t *focus_ring;
 static lv_obj_t *focus_target;
 static lv_group_t *focus_group;
 static ui_pid_t focus_pid[4];
+static lv_timer_t *focus_timer;
 static uint32_t focus_last_tick;
+static uint32_t focus_transition_start;
+static lv_obj_t *focus_watched[UI_FOCUS_WATCH_MAX];
+static unsigned focus_watch_count;
+static int32_t focus_drawn[4];
+static bool focus_drawn_valid;
+static bool focus_key_active;
+
+static void focus_note_input(void)
+{
+    lv_indev_t *indev = lv_indev_active();
+    if (!indev) return;
+    lv_indev_type_t type = lv_indev_get_type(indev);
+    focus_key_active = type == LV_INDEV_TYPE_KEYPAD || type == LV_INDEV_TYPE_ENCODER;
+}
 
 static int32_t focus_round(float value)
 {
     return (int32_t)(value >= 0.0f ? value + 0.5f : value - 0.5f);
 }
 
+static void focus_timer_sleep(void)
+{
+    if (focus_timer) lv_timer_pause(focus_timer);
+}
+
+static void focus_timer_wake(void)
+{
+    if (focus_timer && lv_timer_get_paused(focus_timer)) {
+        focus_last_tick = lv_tick_get();
+        lv_timer_resume(focus_timer);
+    }
+}
+
 static void focus_ring_apply(void)
 {
-    lv_obj_set_pos(focus_ring, focus_round(focus_pid[0].position),
-                   focus_round(focus_pid[1].position));
-    lv_obj_set_size(focus_ring, LV_MAX(focus_round(focus_pid[2].position), 0),
-                    LV_MAX(focus_round(focus_pid[3].position), 0));
+    int32_t values[] = {
+        focus_round(focus_pid[0].position), focus_round(focus_pid[1].position),
+        LV_MAX(focus_round(focus_pid[2].position), 0),
+        LV_MAX(focus_round(focus_pid[3].position), 0),
+    };
+    if (focus_drawn_valid && values[0] == focus_drawn[0] && values[1] == focus_drawn[1] &&
+        values[2] == focus_drawn[2] && values[3] == focus_drawn[3]) return;
+    if (!focus_drawn_valid || values[0] != focus_drawn[0] || values[1] != focus_drawn[1])
+        lv_obj_set_pos(focus_ring, values[0], values[1]);
+    if (!focus_drawn_valid || values[2] != focus_drawn[2] || values[3] != focus_drawn[3])
+        lv_obj_set_size(focus_ring, values[2], values[3]);
+    for (unsigned i = 0; i < 4; i++) focus_drawn[i] = values[i];
+    focus_drawn_valid = true;
+}
+
+static void focus_ring_watch_event(lv_event_t *event);
+
+static void focus_ring_unwatch(void)
+{
+    for (unsigned i = 0; i < focus_watch_count; i++) {
+        if (lv_obj_is_valid(focus_watched[i]))
+            lv_obj_remove_event_cb(focus_watched[i], focus_ring_watch_event);
+    }
+    focus_watch_count = 0;
 }
 
 static void focus_ring_hide(void)
 {
+    focus_ring_unwatch();
     focus_target = NULL;
     focus_group = NULL;
+    focus_timer_sleep();
     if (focus_ring) lv_obj_add_flag(focus_ring, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void focus_ring_watch_event(lv_event_t *event)
+{
+    if (lv_event_get_code(event) == LV_EVENT_DELETE) {
+        focus_target = NULL;
+        focus_group = NULL;
+        focus_timer_sleep();
+        if (focus_ring) lv_obj_add_flag(focus_ring, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+    focus_timer_wake();
+}
+
+static void focus_ring_watch(lv_obj_t *obj)
+{
+    focus_ring_unwatch();
+    if (focus_watch_count < UI_FOCUS_WATCH_MAX) {
+        focus_watched[focus_watch_count++] = obj;
+        lv_obj_add_event_cb(obj, focus_ring_watch_event, LV_EVENT_DELETE, NULL);
+        lv_obj_add_event_cb(obj, focus_ring_watch_event, LV_EVENT_SIZE_CHANGED, NULL);
+    }
+    for (lv_obj_t *parent = lv_obj_get_parent(obj); parent && focus_watch_count < UI_FOCUS_WATCH_MAX;
+         parent = lv_obj_get_parent(parent)) {
+        focus_watched[focus_watch_count++] = parent;
+        lv_obj_add_event_cb(parent, focus_ring_watch_event, LV_EVENT_SIZE_CHANGED, NULL);
+        lv_obj_add_event_cb(parent, focus_ring_watch_event, LV_EVENT_CHILD_CHANGED, NULL);
+        lv_obj_add_event_cb(parent, focus_ring_watch_event, LV_EVENT_LAYOUT_CHANGED, NULL);
+        if (lv_obj_has_flag(parent, LV_OBJ_FLAG_SCROLLABLE))
+            lv_obj_add_event_cb(parent, focus_ring_watch_event, LV_EVENT_SCROLL, NULL);
+    }
+}
+
+static void focus_ring_deleted(lv_event_t *event)
+{
+    if (lv_event_get_target_obj(event) == focus_ring) {
+        focus_ring = NULL;
+        focus_target = NULL;
+        focus_group = NULL;
+        focus_watch_count = 0;
+        focus_drawn_valid = false;
+        focus_timer_sleep();
+    }
 }
 
 static void focus_ring_sync(lv_group_t *group, lv_obj_t *obj, bool snap)
 {
-    if (!focus_ring || group != active_group) return;
-    if (!obj) {
+    if (!focus_ring || !lv_obj_get_parent(focus_ring) || group != active_group) return;
+    focus_note_input();
+    if (!focus_key_active || !obj) {
         focus_ring_hide();
         return;
     }
@@ -70,6 +166,7 @@ static void focus_ring_sync(lv_group_t *group, lv_obj_t *obj, bool snap)
                        lv_obj_has_flag(focus_ring, LV_OBJ_FLAG_HIDDEN);
     if (obj != focus_target) {
         for (unsigned i = 0; i < 4; i++) focus_pid[i].integral = 0.0f;
+        focus_ring_watch(obj);
     }
     focus_target = obj;
     focus_group = group;
@@ -84,17 +181,17 @@ static void focus_ring_sync(lv_group_t *group, lv_obj_t *obj, bool snap)
         for (unsigned i = 0; i < 4; i++) ui_pid_reset(&focus_pid[i], target[i]);
         focus_ring_apply();
     }
-    focus_last_tick = lv_tick_get();
     lv_obj_remove_flag(focus_ring, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(focus_ring);
+    if (snap) focus_transition_start = lv_tick_get();
+    focus_timer_wake();
 }
 
 static void focus_ring_tick(lv_timer_t *timer)
 {
     LV_UNUSED(timer);
-    if (!focus_ring || !focus_target || focus_group != active_group) return;
-    if (!lv_obj_is_valid(focus_target)) {
-        focus_ring_hide();
+    if (!focus_ring || !focus_target || focus_group != active_group) {
+        focus_timer_sleep();
         return;
     }
 
@@ -104,7 +201,6 @@ static void focus_ring_tick(lv_timer_t *timer)
         return;
     }
 
-    lv_obj_update_layout(focus_target);
     lv_area_t area;
     lv_obj_get_coords(focus_target, &area);
     float target[] = {
@@ -123,6 +219,10 @@ static void focus_ring_tick(lv_timer_t *timer)
     }
     if (settled) {
         for (unsigned i = 0; i < 4; i++) ui_pid_reset(&focus_pid[i], target[i]);
+        focus_ring_apply();
+        if (lv_tick_elaps(focus_transition_start) >= UI_FOCUS_TRANSITION_MS)
+            focus_timer_sleep();
+        return;
     }
     focus_ring_apply();
 }
@@ -275,6 +375,7 @@ void ui_nav_init(void)
     global_enabled = false;
     focus_target = NULL;
     focus_group = NULL;
+    focus_key_active = false;
     focus_ring = lv_obj_create(lv_layer_top());
     lv_obj_remove_style_all(focus_ring);
     lv_obj_remove_flag(focus_ring, LV_OBJ_FLAG_CLICKABLE);
@@ -283,7 +384,9 @@ void ui_nav_init(void)
     lv_obj_set_style_border_width(focus_ring, ui_px(2), 0);
     lv_obj_set_style_radius(focus_ring, THEME_RADIUS_BTN, 0);
     lv_obj_add_flag(focus_ring, LV_OBJ_FLAG_HIDDEN);
-    lv_timer_create(focus_ring_tick, UI_FOCUS_FRAME_MS, NULL);
+    lv_obj_add_event_cb(focus_ring, focus_ring_deleted, LV_EVENT_DELETE, NULL);
+    focus_timer = lv_timer_create(focus_ring_tick, UI_FOCUS_FRAME_MS, NULL);
+    lv_timer_pause(focus_timer);
 }
 
 lv_group_t *ui_nav_group_create(void)

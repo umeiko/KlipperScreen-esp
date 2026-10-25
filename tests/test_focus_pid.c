@@ -19,6 +19,10 @@ int main(void)
     assert(pid.position == 10.0f && pid.integral == 0.0f && pid.velocity == 0.0f);
     assert(ui_pid_step(&pid, 100.0f, 0.0f) == 10.0f);
 
+    ui_pid_reset(&pid, 0.0f);
+    for (unsigned i = 0; i < 24; i++) ui_pid_step(&pid, 100.0f, 1.0f / 60.0f);
+    assert(fabsf(pid.position - 100.0f) < 1.0f);
+
     converge(&pid, 130.0f, 1.0f / 60.0f);
     converge(&pid, -40.0f, 1.0f / 60.0f);
     converge(&pid, 1000.0f, 1.0f / 30.0f);
