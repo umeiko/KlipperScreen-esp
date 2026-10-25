@@ -69,7 +69,46 @@ def patch_rpc_client_timeout():
     raise RuntimeError("unable to apply the pinned rpcUnified client-timeout patch")
 
 
+def patch_rpc_client_type():
+    """Keep the generated client's declaration identical to its definition for LTO."""
+    roots = [repo_root / "tmp" / "wio-rpcunified"]
+    libdeps = Path(env.subst("$PROJECT_LIBDEPS_DIR")) / env["PIOENV"]
+    if libdeps.exists():
+        roots.extend(p.parent.parent.parent for p in libdeps.rglob("src/erpc/rpc_wifi_api_client.cpp"))
+        for link in libdeps.glob("*.pio-link"):
+            try:
+                spec = json.loads(link.read_text(encoding="utf-8"))["spec"]
+                uri = spec.get("uri", "")
+                if uri.startswith("symlink://"):
+                    roots.append((port_dir / uri[len("symlink://"):]).resolve())
+            except (OSError, KeyError, TypeError, ValueError):
+                pass
+
+    old_include = '#include "erpc_client_manager.h"'
+    new_include = '#include "erpc_arbitrated_client_manager.h"'
+    old_decl = "extern ClientManager *g_client;"
+    new_decl = "extern ArbitratedClientManager *g_client;"
+    checked = set()
+    for root in roots:
+        target = (root / "src" / "erpc" / "rpc_wifi_api_client.cpp").resolve()
+        if target in checked or not target.exists():
+            continue
+        checked.add(target)
+        text = target.read_text(encoding="utf-8")
+        if new_decl in text:
+            return
+        if old_decl not in text:
+            continue
+        text = text.replace(old_include, new_include, 1)
+        text = text.replace(old_decl, new_decl, 1)
+        target.write_text(text, encoding="utf-8")
+        return
+
+    raise RuntimeError("unable to apply the pinned rpcUnified client-type patch")
+
+
 patch_rpc_client_timeout()
+patch_rpc_client_type()
 
 env.Append(
     CPPPATH=[
@@ -81,7 +120,7 @@ env.Append(
         str(src_root / "ui" / "widgets"),
         str(lvgl_dir),
     ],
-    LINKFLAGS=["-Wl,--gc-sections"],
+    LINKFLAGS=["-Wl,--gc-sections", "-flto"],
 )
 
 

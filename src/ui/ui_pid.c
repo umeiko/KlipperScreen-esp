@@ -1,5 +1,4 @@
 #include "ui_pid.h"
-#include <math.h>
 
 #define UI_PID_KP 280.0f
 #define UI_PID_KI 60.0f
@@ -31,7 +30,8 @@ float ui_pid_step(ui_pid_t *pid, float target, float dt)
 
     unsigned steps = (unsigned)(dt / UI_PID_SUBSTEP) + 1;
     float step_dt = dt / (float)steps;
-    float decay = expf(-3.0f * step_dt);
+    float x = 3.0f * step_dt;
+    float decay = 1.0f - x * (1.0f - x * (0.5f - x * ((1.0f / 6.0f) - x * (1.0f / 24.0f))));
     for (unsigned i = 0; i < steps; i++) {
         float error = target - pid->position;
         float integral = clampf(pid->integral * decay + error * step_dt,
