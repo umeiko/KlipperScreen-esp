@@ -1,5 +1,9 @@
 # KlipperScreen-esp
 
+<p align="center">
+  <img src="docs/assets/branding/klipperscreen-esp-logo-v1.png" alt="KlipperScreen-esp logo" width="520">
+</p>
+
 [![build](https://github.com/umeiko/KlipperScreen-esp/actions/workflows/build.yml/badge.svg)](https://github.com/umeiko/KlipperScreen-esp/actions/workflows/build.yml)
 
 [中文 README](README_zh.md)

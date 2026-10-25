@@ -1,5 +1,9 @@
 # KlipperScreen-esp（中文文档）
 
+<p align="center">
+  <img src="docs/assets/branding/klipperscreen-esp-logo-v1.png" alt="KlipperScreen-esp 标志" width="520">
+</p>
+
 [English README](README.md)
 
 > **📖 文档站：https://umeiko.github.io/KlipperScreen-esp/zh/**
