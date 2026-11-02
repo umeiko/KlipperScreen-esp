@@ -54,6 +54,10 @@ static lv_obj_t *create(void)
     menu_row(scr, ui_icon(&img_macro, &img_macro_48), TR("宏"), y, "macros");
     y += step;
     menu_row(scr, ui_icon(&img_console, &img_console_48), TR("控制台"), y, "console");
+#if BSP_HAS_CAMERA
+    y += step;
+    menu_row(scr, ui_icon(&img_camera, &img_camera_48), TR("视频监视"), y, "camera");
+#endif
     y += step;
     menu_row(scr, ui_icon(&img_fan, &img_fan_48), TR("风扇"), y, "fan");
     y += step;

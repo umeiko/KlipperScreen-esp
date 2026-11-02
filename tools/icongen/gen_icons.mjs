@@ -129,6 +129,10 @@ const ICONS = [
   ['console',              24, 'console'],     // 菜单-控制台
   ['console',              11, 'console_sm'],
   ['console',              48, 'console_48'],
+  ['camera',               24, 'camera'],      // 菜单-视频监视
+  ['camera',               11, 'camera_sm'],
+  ['camera',               48, 'camera_48'],
+  ['camera',               96, 'camera_96'],
   ['fan',                  24, 'fan'],         // 菜单-风扇
   ['fan',                  11, 'fan_sm'],
   ['fan',                  48, 'fan_48'],

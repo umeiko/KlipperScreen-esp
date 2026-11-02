@@ -105,3 +105,14 @@
 #else
 #define BSP_HAS_GCODE_THUMB 0
 #endif
+
+/* Moonraker 摄像头 MJPEG/JPEG 视频监视。桌面各平台共用 POSIX/Winsock
+ * 接收与 LVGL TJPGD 解码；ESP32 需要 PSRAM 容纳流缓冲和 RGB565 帧。 */
+#if !defined(ESP_PLATFORM) && !defined(KR_WIO_TERMINAL)
+#define BSP_HAS_CAMERA 1
+#elif defined(CONFIG_SPIRAM) && CONFIG_SPIRAM && \
+      defined(CONFIG_LV_USE_TJPGD) && CONFIG_LV_USE_TJPGD
+#define BSP_HAS_CAMERA 1
+#else
+#define BSP_HAS_CAMERA 0
+#endif

@@ -10,8 +10,13 @@ idf_component_register(SRCS "app_settings.c"
                             "moonraker_client.c"
                             "klipper_api.c"
                             "gcode_thumbnail.c"
+                            "camera.c"
+                            "camera_mjpeg.c"
+                            "camera_chunked.c"
+                            "camera_jpeg.c"
+                            "camera_stream.c"
                             "bambu_status.c"
                             "bambu_status_stream.c"
                        INCLUDE_DIRS "."
-                       REQUIRES lvgl json esp_websocket_client esp_http_client esp_timer bambu
+                       REQUIRES lvgl json esp_websocket_client esp_http_client esp_timer bambu esp_jpeg
                        PRIV_REQUIRES bsp)

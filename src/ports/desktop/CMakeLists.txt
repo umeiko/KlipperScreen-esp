@@ -47,6 +47,11 @@ set(DESKTOP_COMMON_SRCS
     ${SRC_ROOT}/bsp/desktop/bsp_conf_file.c
     ${SRC_ROOT}/core/app_settings.c
     ${SRC_ROOT}/core/gcode_thumbnail.c
+    ${SRC_ROOT}/core/camera.c
+    ${SRC_ROOT}/core/camera_mjpeg.c
+    ${SRC_ROOT}/core/camera_chunked.c
+    ${SRC_ROOT}/core/camera_jpeg.c
+    ${SRC_ROOT}/core/camera_stream.c
     ${SRC_ROOT}/core/self_update.c
     ${UI_SRCS}
 )
@@ -65,6 +70,7 @@ function(configure_desktop_target target)
         ${SRC_ROOT}/ui
         ${SRC_ROOT}/ui/panels
         ${SRC_ROOT}/ui/widgets
+        ${REPO_ROOT}/third_party/lvgl/src
         ${SDL2_INCLUDE_DIRS}
     )
     target_link_libraries(${target} PRIVATE lvgl ${SDL2_LIBRARIES})
@@ -244,6 +250,10 @@ else()
     target_compile_definitions(klipper_remote_simulator PRIVATE KLIPPER_DESKTOP_SIMULATOR=1)
     target_include_directories(klipper_remote_simulator PRIVATE ${CJSON_HEADER_DIR})
     target_link_libraries(klipper_remote_simulator PRIVATE ${CJSON_LINK})
+    if(NOT APPLE)
+        target_link_libraries(KlipperScreen-esp PRIVATE m)
+        target_link_libraries(klipper_remote_simulator PRIVATE m)
+    endif()
 endif()
 
 if(KR_ENCODER_SETTINGS_PREVIEW)

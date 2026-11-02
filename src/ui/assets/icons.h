@@ -124,6 +124,10 @@ LV_IMAGE_DECLARE(img_macro_48);
 LV_IMAGE_DECLARE(img_console);      /* 24px 终端：控制台 */
 LV_IMAGE_DECLARE(img_console_sm);
 LV_IMAGE_DECLARE(img_console_48);
+LV_IMAGE_DECLARE(img_camera);       /* 24px 摄像机：视频监视 */
+LV_IMAGE_DECLARE(img_camera_sm);
+LV_IMAGE_DECLARE(img_camera_48);
+LV_IMAGE_DECLARE(img_camera_96);    /* 桌面 huge 档 */
 LV_IMAGE_DECLARE(img_fan);          /* 24px 风扇 */
 LV_IMAGE_DECLARE(img_fan_sm);
 LV_IMAGE_DECLARE(img_fan_48);

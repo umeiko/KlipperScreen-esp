@@ -177,6 +177,20 @@ def gen_font(font: str, latin_font: str, size: int, symbols: str, compress: bool
     return out
 
 
+def gen_camera_supplement(font: str, latin_font: str, size: int):
+    """最小字体的视频监视补字；保留既有主字体与全表裁剪策略。"""
+    camera_path = gen_font(font, latin_font, size, "频摄串播", compress=False, suffix="_camera")
+    camera_path.write_text(camera_path.read_text(encoding="utf-8").rstrip() + "\n", encoding="utf-8")
+    min_path = ROOT / "src" / "ui" / "assets" / f"font_cjk_{size}_min.c"
+    text = min_path.read_text(encoding="utf-8")
+    marker = "/*Initialize a public general font descriptor*/"
+    declaration = f"LV_FONT_DECLARE(font_cjk_{size}_camera);\n\n"
+    if declaration not in text:
+        text = text.replace(marker, declaration + marker, 1)
+    text = text.replace(".fallback = NULL,", f".fallback = &font_cjk_{size}_camera,", 1)
+    min_path.write_text(text, encoding="utf-8")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="生成 LVGL CJK 子集字体")
     ap.add_argument("--font", default=DEFAULT_FONT, help="ttf/otf 主字体源路径（CJK+ASCII）")
@@ -219,6 +233,7 @@ def main() -> int:
     if not args.sizes:
         for size in (28, 32):
             gen_font(args.font, args.font_latin, size, lit, compress=False, suffix="_min")
+            gen_camera_supplement(args.font, args.font_latin, size)
         # 纯西文 24px（Lato，仅 ASCII+Latin-1）：2x 档（480 宽）拉丁语系长词
         # 放不进按钮时缩一档用（panel_main fit_latin_label），比再链一整张
         # CJK 16 档省 flash；montserrat 无重音字形（é → 方框）不可用。

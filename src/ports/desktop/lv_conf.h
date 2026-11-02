@@ -49,5 +49,7 @@
 
 /* PNG 解码（gcode 缩略图；lodepng 由 lv_init 自动注册） */
 #define LV_USE_LODEPNG 1
+/* JPEG 解码（Moonraker 摄像头视频帧） */
+#define LV_USE_TJPGD 1
 
 #endif /* LV_CONF_H */

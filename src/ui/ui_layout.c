@@ -294,6 +294,9 @@ static const struct { const lv_image_dsc_t *base, *sm; } icon_sm_map[] = {
     { &img_sensors,         &img_sensors_sm },
     { &img_macro,           &img_macro_sm },
     { &img_console,         &img_console_sm },
+#if BSP_HAS_CAMERA
+    { &img_camera,          &img_camera_sm },
+#endif
     { &img_fan,             &img_fan_sm },
     { &img_zcal,            &img_zcal_sm },
     { &img_tune_speed,      &img_tune_speed_sm },
@@ -341,6 +344,9 @@ static const struct { const lv_image_dsc_t *big, *lg; } icon_lg_map[] = {
     { &img_sensors,          &img_sensors_48 },
     { &img_macro,            &img_macro_48 },
     { &img_console,          &img_console_48 },
+#if BSP_HAS_CAMERA
+    { &img_camera_48,        &img_camera_96 },
+#endif
     { &img_fan,              &img_fan_48 },
     { &img_zcal,             &img_zcal_48 },
     { &img_tune_speed,       &img_tune_speed_48 },
