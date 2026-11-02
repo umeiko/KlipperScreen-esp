@@ -539,6 +539,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
       - uses: gradle/actions/setup-gradle@v4   # 只图它的 Gradle 缓存，wrapper 用库内的
 
       - name: Fetch LVGL v9.3.0 (third_party/lvgl is gitignored)
