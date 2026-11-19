@@ -51,8 +51,9 @@ fi
 
 say "正在刷入 $PORT（芯片=$CHIP，flash=$FLASH_SIZE）" \
     "Flashing to $PORT  (chip=$CHIP, flash=$FLASH_SIZE)"
-$ESP --chip "$CHIP" -b 460800 --before default-reset --after hard-reset \
-  write-flash --flash-mode dio --flash-size "$FLASH_SIZE" --flash-freq 80m \
+# Keep the board-specific mode/frequency embedded by ESP-IDF (CYD needs DIO/40MHz).
+$ESP --chip "$CHIP" -p "$PORT" -b 460800 --before default-reset --after hard-reset \
+  write-flash --flash-mode keep --flash-size "$FLASH_SIZE" --flash-freq keep \
   "$BL_OFFSET" bootloader.bin 0x8000 partition-table.bin 0x10000 klipper_remote_display.bin
 
 say "完成。请按 RESET 或重新插拔 USB。首次启动约 3 秒（开机动画）。" \

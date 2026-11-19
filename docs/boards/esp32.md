@@ -12,10 +12,12 @@ Boards built on the classic ESP32 (dual-core 240MHz, 4MB flash, no PSRAM). Each 
 
 Logical resolution **320×240 landscape**.
 
-- MCU: ESP32 (dual-core 240MHz, 520KB SRAM), 4MB QIO flash
+- MCU: ESP32 (dual-core 240MHz, 520KB SRAM), 4MB flash running in DIO mode at 40MHz
 - Display: ILI9341, SPI2 @ 40MHz, DMA double buffering (2 × 40 lines)
 - Touch: XPT2046 resistive on a **dedicated SPI3 bus**, separate from the LCD bus; factory touch calibration is pre-installed
 - Backlight: GPIO21, LEDC PWM 8bit/5kHz, active high
+
+The firmware uses **DIO / 40MHz** for compatibility with the newer USB-C + Micro-USB revision reported in [issue #11](https://github.com/umeiko/KlipperScreen-esp/issues/11). Flash the complete package, including the rebuilt bootloader; overriding flash settings while writing an old QIO bootloader is insufficient. For an existing local build, select DIO and 40MHz in `menuconfig` or regenerate the ignored `src/ports/esp32/sdkconfig` from the updated defaults before rebuilding. Release flash scripts preserve the mode and frequency in the firmware image. Choose between CYD and CYD-PLUS by the display controller (ILI9341 / ST7789), rather than the USB connectors.
 
 | Function | GPIO | Notes |
 |---|---|---|

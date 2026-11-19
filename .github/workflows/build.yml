@@ -13,6 +13,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: ESP32 Wi-Fi event/driver regression tests
         run: python3 tests/test_wifi_switch.py
+      - name: Release flash script regression tests
+        run: python3 tests/test_flash_scripts.py
 
   # 16 个板型按芯片合并为 3 个 shard Job：同一 shard 在同一 IDF 容器内顺序构建，
   # 共享按 shard 分开的 ccache。单板构建失败不中断其余板型：收集失败列表，

@@ -57,8 +57,9 @@ goto flash_run
 echo 正在刷入 %PORT%（芯片=%CHIP%，flash=%FLASH_SIZE%）
 
 :flash_run
+rem Keep the board-specific mode/frequency embedded by ESP-IDF (CYD needs DIO/40MHz).
 esptool.exe --chip %CHIP% -p "%PORT%" -b 460800 --before default-reset --after hard-reset ^
-  write-flash --flash-mode dio --flash-size %FLASH_SIZE% --flash-freq 80m ^
+  write-flash --flash-mode keep --flash-size %FLASH_SIZE% --flash-freq keep ^
   %BL_OFFSET% bootloader.bin 0x8000 partition-table.bin 0x10000 klipper_remote_display.bin
 if errorlevel 1 goto flash_failed
 

@@ -12,10 +12,12 @@
 
 逻辑分辨率 **320×240 横屏**。
 
-- 主控：ESP32（双核 240MHz，520KB SRAM），4MB QIO Flash
+- 主控：ESP32（双核 240MHz，520KB SRAM），4MB Flash，DIO 模式 / 40MHz
 - 显示：ILI9341，SPI2 @ 40MHz，DMA 双缓冲（2 × 40 行）
 - 触摸：XPT2046 电阻屏，**独立 SPI3 总线**（与 LCD 不同总线）；出厂触摸校准已内置
 - 背光：GPIO21，LEDC PWM 8bit/5kHz，高电平点亮
+
+固件使用 **DIO / 40MHz**，以兼容 [issue #11](https://github.com/umeiko/KlipperScreen-esp/issues/11) 反馈的新版 USB-C + Micro-USB 双接口板。更新时请刷入完整刷机包（含重新编译的 bootloader）；仅在烧录时覆盖旧 QIO bootloader 的参数不足以解决问题。已有本地构建需在 `menuconfig` 中改为 DIO、40MHz，或从更新后的 defaults 重新生成被忽略的 `src/ports/esp32/sdkconfig` 后再编译。发布包的刷机脚本会保留固件中的模式和频率。CYD 与 CYD-PLUS 应按显示控制器（ILI9341 / ST7789）选择，不能仅凭 USB 接口区分。
 
 | 功能 | GPIO | 备注 |
 |---|---|---|
