@@ -16,7 +16,7 @@ jobs:
       - name: Release flash script regression tests
         run: python3 tests/test_flash_scripts.py
 
-  # 16 个板型按芯片合并为 3 个 shard Job：同一 shard 在同一 IDF 容器内顺序构建，
+  # 17 个板型按芯片合并为 3 个 shard Job：同一 shard 在同一 IDF 容器内顺序构建，
   # 共享按 shard 分开的 ccache。单板构建失败不中断其余板型：收集失败列表，
   # 上传可用的部分产物与失败日志后，在末尾令 shard 失败。
   firmware:
@@ -78,6 +78,7 @@ jobs:
           esp32s3-ILI9341-320_240-xpt2046-ec11|build-esp32s3-ili9341-ec11|sdkconfig.esp32s3-ILI9341-320_240-xpt2046-ec11|sdkconfig.defaults;sdkconfig.defaults.esp32s3-ILI9341-320_240-xpt2046-ec11|esp32s3|16MB|0x0
           jc8048w550|build-jc8048w550|sdkconfig.jc8048w550|sdkconfig.defaults;sdkconfig.defaults.jc8048w550|esp32s3|16MB|0x0
           esp32s3-sensecap-indicator|build-sensecap-indicator|sdkconfig.esp32s3-sensecap-indicator|sdkconfig.defaults;sdkconfig.defaults.esp32s3-sensecap-indicator|esp32s3|8MB|0x0
+          esp32s3-4848s040|build-esp32s3-4848s040|sdkconfig.esp32s3-4848s040|sdkconfig.defaults;sdkconfig.defaults.esp32s3-4848s040|esp32s3|16MB|0x0
           esp32s3-JLC-SZP|build-esp32s3-jlc-szp|sdkconfig.esp32s3-JLC-SZP|sdkconfig.defaults;sdkconfig.defaults.esp32s3-JLC-SZP|esp32s3|16MB|0x0
           esp32s3-retro-go|build-esp32s3-retro-go|sdkconfig.esp32s3-retro-go|sdkconfig.defaults;sdkconfig.defaults.esp32s3-retro-go|esp32s3|16MB|0x0
           EOF
@@ -164,7 +165,7 @@ jobs:
             exit 1
           fi
 
-  # 15 个板型统一打包：只下载三个 shard 聚合 artifact，esptool 只下载一次，
+  # 17 个板型统一打包：只下载三个 shard 聚合 artifact，esptool 只下载一次，
   # 每个 board 生成与逐板打包完全等价的平铺刷机目录
   package:
     runs-on: ubuntu-latest
@@ -205,7 +206,7 @@ jobs:
       - name: Assemble per-board flash packages
         run: |
           set -e
-          BOARDS="cyd_2432s028r cyd_2432s028r_plus e32r35t esp32-st7735s-128_160-ec11 esp32-st7789-320_240-ec11 esp32-ILI9341-320_240-ec11 esp32-ST7796-320_240-ec11 esp32s3-st7789-320_240-ec11 esp32s3-st7796-480_320-xpt2046-ec11 esp32s3-ILI9488-480_320-xpt2046-ec11 esp32s3-ILI9341-320_240-xpt2046-ec11 esp32c3-st7789-320_240-ec11 jc8048w550 esp32s3-sensecap-indicator esp32s3-JLC-SZP esp32s3-retro-go"
+          BOARDS="cyd_2432s028r cyd_2432s028r_plus e32r35t esp32-st7735s-128_160-ec11 esp32-st7789-320_240-ec11 esp32-ILI9341-320_240-ec11 esp32-ST7796-320_240-ec11 esp32s3-st7789-320_240-ec11 esp32s3-st7796-480_320-xpt2046-ec11 esp32s3-ILI9488-480_320-xpt2046-ec11 esp32s3-ILI9341-320_240-xpt2046-ec11 esp32c3-st7789-320_240-ec11 jc8048w550 esp32s3-sensecap-indicator esp32s3-4848s040 esp32s3-JLC-SZP esp32s3-retro-go"
           for board in $BOARDS; do
             case "$board" in
               cyd_2432s028r|cyd_2432s028r_plus|e32r35t|esp32-st7735s-128_160-ec11|esp32-st7789-320_240-ec11|esp32-ILI9341-320_240-ec11|esp32-ST7796-320_240-ec11)
@@ -232,7 +233,7 @@ jobs:
             ls "$dest"
           done
           count=$(ls -d pkg/ESP-IDFv5.5-* | wc -l)
-          [ "$count" -eq 16 ] || { echo "::error::expected 16 board packages, got $count"; exit 1; }
+          [ "$count" -eq 17 ] || { echo "::error::expected 17 board packages, got $count"; exit 1; }
 
       # 聚合 package artifact：内部按 ESP-IDFv5.5-<board> 目录划分
       - uses: actions/upload-artifact@v4
@@ -643,7 +644,7 @@ jobs:
         # 文档站板型页的下载链接依赖这一点
         run: |
           count=$(ls -d dl/pkg/ESP-IDFv5.5-* | wc -l)
-          [ "$count" -eq 16 ] || { echo "::error::expected 16 board packages, got $count"; exit 1; }
+          [ "$count" -eq 17 ] || { echo "::error::expected 17 board packages, got $count"; exit 1; }
           for d in dl/pkg/ESP-IDFv5.5-*; do
             b=$(basename "$d")
             (cd "$d" && zip -r "$GITHUB_WORKSPACE/$b.zip" .)

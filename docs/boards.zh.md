@@ -3,7 +3,7 @@
 固件板型按芯片分族，桌面/移动客户端按平台分。接线、引脚表与各板注意事项都在子页面：
 
 - **[ESP32 板型](boards/esp32.md)** —— CYD 2432S028R / 2432S028R-PLUS、E32R35T，以及 ST7735S / ST7789 / ILI9341 / ST7796 纯旋钮机型
-- **[ESP32-S3 板型](boards/esp32s3.md)** —— EC11 参考机型、MKS TS35 / PI-TS35 孪生机型、JC8048W550、SenseCAP Indicator、立创实战派、retro-go
+- **[ESP32-S3 板型](boards/esp32s3.md)** —— EC11 参考机型、MKS TS35 / PI-TS35 孪生机型、JC8048W550、SenseCAP Indicator、Guition ESP32-4848S040、立创实战派、retro-go
 - **[ESP32-C3 板型](boards/esp32c3.md)** —— 合宙 CORE / Super Mini 纯旋钮机型
 - **[Seeed Wio Terminal](boards/wio-terminal.md)** —— SAMD51 + ILI9341 + 五向开关，含 RTL8720DN 固件及 USB 排障
 - **[Linux 客户端](boards/linux.md)** —— 直接在打印机的 Linux 上位机上跑同一套 UI
@@ -27,6 +27,7 @@
 | [esp32s3-ILI9341-320_240-xpt2046-ec11](boards/esp32s3.md#esp32s3-ili9341-320_240-xpt2046-ec11) | `esp32s3-ILI9341-320_240-xpt2046-ec11` | 320×240 ILI9341 SPI | XPT2046 电阻（共总线）+ EC11 | ESP32-S3 N16R8 / 16MB | 🆕 新机型 |
 | [JC8048W550](boards/esp32s3.md#jc8048w550) | `jc8048w550` | 5" 800×480 ST7262 RGB 并口 | GT911 电容 | ESP32-S3 / 16MB | ✅ 稳定 |
 | [SenseCAP Indicator](boards/esp32s3.md#sensecap-indicator) | `esp32s3-sensecap-indicator` | 4" 480×480 ST7701S RGB 并口 | FT5x06 电容 | ESP32-S3 N8R8 / 8MB | 🆕 新机型 |
+| [Guition ESP32-4848S040](boards/esp32s3.md#guition-esp32-4848s040) | `esp32s3-4848s040` | 4.0" 480×480 ST7701S RGB 并口 | GT911 电容 | ESP32-S3 N16R8 / 16MB | 🚧 WIP（待实机验证） |
 | [立创实战派（JLC SZP）ESP32-S3](boards/esp32s3.md#jlc-szp-esp32-s3) | `esp32s3-JLC-SZP` | 2.0" 240×320 ST7789 SPI | FT6336 电容 | ESP32-S3 N16R8 / 16MB | ✅ 已实机验证 |
 | [esp32s3-retro-go](boards/esp32s3.md#esp32s3-retro-go) | `esp32s3-retro-go` | 3.2" 240×320 ST7789 SPI | 无，GPIO 按键 | ESP32-S3 / 16MB | 🆕 新机型 |
 | [esp32c3-st7789-320_240-ec11](boards/esp32c3.md#esp32c3-st7789-320_240-ec11) | `esp32c3-st7789-320_240-ec11` | 240×320 ST7789 SPI | 无，纯旋钮 | ESP32-C3 / 4MB | 🆕 新机型，合宙 CORE/Super Mini 通用 |
@@ -51,6 +52,7 @@ ESP32 刷机包命名为 `ESP-IDFv5.5-<board>.zip`，Wio Terminal 则直接使�
 | esp32s3-ILI9341-320_240-xpt2046-ec11 | [ESP-IDFv5.5-esp32s3-ILI9341-320_240-xpt2046-ec11.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/ESP-IDFv5.5-esp32s3-ILI9341-320_240-xpt2046-ec11.zip) |
 | JC8048W550 | [ESP-IDFv5.5-jc8048w550.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/ESP-IDFv5.5-jc8048w550.zip) |
 | SenseCAP Indicator | [ESP-IDFv5.5-esp32s3-sensecap-indicator.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/ESP-IDFv5.5-esp32s3-sensecap-indicator.zip) |
+| Guition ESP32-4848S040 | [ESP-IDFv5.5-esp32s3-4848s040.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/ESP-IDFv5.5-esp32s3-4848s040.zip) |
 | 立创实战派 ESP32-S3 | [ESP-IDFv5.5-esp32s3-JLC-SZP.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/ESP-IDFv5.5-esp32s3-JLC-SZP.zip) |
 | esp32s3-retro-go | [ESP-IDFv5.5-esp32s3-retro-go.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/ESP-IDFv5.5-esp32s3-retro-go.zip) |
 | esp32c3-st7789-320_240-ec11 | [ESP-IDFv5.5-esp32c3-st7789-320_240-ec11.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/ESP-IDFv5.5-esp32c3-st7789-320_240-ec11.zip) |

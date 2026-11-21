@@ -183,6 +183,35 @@
 | 触摸 + 扩展器 SDA / SCL | 39 / 40 | I2C0 @ 100kHz |
 | 侧键（息屏/唤醒） | 38 | 低电平有效，内部上拉 |
 
+## Guition ESP32-4848S040
+
+**刷机包**: [ESP-IDFv5.5-esp32s3-4848s040.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/ESP-IDFv5.5-esp32s3-4848s040.zip)
+
+*启明智显（Guition / 深圳晶彩）4.0" 480×480 方形电容屏模组（覆盖裸板 `ESP32-4848S040C_I` 以及单路/三路继电器变体 `_I_Y_1` / `_I_Y_3`，显示与触摸引脚一致）。硬件参数依据 [Espressif ESP32_Display_Panel](https://github.com/esp-arduino-libs/ESP32_Display_Panel/blob/master/src/board/supported/jingcai/BOARD_JINGCAI_ESP32_4848S040C_I_Y_3.h)、[ESPHome](https://devices.esphome.io/devices/Guition-ESP32-S3-4848S040) 与 [openHASP](https://github.com/HASwitchPlate/openHASP/blob/master/user_setups/esp32s3/esp32-s3-4848S040.ini) 交叉核对。**WIP —— 尚未在实机上验证。***
+
+逻辑分辨率 **480×480**。
+
+- 主控：ESP32-S3-WROOM-1-N16R8，16MB QIO Flash + 8MB Octal PSRAM @ 80MHz
+- 显示：ST7701S RGB 并口（RGB565），PCLK 12MHz（约 42fps）；与 JC8048W550 / SenseCAP Indicator 同款自研 **rgb44** 驱动（LVGL DIRECT 双帧缓冲放 PSRAM）。面板初始化走位 bang 3 线 9-bit SPI（CS=GPIO39、SCK=GPIO48、MOSI=GPIO47，SPI mode 0）；无硬件复位脚（初始化先发 SWRESET `0x01`），`0xCD=0x00`（关 MDT）、RGB 色序、反色关闭（`0x20`）
+- 触摸：GT911 电容屏，I2C0（SDA=GPIO19、SCL=GPIO45），无 RST/INT 轮询，自动探测 `0x5D` 并在未应答时回退 `0x14`，无需校准
+- 背光：GPIO38，LEDC PWM @ 1kHz，高电平点亮
+- 息屏/唤醒：无独立息屏按键——**GPIO0（BOOT）硬连到 LCD R4**，不能作为按键输入；支持自动息屏超时与触摸唤醒
+- 烧录与串口控制台：板载 CH340 走 UART0（GPIO43/44，115200 8N1），GPIO19/20 已分别给触摸 SDA 与 LCD G1 使用
+- 板载 TF 卡槽（GPIO41/42/47/48）与可选继电器 / I2S 音频脚（GPIO1/2/40）**本固件均未使用**
+
+| 功能 | GPIO | 备注 |
+|---|---|---|
+| LCD HSYNC / VSYNC / DE / PCLK | 16 / 17 / 18 / 21 | RGB 并口 @ 12MHz |
+| LCD B0..B4 | 4, 5, 6, 7, 15 | |
+| LCD G0..G5 | 8, 20, 3, 46, 9, 10 | |
+| LCD R0..R4 | 11, 12, 13, 14, 0 | GPIO0 与 BOOT 复用（不可绑定为按键） |
+| LCD 背光 | 38 | LEDC PWM @ 1kHz，高电平点亮 |
+| 初始化 SPI CS / SCK / MOSI | 39 / 48 / 47 | 位 bang 3 线 9-bit，SPI mode 0；无硬件 LCD RST |
+| 触摸 SDA / SCL | 19 / 45 | GT911，I2C0（`0x5D` / `0x14`），无 RST/INT |
+| UART0 TXD / RXD | 43 / 44 | CH340 USB-C 串口与烧录 |
+| 继电器 1..3 / I2S 音频 | 40 / 2 / 1 | 本固件未使用 |
+| TF 卡 MISO / CS | 41 / 42 | 本固件未使用（SCK/MOSI 与 48/47 共线） |
+
 ## 立创实战派（JLC SZP ESP32-S3）
 
 **刷机包**: [ESP-IDFv5.5-esp32s3-JLC-SZP.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/ESP-IDFv5.5-esp32s3-JLC-SZP.zip)

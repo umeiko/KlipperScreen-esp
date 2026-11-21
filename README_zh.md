@@ -81,7 +81,7 @@ curl -fsSL https://raw.githubusercontent.com/umeiko/KlipperScreen-esp/main/scrip
 
 ```bash
 bash tools/build-desktop.sh                       # 桌面端（控制端 KlipperScreen-esp + 模拟器）
-bash tools/build-esp32.sh <board> build           # ESP32 固件（16 种板型）
+bash tools/build-esp32.sh <board> build           # ESP32 固件（17 种板型）
 bash tools/build-esp32.sh <board> flash COMx      # 构建并烧录
 platformio run -d src/ports/wio_terminal -e wio-terminal  # Wio Terminal
 ```

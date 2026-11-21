@@ -4,7 +4,7 @@
 #   tools/build-esp32.sh <board> build          构建
 #   tools/build-esp32.sh <board> flash <port>   构建+烧录（如 COM6 / /dev/ttyUSB0）
 #   tools/build-esp32.sh <board> menuconfig     打开 menuconfig（Board selection 里可改板型）
-#   board: cyd_2432s028r | cyd_2432s028r_plus | e32r35t | esp32s3-st7789-320_240-ec11 | esp32-st7735s-128_160-ec11 | esp32-st7789-320_240-ec11 | esp32-ILI9341-320_240-ec11 | esp32-ST7796-320_240-ec11 | esp32s3-st7796-480_320-xpt2046-ec11 | esp32s3-ILI9488-480_320-xpt2046-ec11 | esp32s3-ILI9341-320_240-xpt2046-ec11 | esp32c3-st7789-320_240-ec11 | jc8048w550 | esp32s3-sensecap-indicator | esp32s3-JLC-SZP | esp32s3-retro-go | all
+#   board: cyd_2432s028r | cyd_2432s028r_plus | e32r35t | esp32s3-st7789-320_240-ec11 | esp32-st7735s-128_160-ec11 | esp32-st7789-320_240-ec11 | esp32-ILI9341-320_240-ec11 | esp32-ST7796-320_240-ec11 | esp32s3-st7796-480_320-xpt2046-ec11 | esp32s3-ILI9488-480_320-xpt2046-ec11 | esp32s3-ILI9341-320_240-xpt2046-ec11 | esp32c3-st7789-320_240-ec11 | jc8048w550 | esp32s3-sensecap-indicator | esp32s3-4848s040 | esp32s3-JLC-SZP | esp32s3-retro-go | all
 #
 # 每板型独立的构建目录与 sdkconfig（芯片目标不同，不能混用）：
 #   cyd_2432s028r → ESP32   → build/             sdkconfig（仓库已有完整文件）
@@ -21,6 +21,7 @@
 #   esp32c3-st7789-320_240-ec11 → ESP32-C3 + ST7789 320x240 + EC11（合宙 CORE USB 直连版/Super Mini）→ build-esp32c3-st7789-ec11/ sdkconfig.esp32c3-st7789-320_240-ec11
 #   jc8048w550    → ESP32-S3 → build-jc8048w550/ sdkconfig.jc8048w550（首次构建由 defaults 生成）
 #   esp32s3-sensecap-indicator → Seeed SenseCAP Indicator（ESP32-S3 + 4" 480x480 ST7701S RGB + FT5x06）→ build-sensecap-indicator/ sdkconfig.esp32s3-sensecap-indicator
+#   esp32s3-4848s040 → Guition ESP32-4848S040（ESP32-S3 + 4.0" 480x480 ST7701S RGB + GT911）→ build-esp32s3-4848s040/ sdkconfig.esp32s3-4848s040
 #   esp32s3-JLC-SZP → 立创实战派 ESP32-S3 → build-esp32s3-jlc-szp/ sdkconfig.esp32s3-JLC-SZP（首次构建由 defaults 生成）
 #   esp32s3-retro-go → Chaeng retro-go ESP32-S3 掌机 → build-esp32s3-retro-go/ sdkconfig.esp32s3-retro-go（首次构建由 defaults 生成）
 set -e
@@ -71,13 +72,16 @@ board_conf() {
         esp32s3-sensecap-indicator)
             TARGET=esp32s3; BDIR=build-sensecap-indicator; SDKCFG=sdkconfig.esp32s3-sensecap-indicator
             DEFS="sdkconfig.defaults;sdkconfig.defaults.esp32s3-sensecap-indicator" ;;
+        esp32s3-4848s040)
+            TARGET=esp32s3; BDIR=build-esp32s3-4848s040; SDKCFG=sdkconfig.esp32s3-4848s040
+            DEFS="sdkconfig.defaults;sdkconfig.defaults.esp32s3-4848s040" ;;
         esp32s3-JLC-SZP)
             TARGET=esp32s3; BDIR=build-esp32s3-jlc-szp; SDKCFG=sdkconfig.esp32s3-JLC-SZP
             DEFS="sdkconfig.defaults;sdkconfig.defaults.esp32s3-JLC-SZP" ;;
         esp32s3-retro-go)
             TARGET=esp32s3; BDIR=build-esp32s3-retro-go; SDKCFG=sdkconfig.esp32s3-retro-go
             DEFS="sdkconfig.defaults;sdkconfig.defaults.esp32s3-retro-go" ;;
-        *) echo "unknown board: $1 (cyd_2432s028r | cyd_2432s028r_plus | e32r35t | esp32s3-st7789-320_240-ec11 | esp32-st7735s-128_160-ec11 | esp32-st7789-320_240-ec11 | esp32-ILI9341-320_240-ec11 | esp32-ST7796-320_240-ec11 | esp32s3-st7796-480_320-xpt2046-ec11 | esp32s3-ILI9488-480_320-xpt2046-ec11 | esp32s3-ILI9341-320_240-xpt2046-ec11 | esp32c3-st7789-320_240-ec11 | jc8048w550 | esp32s3-sensecap-indicator | esp32s3-JLC-SZP | esp32s3-retro-go | all)" >&2; exit 1 ;;
+        *) echo "unknown board: $1 (cyd_2432s028r | cyd_2432s028r_plus | e32r35t | esp32s3-st7789-320_240-ec11 | esp32-st7735s-128_160-ec11 | esp32-st7789-320_240-ec11 | esp32-ILI9341-320_240-ec11 | esp32-ST7796-320_240-ec11 | esp32s3-st7796-480_320-xpt2046-ec11 | esp32s3-ILI9488-480_320-xpt2046-ec11 | esp32s3-ILI9341-320_240-xpt2046-ec11 | esp32c3-st7789-320_240-ec11 | jc8048w550 | esp32s3-sensecap-indicator | esp32s3-4848s040 | esp32s3-JLC-SZP | esp32s3-retro-go | all)" >&2; exit 1 ;;
     esac
 }
 
@@ -163,6 +167,7 @@ if [ "$BOARD" = all ]; then
     build_one esp32c3-st7789-320_240-ec11
     build_one jc8048w550
     build_one esp32s3-sensecap-indicator
+    build_one esp32s3-4848s040
     build_one esp32s3-JLC-SZP
     build_one esp32s3-retro-go
     exit 0

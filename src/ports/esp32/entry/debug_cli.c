@@ -393,7 +393,7 @@ static void cli_handle(char *line)
         moonraker_start();
         printf("moonraker_start() called\n");
     } else if (!strcmp(line, "lcdstat")) {
-#if CONFIG_BOARD_JC8048W550 || CONFIG_BOARD_SENSECAP_INDICATOR
+#if CONFIG_BOARD_JC8048W550 || CONFIG_BOARD_SENSECAP_INDICATOR || CONFIG_BOARD_ESP32S3_4848S040
         extern void bsp_lcd_stats_print(void);
         int secs = args ? atoi(args) : 0;
         if (secs > 0) {
@@ -404,7 +404,7 @@ static void cli_handle(char *line)
         }
         bsp_lcd_stats_print();
 #else
-        printf("lcdstat: 仅 rgb44 机型（JC8048W550 / SenseCAP Indicator）支持\n");
+        printf("lcdstat: 仅 rgb44 机型（JC8048W550 / SenseCAP Indicator / ESP32-4848S040）支持\n");
 #endif
     } else if (!strcmp(line, "status")) {
         char clock[24] = "unsynced";
