@@ -16,8 +16,8 @@ extern "C" {
 #endif
 
 typedef enum {
-    UI_LANG_ZH = 0,  /* 简体中文（language=zh，默认） */
-    UI_LANG_EN,      /* English（language=en） */
+    UI_LANG_ZH = 0,  /* 简体中文（language=zh） */
+    UI_LANG_EN,      /* English（language=en，默认） */
     UI_LANG_ZH_TW,   /* 繁體中文（language=tw） */
     UI_LANG_FR,      /* Français（language=fr） */
     UI_LANG_IT,      /* Italiano（language=it） */
@@ -31,7 +31,7 @@ ui_lang_t ui_lang_get(void);
 unsigned ui_lang_count(void);
 const char *ui_lang_code(ui_lang_t l);          /* 配置文件用的代码："zh"/"en"/"tw"/"fr"/"it" */
 const char *ui_lang_name(ui_lang_t l);          /* 下拉框显示名（各语言母语，不做翻译） */
-ui_lang_t ui_lang_from_code(const char *code);  /* 未知/空代码回退 UI_LANG_ZH */
+ui_lang_t ui_lang_from_code(const char *code);  /* 未知/空代码回退 UI_LANG_EN */
 
 /* 查表翻译；无匹配（数字/文件名/纯 ASCII 等）原样返回 */
 const char *ui_tr(const char *zh);

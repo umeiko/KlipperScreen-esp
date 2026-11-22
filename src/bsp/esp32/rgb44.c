@@ -2,7 +2,7 @@
  * v2：支持双帧缓冲 + vsync 换页（DIRECT 渲染模式下消除撕裂）
  * 排障全程见 docs/jc8048w550-rgb-display-guide.md */
 #include "sdkconfig.h"
-#if CONFIG_BOARD_JC8048W550 || CONFIG_BOARD_SENSECAP_INDICATOR
+#if CONFIG_BOARD_JC8048W550 || CONFIG_BOARD_SENSECAP_INDICATOR || CONFIG_BOARD_ESP32S3_4848S040
 
 #include "rgb44.h"
 
@@ -347,4 +347,4 @@ esp_err_t rgb44_disp_on_off(rgb44_handle_t h, bool on)
     return ESP_OK;
 }
 
-#endif /* CONFIG_BOARD_JC8048W550 || CONFIG_BOARD_SENSECAP_INDICATOR */
+#endif /* CONFIG_BOARD_JC8048W550 || CONFIG_BOARD_SENSECAP_INDICATOR || CONFIG_BOARD_ESP32S3_4848S040 */

@@ -122,7 +122,7 @@ static int huge(void)  { return scale_f >= 3.0f; }
 #elif defined(CONFIG_BOARD_JC8048W550)
 #define UI_FONT_BIG 1
 #define UI_FONT_MIN 1   /* 最小子集（排障：缩小 flash 字形表的 XIP 流量），置 0 回全表 */
-#elif defined(CONFIG_BOARD_SENSECAP_INDICATOR)
+#elif defined(CONFIG_BOARD_SENSECAP_INDICATOR) || defined(CONFIG_BOARD_ESP32S3_4848S040)
 #define UI_FONT_BIG 1   /* 480x480，scale 2.0 → 28/32 档 */
 #define UI_FONT_MIN 0   /* 全表 GB2312：PCLK 12MHz 带宽余量比 JC8048 大，实测无抽动 */
 #elif defined(KR_WIO_TERMINAL)

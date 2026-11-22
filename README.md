@@ -78,7 +78,7 @@ Toolchain: **ESP-IDF v5.5.5** · **LVGL v9.3** · SDL2 (desktop).
 
 ```bash
 bash tools/build-desktop.sh                       # desktop (KlipperScreen-esp controller + simulator)
-bash tools/build-esp32.sh <board> build           # ESP32 firmware (16 boards)
+bash tools/build-esp32.sh <board> build           # ESP32 firmware (17 boards)
 bash tools/build-esp32.sh <board> flash COMx      # build and flash
 platformio run -d src/ports/wio_terminal -e wio-terminal  # Wio Terminal
 ```

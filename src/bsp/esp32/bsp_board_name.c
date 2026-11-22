@@ -17,6 +17,8 @@ const char *bsp_board_name(void)
     return "jc8048w550";
 #elif defined(CONFIG_BOARD_SENSECAP_INDICATOR)
     return "esp32s3-sensecap-indicator";
+#elif defined(CONFIG_BOARD_ESP32S3_4848S040)
+    return "esp32s3-4848s040";
 #elif defined(CONFIG_BOARD_ESP32S3_JLC_SZP)
     return "esp32s3-JLC-SZP";
 #elif defined(CONFIG_BOARD_EC11_KNOB_MINIMAL)
