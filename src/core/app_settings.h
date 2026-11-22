@@ -71,7 +71,7 @@ bool settings_save_active_printer(int slot);
 
 /* 本机偏好（klipperscreen.conf，对齐 KlipperScreen 的偏好文件习惯）。
  * 保存均为按键更新，同一文件里的其他偏好不丢。
- * language=zh|en（缺省 zh）；brightness=0-100（缺省 100）。 */
+ * language=zh|en|tw|fr|it（缺省 en）；brightness=0-100（缺省 100）。 */
 bool settings_load_language(char *out, size_t len);
 bool settings_save_language(const char *lang);
 int  settings_load_brightness(void);

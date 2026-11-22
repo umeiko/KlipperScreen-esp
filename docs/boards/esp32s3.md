@@ -187,16 +187,18 @@ Logical resolution **480×480**.
 
 **Flash package**: [ESP-IDFv5.5-esp32s3-4848s040.zip](https://github.com/umeiko/KlipperScreen-esp/releases/latest/download/ESP-IDFv5.5-esp32s3-4848s040.zip)
 
-*Guition 4.0" 480×480 square capacitive display module (`ESP32-4848S040C_I`, as well as the 1-relay `_I_Y_1` and 3-relay `_I_Y_3` variants which share the same display and touch wiring). Hardware cross-checked against [Espressif ESP32_Display_Panel](https://github.com/esp-arduino-libs/ESP32_Display_Panel/blob/master/src/board/supported/jingcai/BOARD_JINGCAI_ESP32_4848S040C_I_Y_3.h), [ESPHome](https://devices.esphome.io/devices/Guition-ESP32-S3-4848S040), and [openHASP](https://github.com/HASwitchPlate/openHASP/blob/master/user_setups/esp32s3/esp32-s3-4848S040.ini). **WIP — not yet verified on physical hardware.***
+![Guition ESP32-4848S040](../screenshots/boards/esp32s3_4848s040.png)
+
+*Guition 4.0" 480×480 square IPS capacitive display module (`ESP32-4848S040C_I`, as well as the 1-relay `_I_Y_1` and 3-relay `_I_Y_3` variants which share the same display and touch wiring). Product page & photo: [Guition 4-inch ESP32-S3 display module](https://www.guition.com/esp32-display-module/4-inch-esp32s3-display-module). Hardware verified on device (#12).*
 
 Logical resolution **480×480**.
 
-- MCU: ESP32-S3-WROOM-1-N16R8, 16MB QIO flash + 8MB Octal PSRAM @ 80MHz
-- Display: ST7701S RGB parallel (RGB565), PCLK 12MHz (~42fps); same custom **rgb44** driver as JC8048W550 and SenseCAP Indicator (LVGL DIRECT double framebuffer in PSRAM). Panel init runs over bit-banged 3-wire 9-bit SPI (CS=GPIO39, SCK=GPIO48, MOSI=GPIO47, SPI mode 0); no hardware RST pin (uses SWRESET `0x01`), `0xCD=0x00` (MDT off), RGB colour order, inversion off (`0x20`)
+- MCU: ESP32-S3R8 (dual-core 240MHz, Wi-Fi / BLE), 512KB SRAM, 16MB QIO flash + 8MB Octal PSRAM @ 80MHz
+- Panel: 4.0" IPS TFT (active area 71.8×70.2 mm, module 86.5×86.5×37.8 mm, 5V / ~260mA), ST7701S RGB parallel (16-bit RGB565), PCLK 12MHz (~42fps); same custom **rgb44** driver as JC8048W550 and SenseCAP Indicator (LVGL DIRECT double framebuffer in PSRAM). Panel init runs over bit-banged 3-wire 9-bit SPI (CS=GPIO39, SCK=GPIO48, MOSI=GPIO47, SPI mode 0); no hardware RST pin (uses SWRESET `0x01`), `0xCD=0x00` (MDT off), RGB colour order, inversion off (`0x20`)
 - Touch: GT911 capacitive on I2C0 (SDA=GPIO19, SCL=GPIO45), polled without RST/INT, probes `0x5D` with `0x14` fallback, no calibration needed
 - Backlight: GPIO38, LEDC PWM @ 1kHz, active high
 - Screen off / wake: no dedicated sleep button — **GPIO0 (BOOT) is wired to LCD R4** and cannot be used as a button input; relies on auto screen-off timeout and touch-to-wake
-- Flash / serial console: CH340 USB-to-UART on UART0 (GPIO43/44, 115200 8N1) — GPIO19/20 are used by touch SDA and LCD G1
+- Flash / serial console: CH340 USB-to-UART on UART0 (GPIO43/44, 115200 8N1) — GPIO19/20 are used by touch SDA and LCD G1. Auto-download works directly over USB-C without holding any button (also flashable from Chromium-based browsers via WebSerial / ESP Web Tools with the matching offsets)
 - The on-board microSD slot (GPIO41/42/47/48) and optional relay / I2S audio lines (GPIO1/2/40) are **unused by this firmware**
 
 | Function | GPIO | Notes |

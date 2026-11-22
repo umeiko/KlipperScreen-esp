@@ -27,7 +27,7 @@
 | [esp32s3-ILI9341-320_240-xpt2046-ec11](boards/esp32s3.md#esp32s3-ili9341-320_240-xpt2046-ec11) | `esp32s3-ILI9341-320_240-xpt2046-ec11` | 320×240 ILI9341 SPI | XPT2046 电阻（共总线）+ EC11 | ESP32-S3 N16R8 / 16MB | 🆕 新机型 |
 | [JC8048W550](boards/esp32s3.md#jc8048w550) | `jc8048w550` | 5" 800×480 ST7262 RGB 并口 | GT911 电容 | ESP32-S3 / 16MB | ✅ 稳定 |
 | [SenseCAP Indicator](boards/esp32s3.md#sensecap-indicator) | `esp32s3-sensecap-indicator` | 4" 480×480 ST7701S RGB 并口 | FT5x06 电容 | ESP32-S3 N8R8 / 8MB | 🆕 新机型 |
-| [Guition ESP32-4848S040](boards/esp32s3.md#guition-esp32-4848s040) | `esp32s3-4848s040` | 4.0" 480×480 ST7701S RGB 并口 | GT911 电容 | ESP32-S3 N16R8 / 16MB | 🚧 WIP（待实机验证） |
+| [Guition ESP32-4848S040](boards/esp32s3.md#guition-esp32-4848s040) | `esp32s3-4848s040` | 4.0" 480×480 ST7701S RGB 并口 | GT911 电容 | ESP32-S3 N16R8 / 16MB | ✅ 已实机验证 |
 | [立创实战派（JLC SZP）ESP32-S3](boards/esp32s3.md#jlc-szp-esp32-s3) | `esp32s3-JLC-SZP` | 2.0" 240×320 ST7789 SPI | FT6336 电容 | ESP32-S3 N16R8 / 16MB | ✅ 已实机验证 |
 | [esp32s3-retro-go](boards/esp32s3.md#esp32s3-retro-go) | `esp32s3-retro-go` | 3.2" 240×320 ST7789 SPI | 无，GPIO 按键 | ESP32-S3 / 16MB | 🆕 新机型 |
 | [esp32c3-st7789-320_240-ec11](boards/esp32c3.md#esp32c3-st7789-320_240-ec11) | `esp32c3-st7789-320_240-ec11` | 240×320 ST7789 SPI | 无，纯旋钮 | ESP32-C3 / 4MB | 🆕 新机型，合宙 CORE/Super Mini 通用 |

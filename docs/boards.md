@@ -27,7 +27,7 @@ Firmware boards are grouped by chip family, desktop/mobile clients by platform. 
 | [esp32s3-ILI9341-320_240-xpt2046-ec11](boards/esp32s3.md#esp32s3-ili9341-320_240-xpt2046-ec11) | `esp32s3-ILI9341-320_240-xpt2046-ec11` | 320×240 ILI9341 SPI | XPT2046 resistive (shared bus) + EC11 | ESP32-S3 N16R8 / 16MB | 🆕 New |
 | [JC8048W550](boards/esp32s3.md#jc8048w550) | `jc8048w550` | 5" 800×480 ST7262 RGB parallel | GT911 capacitive | ESP32-S3 / 16MB | ✅ Stable |
 | [SenseCAP Indicator](boards/esp32s3.md#sensecap-indicator) | `esp32s3-sensecap-indicator` | 4" 480×480 ST7701S RGB parallel | FT5x06 capacitive | ESP32-S3 N8R8 / 8MB | 🆕 New |
-| [Guition ESP32-4848S040](boards/esp32s3.md#guition-esp32-4848s040) | `esp32s3-4848s040` | 4.0" 480×480 ST7701S RGB parallel | GT911 capacitive | ESP32-S3 N16R8 / 16MB | 🚧 WIP (untested on hardware) |
+| [Guition ESP32-4848S040](boards/esp32s3.md#guition-esp32-4848s040) | `esp32s3-4848s040` | 4.0" 480×480 ST7701S RGB parallel | GT911 capacitive | ESP32-S3 N16R8 / 16MB | ✅ Verified |
 | [JLC SZP ESP32-S3](boards/esp32s3.md#jlc-szp-esp32-s3) | `esp32s3-JLC-SZP` | 2.0" 240×320 ST7789 SPI | FT6336 capacitive | ESP32-S3 N16R8 / 16MB | ✅ Verified |
 | [esp32s3-retro-go](boards/esp32s3.md#esp32s3-retro-go) | `esp32s3-retro-go` | 3.2" 240×320 ST7789 SPI | None, GPIO buttons | ESP32-S3 / 16MB | 🆕 New |
 | [esp32c3-st7789-320_240-ec11](boards/esp32c3.md#esp32c3-st7789-320_240-ec11) | `esp32c3-st7789-320_240-ec11` | 240×320 ST7789 SPI | None, rotary only | ESP32-C3 / 4MB | 🆕 New, LuatOS CORE & Super Mini |

@@ -431,7 +431,7 @@ static bool conf_update_key(const char *file, const char *key, const char *val)
 
 bool settings_load_language(char *out, size_t len)
 {
-    if (len) { out[0] = 0; strncat(out, "zh", len - 1); }   /* 缺省中文 */
+    if (len) { out[0] = 0; strncat(out, "en", len - 1); }   /* 缺省英文 */
     char *buf = conf_load("klipperscreen.conf");
     if (!buf) return false;
     bool ok = kv_get(buf, "language", out, len);

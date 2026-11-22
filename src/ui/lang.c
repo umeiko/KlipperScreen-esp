@@ -8,7 +8,7 @@
 #include "bsp_caps.h"
 #include <string.h>
 
-static ui_lang_t cur = UI_LANG_ZH;
+static ui_lang_t cur = UI_LANG_EN;
 
 /* 语言注册表：顺序即设置面板下拉框顺序，与 ui_lang_t 枚举一一对应 */
 static const struct { ui_lang_t lang; const char *code; const char *name; } langs[] = {
@@ -427,14 +427,14 @@ const char *ui_lang_code(ui_lang_t l)
 {
     for (unsigned i = 0; i < ui_lang_count(); i++)
         if (langs[i].lang == l) return langs[i].code;
-    return "zh";
+    return "en";
 }
 
 const char *ui_lang_name(ui_lang_t l)
 {
     for (unsigned i = 0; i < ui_lang_count(); i++)
         if (langs[i].lang == l) return langs[i].name;
-    return langs[0].name;
+    return langs[UI_LANG_EN].name;
 }
 
 ui_lang_t ui_lang_from_code(const char *code)
@@ -442,7 +442,7 @@ ui_lang_t ui_lang_from_code(const char *code)
     if (code)
         for (unsigned i = 0; i < ui_lang_count(); i++)
             if (strcmp(langs[i].code, code) == 0) return langs[i].lang;
-    return UI_LANG_ZH;
+    return UI_LANG_EN;
 }
 
 static const char *entry_tr(const dict_entry_t *d, ui_lang_t l)
@@ -470,7 +470,7 @@ const char *ui_tr(const char *zh)
 
 void ui_lang_load(void)
 {
-    char lang[8] = "zh";
+    char lang[8] = "en";
     settings_load_language(lang, sizeof(lang));
     cur = ui_lang_from_code(lang);
 }
