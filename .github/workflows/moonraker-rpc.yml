@@ -1,0 +1,26 @@
+name: Moonraker RPC regression
+
+on:
+  pull_request:
+    paths:
+      - src/core/moonraker_client.c
+      - tests/test_moonraker_rpc.py
+      - .github/workflows/moonraker-rpc.yml
+  push:
+    branches: [main]
+    paths:
+      - src/core/moonraker_client.c
+      - tests/test_moonraker_rpc.py
+      - .github/workflows/moonraker-rpc.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: ESP32 RPC serialization and failure recovery
+        run: python3 tests/test_moonraker_rpc.py

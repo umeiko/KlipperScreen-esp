@@ -181,21 +181,31 @@ static bool send_rpc_full(const char *method, const char *params_json,
     int id = alloc_pending(cb, cb_json, ud);
     if (id == 0) return false;
 
-    char frame[1024];
-    int n;
-    if (params_json)
-        n = snprintf(frame, sizeof(frame),
-                     "{\"jsonrpc\":\"2.0\",\"id\":%d,\"method\":\"%s\",\"params\":%s}",
-                     id, method, params_json);
-    else
-        n = snprintf(frame, sizeof(frame),
-                     "{\"jsonrpc\":\"2.0\",\"id\":%d,\"method\":\"%s\"}", id, method);
-    if (n <= 0 || n >= (int)sizeof(frame)) {   /* 参数太长（订阅帧走 cJSON 组装，见下） */
-        ESP_LOGE(TAG, "rpc frame too long: %s", method);
+    /* 多工具头机型的动态订阅可能超过 1KB，按参数长度分配发送帧（issue #14）。 */
+    size_t cap = strlen(method) + (params_json ? strlen(params_json) : 0) + 64;
+    char *frame = malloc(cap);
+    if (!frame) {
+        ESP_LOGE(TAG, "rpc frame alloc failed (%u bytes): %s", (unsigned)cap, method);
         free_pending(id);
         return false;
     }
-    if (esp_websocket_client_send_text(ws, frame, n, pdMS_TO_TICKS(2000)) < 0) {
+    int n;
+    if (params_json)
+        n = snprintf(frame, cap,
+                     "{\"jsonrpc\":\"2.0\",\"id\":%d,\"method\":\"%s\",\"params\":%s}",
+                     id, method, params_json);
+    else
+        n = snprintf(frame, cap,
+                     "{\"jsonrpc\":\"2.0\",\"id\":%d,\"method\":\"%s\"}", id, method);
+    if (n <= 0 || (size_t)n >= cap) {
+        ESP_LOGE(TAG, "rpc frame too long: %s", method);
+        free(frame);
+        free_pending(id);
+        return false;
+    }
+    int sent = esp_websocket_client_send_text(ws, frame, n, pdMS_TO_TICKS(2000));
+    free(frame);
+    if (sent < 0) {
         free_pending(id);   /* 发送失败：应答永远不会来，立即回收槽位 */
         return false;
     }
