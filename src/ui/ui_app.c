@@ -7,10 +7,17 @@
 #include "lang.h"
 #include "ui_nav.h"
 #include "ui_buttons.h"
+#include "bsp_caps.h"
+#if BSP_HAS_TIMEZONE_SETTINGS
+#include "app_timezone.h"
+#endif
 
 
 void ui_app_create(void)
 {
+#if BSP_HAS_TIMEZONE_SETTINGS
+    app_timezone_apply(app_timezone_current()); /* before clock/network workers start */
+#endif
     ui_layout_init();      /* 分辨率/缩放档位，须先于一切 UI 构建 */
     ui_lang_load();        /* klipperscreen.conf 的语言偏好，须先于任何 UI 构建 */
     theme_load();          /* klipperscreen.conf 的主题偏好，须先于任何 UI 构建 */
