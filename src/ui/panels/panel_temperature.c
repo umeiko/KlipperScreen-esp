@@ -23,6 +23,8 @@ static lv_obj_t *preset_row, *readonly_hint;
 static lv_obj_t *editing_row, *editing_tgt;
 static lv_timer_t *commit_timer;
 static int editing_value, sent_value, speed_score, step_size = 1;
+static int ext_tool_shown = -1;   /* 名称里已显示的喷头序号，-1=单喷头/未显示 */
+static uint32_t displayed_nozzle_id, editing_nozzle_id;
 static uint32_t last_step_at;
 
 static void update_temps(void);
@@ -35,8 +37,11 @@ static void temp_anim_cb(void *obj, int32_t v10)
 
 static void set_ext_cb(float v, int ok, void *ud)
 {
-    LV_UNUSED(ud);
     if (ok) {
+        if ((uint32_t)(uintptr_t)ud != printer_nozzle_edit_id()) {
+            ui_toast("已取消", THEME_COL_WARN);
+            return;
+        }
         v = LV_CLAMP(0, v, EXTRUDER_MAX_TEMP);
         printer_set_target_ext(v);
         ui_toast(v > 0 ? "喷嘴加热中" : "喷嘴已关闭", THEME_COL_EXTRUDER);
@@ -66,8 +71,12 @@ static void render_edit_value(void)
 static void send_edit_value(void)
 {
     if (!editing_row || editing_value == sent_value) return;
-    if (editing_is_ext()) printer_set_target_ext((float)editing_value);
-    else                  printer_set_target_bed((float)editing_value);
+    if (editing_is_ext()) {
+        if (editing_nozzle_id != printer_nozzle_edit_id()) return;
+        printer_set_target_ext((float)editing_value);
+    } else {
+        printer_set_target_bed((float)editing_value);
+    }
     sent_value = editing_value;
 }
 
@@ -89,6 +98,7 @@ static void begin_edit(lv_obj_t *row)
 {
     if (editing_row == row) return;
     editing_row = row;
+    editing_nozzle_id = displayed_nozzle_id;
     editing_tgt = row == row_ext_obj ? lbl_ext_tgt : lbl_bed_tgt;
     float target = row == row_ext_obj ? printer_target_ext() : printer_target_bed();
     editing_value = (int)(target + 0.5f);
@@ -101,17 +111,28 @@ static void begin_edit(lv_obj_t *row)
     render_edit_value();
 }
 
-static void finish_edit(void)
+static void clear_edit(void)
 {
-    if (!editing_row) return;
     if (commit_timer) {
         lv_timer_delete(commit_timer);
         commit_timer = NULL;
     }
-    send_edit_value();
-    lv_obj_set_style_text_color(editing_tgt, theme_col(THEME_COL_TEXT_DIM), 0);
     editing_row = NULL;
     editing_tgt = NULL;
+}
+
+static void cancel_edit(void)
+{
+    lv_group_t *group = lv_obj_get_group(editing_row);
+    lv_obj_set_style_text_color(editing_tgt, theme_col(THEME_COL_TEXT_DIM), 0);
+    clear_edit();
+    if (group) lv_group_set_editing(group, false);
+}
+
+static void finish_edit(void)
+{
+    send_edit_value();
+    cancel_edit();
     update_temps();
 }
 
@@ -129,9 +150,12 @@ static int accelerated_step(uint32_t now)
 
 static void on_temp_row(lv_event_t *e)
 {
-    if (!printer_has_capability(PRINTER_CAP_TEMP_CONTROL)) return;
     lv_obj_t *row = lv_event_get_target_obj(e);
     lv_event_code_t code = lv_event_get_code(e);
+    if (code == LV_EVENT_DELETE && editing_row == row) clear_edit();
+    if (!printer_has_capability(PRINTER_CAP_TEMP_CONTROL)) return;
+    if (row == row_ext_obj &&
+        (!displayed_nozzle_id || displayed_nozzle_id != printer_nozzle_edit_id())) return;
 
     if (code == LV_EVENT_FOCUSED) {
         lv_group_t *group = lv_obj_get_group(row);
@@ -157,11 +181,11 @@ static void on_temp_row(lv_event_t *e)
             if (editing_row == row) {
                 /* 编辑中按确定：提交并退出调温（释放沿触发，不会连带点开数字键盘） */
                 finish_edit();
-                lv_group_set_editing(group, false);
             } else if (t == LV_INDEV_TYPE_KEYPAD) {
                 /* 键盘/按键端：弹数字键盘输入目标温度（旋钮就地下调温用编码器按下进入） */
                 if (row == row_ext_obj)
-                    keypad_open("喷嘴目标温度", printer_target_ext(), set_ext_cb, NULL);
+                    keypad_open("喷嘴目标温度", printer_target_ext(), set_ext_cb,
+                                (void *)(uintptr_t)displayed_nozzle_id);
                 else
                     keypad_open("热床目标温度", printer_target_bed(), set_bed_cb, NULL);
             } else {
@@ -170,7 +194,8 @@ static void on_temp_row(lv_event_t *e)
             }
         } else if (t == LV_INDEV_TYPE_POINTER) {
             if (row == row_ext_obj)
-                keypad_open("喷嘴目标温度", printer_target_ext(), set_ext_cb, NULL);
+                keypad_open("喷嘴目标温度", printer_target_ext(), set_ext_cb,
+                            (void *)(uintptr_t)displayed_nozzle_id);
             else
                 keypad_open("热床目标温度", printer_target_bed(), set_bed_cb, NULL);
         }
@@ -182,8 +207,15 @@ static void on_preset(lv_event_t *e)
     if (!printer_has_capability(PRINTER_CAP_TEMP_CONTROL)) return;
     int idx = (int)(intptr_t)lv_event_get_user_data(e);
     static const struct { float e, b; const char *name; } presets[] = {
-        {210, 60, "PLA"}, {240, 80, "PETG"}, {250, 100, "ABS"}, {0, 0, "全部冷却"},
+        {210, 60, "PLA"}, {240, 80, "PETG"}, {250, 100, "ABS"},
     };
+    if (idx == 3) {
+        if (editing_row) cancel_edit();
+        printer_cooldown();
+        ui_toast("全部冷却", THEME_COL_ACCENT);
+        return;
+    }
+    if (!displayed_nozzle_id || displayed_nozzle_id != printer_nozzle_edit_id()) return;
     printer_set_target_ext(presets[idx].e);
     printer_set_target_bed(presets[idx].b);
     ui_toast(presets[idx].name, THEME_COL_ACCENT);
@@ -229,20 +261,30 @@ static lv_obj_t *make_row(lv_obj_t *parent, const char *name, uint32_t col,
 static void update_temps(void)
 {
     bool writable = printer_has_capability(PRINTER_CAP_TEMP_CONTROL);
+    uint32_t nozzle_id = printer_nozzle_edit_id();
+    if (editing_row && (!writable || (editing_is_ext() && editing_nozzle_id != nozzle_id)))
+        cancel_edit();
+    if (displayed_nozzle_id != nozzle_id) {
+        lv_anim_delete(lbl_ext_cur, temp_anim_cb);
+        ext_shown10 = -1;
+        displayed_nozzle_id = nozzle_id;
+    }
     lv_obj_set_flag(preset_row, LV_OBJ_FLAG_HIDDEN, !writable);
     lv_obj_set_flag(readonly_hint, LV_OBJ_FLAG_HIDDEN, writable);
-    if (writable) {
-        lv_obj_remove_state(row_ext_obj, LV_STATE_DISABLED);
-        lv_obj_remove_state(row_bed_obj, LV_STATE_DISABLED);
-    } else {
-        if (editing_row) {
-            if (commit_timer) { lv_timer_delete(commit_timer); commit_timer = NULL; }
-            lv_obj_set_style_text_color(editing_tgt, theme_col(THEME_COL_TEXT_DIM), 0);
-            editing_row = NULL;
-            editing_tgt = NULL;
-        }
-        lv_obj_add_state(row_ext_obj, LV_STATE_DISABLED);
-        lv_obj_add_state(row_bed_obj, LV_STATE_DISABLED);
+    lv_obj_set_state(row_ext_obj, LV_STATE_DISABLED, !writable || !nozzle_id);
+    lv_obj_set_state(row_bed_obj, LV_STATE_DISABLED, !writable);
+
+    /* 多喷头机型在名称后标出当前活动喷头（Klipper 序号 T0..Tn），
+       让用户知道读数和设定作用于哪一个喷头。 */
+    lv_obj_t *ext_name = lv_obj_get_child(row_ext_obj, 1);   /* make_row: 0=图标 1=名称 */
+    int active = printer_active_extruder();
+    int tool = printer_extruder_count() > 1 || active > 0 ? active : -1;
+    if (ext_name && tool != ext_tool_shown) {
+        if (tool >= 0)
+            lv_label_set_text_fmt(ext_name, "%s T%d", ui_tr("喷嘴"), tool);
+        else
+            lv_label_set_text(ext_name, ui_tr("喷嘴"));
+        ext_tool_shown = tool;
     }
 
     int e10 = (int)(printer_temp_ext() * 10);
@@ -257,8 +299,12 @@ static void update_temps(void)
     }
     ext_shown10 = e10;
     bed_shown10 = b10;
-    if (editing_tgt != lbl_ext_tgt)
+    if (writable && !nozzle_id) {
+        lv_label_set_text(lbl_ext_cur, "--");
+        lv_label_set_text(lbl_ext_tgt, "/--");
+    } else if (editing_tgt != lbl_ext_tgt) {
         lv_label_set_text_fmt(lbl_ext_tgt, "/%d" "\xC2\xB0", (int)(printer_target_ext() + 0.5f));
+    }
     if (editing_tgt != lbl_bed_tgt)
         lv_label_set_text_fmt(lbl_bed_tgt, "/%d" "\xC2\xB0", (int)(printer_target_bed() + 0.5f));
 }
@@ -274,6 +320,8 @@ static lv_obj_t *create(void)
     int reserve_bottom = ui_px(36) + ui_px(12) + gap;   /* 预设行高 + 底边距 + 间隔 */
     int card_h = (ui_scr_h() - y0 - reserve_bottom - gap) / 2;
 
+    ext_tool_shown = -1;   /* 新建的名称标签是默认文本 */
+    displayed_nozzle_id = 0;
     row_ext_obj = make_row(scr, "喷嘴", THEME_COL_EXTRUDER, ui_icon(&img_nozzle_32, NULL), card_h,
                            &lbl_ext_cur, &lbl_ext_tgt);
     lv_obj_align(row_ext_obj, LV_ALIGN_TOP_MID, 0, y0);

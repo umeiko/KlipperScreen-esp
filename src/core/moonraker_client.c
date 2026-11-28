@@ -107,12 +107,17 @@ static esp_timer_handle_t subscribe_timer; /* 订阅发送失败的 2s 重试 */
 
 static uint32_t now_s(void) { return (uint32_t)(esp_timer_get_time() / 1000000); }
 
-static void apply_in_lvgl(void *p)
+static void apply_status_in_lvgl(void *p)
 {
-    status_async_queued = false;
     last_status_apply_s = now_s();
     status_strikes = 0;
     printer_model_apply_status_json((char *)p);   /* 内部负责 free */
+}
+
+static void apply_in_lvgl(void *p)
+{
+    status_async_queued = false;
+    apply_status_in_lvgl(p);
 }
 
 static void set_online_in_lvgl(void *p)
@@ -135,18 +140,34 @@ static void report_rtt_in_lvgl(void *p)
     printer_model_set_rtt((int)(intptr_t)p);
 }
 
-/* status 子对象（cJSON，属于 msg 树）序列化后投递；调用方之后负责删 msg 树。
-   有在途投递时直接丢弃本次快照（在途去重，见 apply_in_lvgl 上方注释） */
-static void post_status(cJSON *status_obj)
+/* 换头和目标温度只在变化时推送，不能像普通测温帧那样丢弃。 */
+static bool has_nozzle_change(cJSON *status)
 {
-    if (!status_obj || status_async_queued) return;
+    cJSON *toolhead = cJSON_GetObjectItem(status, "toolhead");
+    if (cJSON_GetObjectItem(toolhead, "extruder")) return true;
+    cJSON *obj;
+    cJSON_ArrayForEach(obj, status) {
+        if (klipper_extruder_index(obj->string) >= 0 && cJSON_GetObjectItem(obj, "target"))
+            return true;
+    }
+    return false;
+}
+
+/* status 子对象由调用方释放。订阅快照和喷嘴设定增量不走普通测温帧的去重。 */
+static void post_status(cJSON *status_obj, bool snapshot)
+{
+    if (!status_obj) return;
+    bool priority = snapshot || has_nozzle_change(status_obj);
+    if (!priority && status_async_queued) return;
     char *txt = cJSON_PrintUnformatted(status_obj);
     if (!txt) return;
     char *heap = malloc(strlen(txt) + 1);
     if (!heap) { cJSON_free(txt); return; }
     strcpy(heap, txt);
     cJSON_free(txt);
-    if (post_heap_to_lvgl(apply_in_lvgl, heap)) {
+    if (priority) {
+        if (!post_heap_to_lvgl(apply_status_in_lvgl, heap)) free(heap);
+    } else if (post_heap_to_lvgl(apply_in_lvgl, heap)) {
         status_async_queued = true;
         status_async_since_s = now_s();
     } else free(heap);   /* LVGL 也申请失败：回收，别积压 */
@@ -255,7 +276,7 @@ static void subscribe_retry_cb(void *arg)
 static void on_subscribe_result(cJSON *result)
 {
     cJSON *status = cJSON_GetObjectItem(result, "status");
-    post_status(status);
+    post_status(status, true);
     state = MOONRAKER_READY;
     last_status_apply_s = now_s();   /* 推送链自检从 READY 起算宽限 */
     status_strikes = 0;
@@ -283,7 +304,7 @@ static void handshake_step_subscribe(void)
         "\"virtual_sdcard\":[\"progress\",\"is_active\"],"
         "\"display_status\":[\"progress\",\"message\"],"
         "\"gcode_move\":[\"speed_factor\",\"extrude_factor\",\"homing_origin\"],"
-        "\"toolhead\":[\"position\",\"homed_axes\"],"
+        "\"toolhead\":[\"position\",\"homed_axes\",\"extruder\"],"
         "\"extruder\":[\"temperature\",\"target\",\"power\"],"
         "\"heater_bed\":[\"temperature\",\"target\",\"power\"],"
         "\"fan\":[\"speed\"],"
@@ -305,6 +326,8 @@ static void handshake_step_subscribe(void)
                 fields = "[\"enabled\",\"filament_detected\"]";
             else if (strcmp(obj, "probe") == 0 || strcmp(obj, "bltouch") == 0)
                 fields = "[\"z_offset\"]";
+            else if (klipper_extruder_index(obj) > 0)
+                fields = "[\"temperature\",\"target\",\"power\"]";   /* 多喷头 extruder1..N */
             if (!fields) continue;
             size_t left = sizeof(params) - n;
             int w = snprintf(params + n, left, ",\"%s\":%s", obj, fields);
@@ -427,7 +450,7 @@ static void handle_notify(const char *method, cJSON *params)
     if (strcmp(method, "notify_status_update") == 0) {
         /* params = [ {object:{...}}, eventtime ] */
         cJSON *status = cJSON_GetArrayItem(params, 0);
-        post_status(status);
+        post_status(status, false);
     } else if (strcmp(method, "notify_gcode_response") == 0) {
         /* 全量转发（控制台回显 + QUERY_ENDSTOPS 回流解析在数据层）；
            "!!" 错误行提示逻辑不变（数据层内判断） */

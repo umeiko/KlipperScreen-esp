@@ -59,6 +59,12 @@ float printer_temp_ext(void);      /* 当前喷嘴温度 */
 float printer_temp_bed(void);
 float printer_target_ext(void);    /* 目标温度 */
 float printer_target_bed(void);
+/* 多喷头（toolchanger/IDEX，如 Snapmaker U1）：喷嘴温度读写都跟随 toolhead.extruder
+ * 指向的当前活动喷头。单喷头机型 count=1、active=0，行为与以前一致。 */
+int  printer_extruder_count(void);  /* objects.list 中 extruder/extruderN 的数量 */
+int  printer_active_extruder(void); /* extruder=0, extruderN=N，未知时为 -1 */
+/* 用于延迟输入。换头或重连后旧 ID 作废，0 表示当前喷嘴不可调温。 */
+uint32_t printer_nozzle_edit_id(void);
 float printer_pos(int axis);       /* 0=X 1=Y 2=Z */
 int  printer_homed(int axis);
 int  printer_progress_permille(void);   /* 0~1000 千分比 */
@@ -78,6 +84,7 @@ bool printer_take_error(char *out, size_t cap);
 /* ---- 写（真实实现经 klipper_api 发 RPC，mock 直接改状态） ---- */
 void printer_set_target_ext(float t);
 void printer_set_target_bed(float t);
+void printer_cooldown(void);
 void printer_jog(int axis, float dist);       /* 相对点动 */
 void printer_home(int axis);                  /* 0/1/2=X/Y/Z，3=XY，-1=全部归位 */
 void printer_motors_off(void);                /* M84：关闭全部步进电机 */

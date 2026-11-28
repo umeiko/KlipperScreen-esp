@@ -407,7 +407,7 @@ static void handshake_step_subscribe(void)
         "\"virtual_sdcard\":[\"progress\",\"is_active\"],"
         "\"display_status\":[\"progress\",\"message\"],"
         "\"gcode_move\":[\"speed_factor\",\"extrude_factor\",\"homing_origin\"],"
-        "\"toolhead\":[\"position\",\"homed_axes\"],"
+        "\"toolhead\":[\"position\",\"homed_axes\",\"extruder\"],"
         "\"extruder\":[\"temperature\",\"target\",\"power\"],"
         "\"heater_bed\":[\"temperature\",\"target\",\"power\"],"
         "\"fan\":[\"speed\"],"
@@ -430,6 +430,8 @@ static void handshake_step_subscribe(void)
                 fields = "[\"enabled\",\"filament_detected\"]";
             else if (strcmp(obj, "probe") == 0 || strcmp(obj, "bltouch") == 0)
                 fields = "[\"z_offset\"]";
+            else if (klipper_extruder_index(obj) > 0)
+                fields = "[\"temperature\",\"target\",\"power\"]";   /* 多喷头 extruder1..N */
             if (!fields) continue;
             size_t left = sizeof(params) - n;
             int w = snprintf(params + n, left, ",\"%s\":%s", obj, fields);
