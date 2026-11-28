@@ -1,0 +1,71 @@
+name: ESP32 timezone acceptance
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/timezone-acceptance.yml'
+      - 'src/core/app_timezone.*'
+      - 'src/core/app_settings.*'
+      - 'src/bsp/esp32/bsp_http_date.*'
+      - 'src/bsp/esp32/bsp_wifi_esp32.c'
+      - 'src/bsp/bsp_caps.h'
+      - 'src/ui/ui_app.c'
+      - 'src/ui/panels/panel_display.c'
+      - 'tests/test_timezone.*'
+      - 'docs/testing/timezone-issue15.md'
+
+permissions:
+  contents: read
+
+jobs:
+  timezone-4848s040:
+    runs-on: ubuntu-latest
+    container: espressif/idf:v5.5.5
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Timezone, DST, persistence and HTTP synchronization regression tests
+        run: python3 tests/test_timezone.py
+
+      - name: Build the reporter's Guition ESP32-4848S040 firmware
+        shell: bash
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          . "$IDF_PATH/export.sh"
+          cd src/ports/esp32
+          idf.py -B build-timezone-4848s040 \
+            -DSDKCONFIG=sdkconfig.esp32s3-4848s040 \
+            -DSDKCONFIG_DEFAULTS='sdkconfig.defaults;sdkconfig.defaults.esp32s3-4848s040' build
+
+      - name: Assemble the complete acceptance flash package
+        shell: bash
+        run: |
+          set -e
+          dest=dist/timezone-esp32s3-4848s040
+          build=src/ports/esp32/build-timezone-4848s040
+          mkdir -p "$dest"
+          cp "$build/bootloader/bootloader.bin" "$build/partition_table/partition-table.bin" \
+             "$build/klipper_remote_display.bin" "$dest/"
+          cp tools/release/flash.sh tools/release/flash.bat "$dest/"
+          cp docs/testing/timezone-issue15.md "$dest/README.md"
+          chmod +x "$dest/flash.sh"
+          printf 'CHIP=esp32s3\nFLASH_SIZE=16MB\nBL_OFFSET=0x0\nTOUCH_CAL=0\n' > "$dest/flash.cfg"
+          printf 'Source commit: %s\n' "$GITHUB_SHA" > "$dest/BUILD.txt"
+          curl -fL --retry 3 --connect-timeout 20 --max-time 180 \
+            https://github.com/espressif/esptool/releases/download/v5.4.0/esptool-v5.4.0-windows-amd64.zip \
+            -o /tmp/esptool.zip
+          unzip -q /tmp/esptool.zip -d /tmp/esptool
+          find /tmp/esptool -name esptool.exe -exec cp {} "$dest/" \;
+          test -s "$dest/esptool.exe"
+          (cd "$dest" && sha256sum *.bin esptool.exe flash.cfg flash.sh flash.bat > SHA256SUMS)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ESP-IDFv5.5-esp32s3-4848s040-issue15
+          path: dist/timezone-esp32s3-4848s040/
+          retention-days: 30
+          if-no-files-found: error

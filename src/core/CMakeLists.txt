@@ -1,6 +1,7 @@
 # core 组件（ESP-IDF 构建时消费）：配置存储 + 打印机数据模型 + Moonraker 客户端
 # desktop 后端不用本文件（在 ports/desktop/CMakeLists.txt 里直接列 mock 源文件）
 idf_component_register(SRCS "app_settings.c"
+                            "app_timezone.c"
                             "printer_model.c"
                             "file_list_stream.c"
                             "bed_level.c"

@@ -15,6 +15,21 @@
 #include <stdio.h>
 #include <string.h>
 
+#if BSP_HAS_TIMEZONE_SETTINGS
+#include "app_timezone.h"
+
+static void on_timezone_select(lv_event_t *e)
+{
+    lv_obj_t *dd = lv_event_get_target_obj(e);
+    unsigned selected = lv_dropdown_get_selected(dd);
+    if (selected == app_timezone_current()) return;
+    if (!app_timezone_select(selected)) {
+        lv_dropdown_set_selected(dd, app_timezone_current());
+        ui_toast(TR("保存失败"), THEME_COL_ERROR);
+    }
+}
+#endif
+
 #if BSP_HAS_ENCODER_SETTINGS
 #define ENCODER_TRIAL_MS 20000u
 static lv_obj_t *encoder_dd, *encoder_overlay, *encoder_message;
@@ -286,6 +301,16 @@ static lv_obj_t *create(void)
 
     int y = THEME_TITLEBAR_H + ui_px(4);
     const int step = ui_px(39);
+
+#if BSP_HAS_TIMEZONE_SETTINGS
+    char timezone_options[192] = "";
+    size_t timezone_len = 0;
+    for (unsigned i = 0; i < app_timezone_count(); i++)
+        timezone_len += snprintf(timezone_options + timezone_len, sizeof(timezone_options) - timezone_len,
+                                 "%s%s", i ? "\n" : "", app_timezone_label(i));
+    theme_row_dropdown(scr, "时区", timezone_options, y, app_timezone_current(), on_timezone_select, NULL);
+    y += step;
+#endif
 
     /* 反色 / 180° 旋转：仅硬件支持的板型显示（SPI 屏；RGB 屏与桌面端隐藏） */
     if (bsp_disp_can_invert()) {

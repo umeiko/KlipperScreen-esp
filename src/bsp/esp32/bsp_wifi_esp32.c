@@ -4,6 +4,7 @@
  */
 #include "../bsp_wifi.h"
 #include "../bsp.h"
+#include "bsp_http_date.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -37,19 +38,11 @@ typedef struct {
     unsigned generation;
 } wifi_connect_request_t;
 
-/* Moonraker 与 Bambu Cloud 都提供标准 HTTP Date（GMT），无需额外 NTP
-   连接。显示时区沿用项目现有的 CST-8（中国标准时间）。 */
+/* Moonraker/Bambu HTTP Date is UTC. Display timezone is a separate preference. */
 bool bsp_time_sync_from_http_date(const char *http_date)
 {
-    if (!http_date || !http_date[0]) return false;
-    struct tm tmv = {0};
-    /* "Wed, 04 Sep 2026 01:35:22 GMT" */
-    if (!strptime(http_date, "%a, %d %b %Y %H:%M:%S", &tmv)) return false;
-    /* newlib 无 timegm：临时切 UTC 求 epoch 再切回 CST-8 */
-    setenv("TZ", "UTC0", 1); tzset();
-    time_t t = mktime(&tmv);
-    setenv("TZ", "CST-8", 1); tzset();
-    if (t <= 0) return false;
+    time_t t;
+    if (!bsp_http_date_parse(http_date, &t)) return false;
     struct timeval tv = { .tv_sec = t, .tv_usec = 0 };
     if (settimeofday(&tv, NULL) != 0) return false;
     ESP_LOGI(TAG, "time synced from HTTP Date: %s", http_date);
@@ -176,9 +169,6 @@ static void begin_switch(void)
 static void ensure_init(void)
 {
     if (W.inited) return;
-
-    setenv("TZ", "CST-8", 1);   /* 显示时区：中国标准时间 */
-    tzset();
 
     /* nvs 可能被写满/版本变更，抹掉重来（KlipperScreen 同款处理） */
     esp_err_t err = nvs_flash_init();

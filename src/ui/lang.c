@@ -26,6 +26,7 @@ typedef struct {
 
 /* clang-format off */
 static const dict_entry_t dict[] = {
+    {"时区", "Time zone", "時區", "Fuseau horaire", "Fuso orario"},
 #if BSP_HAS_BED_LEVEL
     {"手动调平", "Bed Level", "手動調平", "Nivellement manuel", "Livellamento manuale"},
     {"调平", "Level", "調平", "Niveau", "Livella"},

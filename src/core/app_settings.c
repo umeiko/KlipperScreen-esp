@@ -444,6 +444,27 @@ bool settings_save_language(const char *lang)
     return conf_update_key("klipperscreen.conf", "language", lang);
 }
 
+bool settings_load_timezone(char *out, size_t len)
+{
+    if (!out || !len) return false;
+    snprintf(out, len, "%s", "Asia/Shanghai");
+    char *buf = conf_load("klipperscreen.conf");
+    if (!buf) return false;
+    bool got = kv_get(buf, "timezone", out, len);
+    free(buf);
+    return got;
+}
+
+bool settings_save_timezone(const char *id)
+{
+    if (!id || !id[0] || strlen(id) >= 48) return false;
+    for (const char *p = id; *p; p++)
+        if (!((*p >= 'A' && *p <= 'Z') || (*p >= 'a' && *p <= 'z') ||
+              (*p >= '0' && *p <= '9') || *p == '/' || *p == '_' || *p == '-' || *p == '+'))
+            return false;
+    return conf_update_key("klipperscreen.conf", "timezone", id);
+}
+
 int settings_load_brightness(void)
 {
     char val[8];

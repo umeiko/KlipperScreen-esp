@@ -17,6 +17,13 @@
 #include "sdkconfig.h"
 #endif
 
+/* Embedded display clocks need their own TZ; desktop/mobile use the host OS. */
+#if defined(ESP_PLATFORM)
+#define BSP_HAS_TIMEZONE_SETTINGS 1
+#else
+#define BSP_HAS_TIMEZONE_SETTINGS 0
+#endif
+
 /* 按输入能力而非板名裁剪，普通桌面端不展示硬件设置。 */
 #if defined(ESP_PLATFORM) && defined(CONFIG_INPUT_ROTARY_ENCODER) && CONFIG_INPUT_ROTARY_ENCODER
 #define BSP_HAS_ROTARY_ENCODER 1

@@ -74,6 +74,9 @@ bool settings_save_active_printer(int slot);
  * language=zh|en|tw|fr|it（缺省 en）；brightness=0-100（缺省 100）。 */
 bool settings_load_language(char *out, size_t len);
 bool settings_save_language(const char *lang);
+/* Saved ESP32 timezone ID; app_timezone resolves missing/unknown IDs to UTC+8. */
+bool settings_load_timezone(char *out, size_t len);
+bool settings_save_timezone(const char *id);
 int  settings_load_brightness(void);
 bool settings_save_brightness(int pct);
 int  settings_load_screen_off(void);      /* 自动息屏秒数，0=永不 */
