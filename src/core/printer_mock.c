@@ -51,6 +51,9 @@ float printer_temp_ext(void)  { return P.ext; }
 float printer_temp_bed(void)  { return P.bed; }
 float printer_target_ext(void){ return P.ext_t; }
 float printer_target_bed(void){ return P.bed_t; }
+int printer_extruder_count(void) { return 1; }
+int printer_active_extruder(void) { return 0; }
+uint32_t printer_nozzle_edit_id(void) { return 1; }
 float printer_pos(int axis)   { return P.pos[axis]; }
 int printer_homed(int axis)   { return P.homed[axis]; }
 int printer_progress_permille(void) { return P.progress; }
@@ -107,6 +110,7 @@ int printer_layer_current(void) { return 0; }
 int printer_layer_total(void) { return 0; }
 
 void printer_set_target_ext(float t) { P.ext_t = t; }
+void printer_cooldown(void) { P.ext_t = P.bed_t = 0; }
 void printer_set_target_bed(float t) { P.bed_t = t; }
 
 void printer_jog(int axis, float dist)

@@ -841,6 +841,9 @@ printer_state_t printer_state(void) { return p.state; }
 float printer_temp_ext(void) { return p.ext; }
 float printer_temp_bed(void) { return p.bed; }
 float printer_target_ext(void) { return p.ext_target; }
+int printer_extruder_count(void) { return 1; }
+int printer_active_extruder(void) { return 0; }
+uint32_t printer_nozzle_edit_id(void) { return 1; }
 float printer_target_bed(void) { return p.bed_target; }
 float printer_pos(int axis) { return axis >= 0 && axis < 3 ? p.pos[axis] : 0; }
 int printer_homed(int axis) { return axis >= 0 && axis < 3 && p.homed[axis]; }
@@ -892,6 +895,7 @@ bool printer_take_error(char *out, size_t cap)
 
 void printer_set_target_ext(float t) { char c[32]; snprintf(c, sizeof(c), "M104 S%.0f", t); gcode(c); }
 void printer_set_target_bed(float t) { char c[32]; snprintf(c, sizeof(c), "M140 S%.0f", t); gcode(c); }
+void printer_cooldown(void) { gcode("TURN_OFF_HEATERS"); }
 void printer_jog(int axis, float dist)
 {
     static const char names[] = "XYZ";

@@ -51,6 +51,38 @@ static struct {
     .print_state = "standby",
 };
 
+/* 状态增量可能只更新一个喷头或只报告换头，分别缓存各喷头的读数。 */
+static struct {
+    float temp, target;
+    bool has_target;
+} extruders[KLIPPER_EXTRUDER_LIMIT];
+static int extruder_count = 1;
+static int reported_extruder = -1;
+static bool extruder_reported;
+static uint32_t nozzle_edit_id = 1;
+
+static void invalidate_nozzle_edits(void)
+{
+    if (++nozzle_edit_id == 0) ++nozzle_edit_id;
+}
+
+static int active_extruder(void)
+{
+    /* Older single-nozzle backends may omit toolhead.extruder. An explicit
+     * empty name means no active tool, including on a single-nozzle printer. */
+    return extruder_reported ? reported_extruder : (extruder_count == 1 ? 0 : -1);
+}
+
+static void reset_extruders(void)
+{
+    memset(extruders, 0, sizeof(extruders));
+    extruder_count = 1;
+    reported_extruder = -1;
+    extruder_reported = false;
+    M.ext = M.ext_t = 0;
+    invalidate_nozzle_edits();
+}
+
 static bool klipper_active(void)
 {
     return settings_load_machine_mode() == MACHINE_MODE_KLIPPER;
@@ -119,6 +151,14 @@ float printer_temp_ext(void)   { bambu_monitor_snapshot_t b; return klipper_acti
 float printer_temp_bed(void)   { bambu_monitor_snapshot_t b; return klipper_active() ? M.bed : (bambu_status_snapshot(&b) ? b.printer.bed_temp : 0); }
 float printer_target_ext(void) { bambu_monitor_snapshot_t b; return klipper_active() ? M.ext_t : (bambu_status_snapshot(&b) ? b.printer.nozzle_target : 0); }
 float printer_target_bed(void) { bambu_monitor_snapshot_t b; return klipper_active() ? M.bed_t : (bambu_status_snapshot(&b) ? b.printer.bed_target : 0); }
+int printer_extruder_count(void)  { return klipper_active() ? extruder_count : 1; }
+int printer_active_extruder(void) { return klipper_active() ? active_extruder() : 0; }
+uint32_t printer_nozzle_edit_id(void)
+{
+    int active = active_extruder();
+    return M.online && active >= 0 && extruders[active].has_target &&
+           klipper_active() ? nozzle_edit_id : 0;
+}
 float printer_pos(int axis)    { return klipper_active() ? M.pos[axis] : 0; }
 int printer_homed(int axis)    { return klipper_active() ? M.homed[axis] : 0; }
 int printer_progress_permille(void) { bambu_monitor_snapshot_t b; return klipper_active() ? M.progress : (bambu_status_snapshot(&b) ? b.printer.progress_percent * 10 : 0); }
@@ -341,9 +381,19 @@ int printer_layer_total(void)
 /* ---------- 写（转发 klipper_api；本地状态等订阅回推，不乐观更新） ---------- */
 void printer_set_target_ext(float t)
 {
-    if (!klipper_active()) return;
-    char g[48];
-    snprintf(g, sizeof(g), "M104 S%d", (int)(t + 0.5f));
+    if (!printer_nozzle_edit_id()) return;
+    int active = active_extruder();
+    char g[80];
+    if (extruder_count > 1 || active > 0) {
+        /* 显式指定喷头：不依赖 M104 的隐式"活动喷头"，也绕开固件对
+           M104 T<n> 可能做的喷头映射（U1 默认 A1 会按打印任务重映射）。
+           显示的是哪个喷头，就设置哪个喷头。 */
+        char name[24] = "extruder";
+        if (active > 0) snprintf(name, sizeof(name), "extruder%d", active);
+        snprintf(g, sizeof(g), "SET_HEATER_TEMPERATURE HEATER=%s TARGET=%d", name, (int)(t + 0.5f));
+    } else {
+        snprintf(g, sizeof(g), "M104 S%d", (int)(t + 0.5f));
+    }
     klipper_gcode_script(g);
 }
 
@@ -353,6 +403,12 @@ void printer_set_target_bed(float t)
     char g[48];
     snprintf(g, sizeof(g), "M140 S%d", (int)(t + 0.5f));
     klipper_gcode_script(g);
+}
+
+void printer_cooldown(void)
+{
+    if (!klipper_active() || !M.online) return;
+    klipper_gcode_script("TURN_OFF_HEATERS");
 }
 
 void printer_jog(int axis, float dist)
@@ -526,10 +582,12 @@ void printer_model_set_object_names(char *json_heap)
     M_macro_cnt = M_fan_cnt = M_fil_cnt = 0;
     M_probe_present = false;
     M_probe_z_valid = false;
+    int count = 0;
     cJSON *it;
     cJSON_ArrayForEach(it, arr) {
         if (!cJSON_IsString(it) || !it->valuestring) continue;
         const char *obj = it->valuestring;
+        if (klipper_extruder_index(obj) >= 0) ++count;
         if (strncmp(obj, "gcode_macro ", 12) == 0) {
             const char *name = obj + 12;
             if (name[0] == '_') continue;                    /* 内部宏不显示 */
@@ -573,6 +631,10 @@ void printer_model_set_object_names(char *json_heap)
                    strcmp(obj, "probe_eddy_current") == 0) {
             M_probe_present = true;   /* Z 校准页显示已存偏移用 */
         }
+    }
+    if (count != extruder_count) {
+        extruder_count = count;
+        invalidate_nozzle_edits();
     }
     cJSON_Delete(arr);
 #if !defined(ESP_PLATFORM)
@@ -1101,6 +1163,7 @@ void printer_model_set_online(int online)
 {
     M.online = online;
     if (!online) {
+        reset_extruders();
 #if BSP_HAS_BED_LEVEL
         bed_level_reset();
 #endif
@@ -1148,15 +1211,28 @@ void printer_model_apply_status_json(char *json_heap)
     if (!status) return;
 
     cJSON *it;
-    if ((it = cJSON_GetObjectItem(status, "extruder"))) {
-        M.ext   = jnum(it, "temperature", M.ext);
-        M.ext_t = jnum(it, "target", M.ext_t);
+    cJSON_ArrayForEach(it, status) {
+        int ei = klipper_extruder_index(it->string);
+        if (ei < 0 || !cJSON_IsObject(it)) continue;
+        extruders[ei].temp = jnum(it, "temperature", extruders[ei].temp);
+        cJSON *target = cJSON_GetObjectItem(it, "target");
+        if (cJSON_IsNumber(target)) {
+            extruders[ei].target = (float)target->valuedouble;
+            extruders[ei].has_target = true;
+        }
     }
     if ((it = cJSON_GetObjectItem(status, "heater_bed"))) {
         M.bed   = jnum(it, "temperature", M.bed);
         M.bed_t = jnum(it, "target", M.bed_t);
     }
     if ((it = cJSON_GetObjectItem(status, "toolhead"))) {
+        cJSON *ae = cJSON_GetObjectItem(it, "extruder");
+        if (cJSON_IsString(ae) && ae->valuestring) {
+            int before = active_extruder();
+            reported_extruder = klipper_extruder_index(ae->valuestring);
+            extruder_reported = true;
+            if (before != active_extruder()) invalidate_nozzle_edits();
+        }
         cJSON *pos = cJSON_GetObjectItem(it, "position");
         if (cJSON_IsArray(pos)) {
             for (int i = 0; i < 3; i++) {
@@ -1172,6 +1248,9 @@ void printer_model_apply_status_json(char *json_heap)
             M.homed[2] = strchr(s, 'z') != NULL;
         }
     }
+    int active = active_extruder();
+    M.ext   = active >= 0 ? extruders[active].temp : 0;
+    M.ext_t = active >= 0 ? extruders[active].target : 0;
     if ((it = cJSON_GetObjectItem(status, "print_stats"))) {
         jstr(it, "state", M.print_state, sizeof(M.print_state));
         jstr(it, "filename", M.filename, sizeof(M.filename));

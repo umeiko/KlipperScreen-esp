@@ -1,4 +1,22 @@
 #pragma once
+#include <string.h>
+
+/* Klipper reserves extruder (T0) and extruder1 through extruder98. */
+#define KLIPPER_EXTRUDER_LIMIT 99
+static inline int klipper_extruder_index(const char *name)
+{
+    if (!name || strncmp(name, "extruder", 8) != 0) return -1;
+    const char *suffix = name + 8;
+    if (!*suffix) return 0;
+    if (*suffix < '1' || *suffix > '9') return -1;
+    int index = 0;
+    for (; *suffix; ++suffix) {
+        if (*suffix < '0' || *suffix > '9') return -1;
+        index = index * 10 + (*suffix - '0');
+        if (index >= KLIPPER_EXTRUDER_LIMIT) return -1;
+    }
+    return index;
+}
 /*
  * printer_model 给 moonraker_client 的内部接口（不在 printer.h 公共契约里）。
  */
